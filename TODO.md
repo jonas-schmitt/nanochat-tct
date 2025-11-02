@@ -567,28 +567,30 @@ config = get_config("small")  # instead of "medium"
 | 1024    | 32     | 8,192 | 569%     | 2.0x   | 0.25x | Fewer windows |
 | 2048    | 32     | 8,192 | 1138%    | 4.0x   | 0.06x | Even fewer    |
 
-### **DECISION: context_size=512, stride=32** ✅
+### **DECISION: context_size=1024, stride=32** ✅
 
 **Rationale**:
-1. **Same vocab requirement**: All options require stride=32 to fit in 8,192 vocab
-2. **4x faster training**: Attention is O(n²), so 512 is 4x faster than 1024
-3. **Sufficient coverage**: 512 tokens = 284% of average workflow (covers most entirely)
-4. **More training data**: Long workflows generate more windows = better learning
-5. **Better budget efficiency**: Same $15-100 budget → 4x more training iterations
+1. **Better workflow coverage**: 1024 tokens covers 568% of average workflow length (180 tokens)
+2. **Handles complex workflows**: 100% of workflows at 98th percentile fit in 1024 context
+3. **Same vocab requirement**: stride=32 keeps position tokens < 8192
+4. **Sufficient generation headroom**: 1023 content tokens allows long workflow generation
+5. **Acceptable speed**: While slower than 512, we prioritize coverage for large workflows
 
 **Configuration Parameters**:
 ```python
 vocab_size = 8192        # TCT base vocabulary (no expansion needed)
-context_size = 512       # Window size for training
+context_size = 1024      # TOTAL window size (1 position + 1023 content tokens)
 stride = 32              # Power-of-2 stride for position mapping
-max_position = 5,332     # Maximum mapped position (< 8192 ✓)
-safety_margin = 2,860    # Unused positions (35% buffer)
+max_position = 5,301     # Maximum mapped position (< 8192 ✓)
+safety_margin = 2,891    # Unused positions (35% buffer)
 ```
 
-**Trade-offs accepted**:
-- Less context for hierarchical structure (workflows: triggers → jobs → steps)
-- May need to scale to 1024 later if quality suffers
-- Worth the risk: 4x speedup enables rapid experimentation
+**Window Format**:
+- Each window: `[position_token, content_tok_0, ..., content_tok_1022]`
+- Total length: exactly 1024 tokens
+- Model's context_size parameter must be 1024
+
+**Important**: context_size includes the position token. During training and generation, the model processes exactly 1024 tokens total.
 
 ---
 

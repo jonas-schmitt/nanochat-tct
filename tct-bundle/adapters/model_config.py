@@ -13,7 +13,7 @@ Three preset configurations optimized for GitHub Actions workflow generation:
 SMALL_CONFIG = {
     # Model architecture (optimized for hierarchical workflows)
     "vocab_size": 8192,        # TCT vocabulary (8192 base, stride=32 for position mapping)
-    "context_size": 512,       # Optimized context (4x faster training than 1024)
+    "context_size": 1024,      # Total window size (1 position + 1023 content tokens)
     "d_model": 384,            # Embedding dimension (narrower, efficient)
     "n_layers": 8,             # Transformer layers (depth for hierarchy)
     "n_heads": 6,              # Attention heads (64 head_dim - optimal)
@@ -49,7 +49,7 @@ SMALL_CONFIG = {
 MEDIUM_CONFIG = {
     # Model architecture
     "vocab_size": 8192,        # TCT vocabulary (8192 base, stride=32 for position mapping)
-    "context_size": 512,       # Optimized context (4x faster training than 1024)
+    "context_size": 1024,      # Total window size (1 position + 1023 content tokens)
     "d_model": 768,            # Larger embeddings
     "n_layers": 8,             # More depth
     "n_heads": 12,             # More attention heads
@@ -85,7 +85,7 @@ MEDIUM_CONFIG = {
 LARGE_CONFIG = {
     # Model architecture
     "vocab_size": 8192,        # TCT vocabulary (8192 base, stride=32 for position mapping)
-    "context_size": 512,       # Optimized context (4x faster training than 1024)
+    "context_size": 1024,      # Total window size (1 position + 1023 content tokens)
     "d_model": 1024,           # Large embeddings
     "n_layers": 12,            # Deep model
     "n_heads": 16,             # Many attention heads

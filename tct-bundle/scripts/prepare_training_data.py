@@ -33,15 +33,19 @@ def prepare_windows(json_files, context_size=256, stride=1, skip_short=True):
 
     Args:
         json_files: List of paths to JSON workflow files
-        context_size: Window size (number of content tokens, excluding position token)
+        context_size: TOTAL window size (including position token)
+                     E.g., context_size=1024 means 1 position + 1023 content tokens
         stride: Stride for windowing (default: 1 for all positions, 32 for vocab_size=8192)
         skip_short: Skip sequences shorter than context_size
 
     Returns:
-        List of windows: [[position, tok_0, ..., tok_N], ...]
+        List of windows: [[position, tok_0, ..., tok_N], ...] each of length context_size
     """
     windows = []
     skipped = 0
+
+    # Content size = context_size - 1 (reserve 1 token for position)
+    content_size = context_size - 1
 
     for json_file in tqdm(json_files, desc="Processing workflows"):
         try:
@@ -52,8 +56,8 @@ def prepare_windows(json_files, context_size=256, stride=1, skip_short=True):
             # Encode with TCT
             tokens = encode(json_str)
 
-            # Skip if too short
-            if len(tokens) <= context_size:
+            # Skip if too short (need at least content_size tokens)
+            if len(tokens) < content_size:
                 if skip_short:
                     skipped += 1
                     continue
@@ -61,13 +65,14 @@ def prepare_windows(json_files, context_size=256, stride=1, skip_short=True):
                 # (alternative: skip entirely if skip_short=True)
 
             # Extract strided windows (stride controls position sampling)
-            for start in range(0, len(tokens) - context_size, stride):
-                end = start + context_size
+            for start in range(0, len(tokens) - content_size + 1, stride):
+                end = start + content_size
                 # Map position: divide by stride to keep position tokens < 8192
                 mapped_start = start // stride
                 # Extract window with mapped position
                 window_tokens = tokens[start:end]
-                # Create window: [mapped_position, content_tok_0, ..., content_tok_N]
+                # Create window: [mapped_position, content_tok_0, ..., content_tok_(N-1)]
+                # Total length = 1 + content_size = context_size
                 window = [mapped_start] + window_tokens
                 windows.append(window)
 
@@ -76,7 +81,7 @@ def prepare_windows(json_files, context_size=256, stride=1, skip_short=True):
             continue
 
     if skipped > 0:
-        print(f"⚠️  Skipped {skipped} short sequences (<{context_size} tokens)")
+        print(f"⚠️  Skipped {skipped} short sequences (<{content_size} tokens)")
 
     return windows
 
@@ -101,7 +106,7 @@ def main():
         "--context-size",
         type=int,
         default=256,
-        help="Window size (default: 256)",
+        help="TOTAL window size including position token (default: 256)",
     )
     parser.add_argument(
         "--train-split",
