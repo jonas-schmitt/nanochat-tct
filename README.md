@@ -112,7 +112,8 @@ This fork extends nanochat with **TCT (Type-Constrained Tokenization)** for trai
 **Type-Constrained Tokenization (TCT)** is a specialized tokenization approach that:
 - Uses a compact 8,192 token vocabulary (vs. 50k-200k for GPT-2/4 BPE)
 - Encodes workflow structure (keys, values, indentation) explicitly
-- Achieves ~9.3 chars/token compression (9.3% fewer tokens than Tiktoken GPT-4o on workflows)
+- Achieves 9.3% fewer tokens than Tiktoken GPT-4o on typical workflows
+- Compression ratio: ~9.3 characters per token (varies by workflow complexity)
 - Generates schema-compliant outputs (valid JSON/YAML with required fields)
 
 ### Training Workflow Generation Models
@@ -174,7 +175,7 @@ All configs use `vocab_size=8192` (TCT base vocabulary) and `context_size=1024` 
 
 ### Why TCT for Workflows?
 
-**Compression**: TCT achieves ~9.3 chars/token on workflows (9.3% fewer tokens than Tiktoken GPT-4o)
+**Compression**: TCT uses 9.3% fewer tokens than Tiktoken GPT-4o on typical workflows (averages ~9.3 chars/token compression ratio)
 
 **Quality**: Schema-aware tokenization ensures generated workflows have:
 - Valid JSON/YAML structure
