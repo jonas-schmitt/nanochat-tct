@@ -46,18 +46,19 @@ run = "dummy" # wandb run name ("dummy" = no logging)
 device_type = "" # cuda|cpu|mps (empty = autodetect)
 # Model
 model_size = "small" # small|medium|large
-data_dir = str(Path.home() / "Desktop/data/prepared-100") # TCT prepared data directory
+data_dir = str(Path.home() / "Desktop/data/prepared-100k-1024-s32") # TCT prepared data directory
 # Training
-num_iterations = 5000 # number of optimization steps (-1 = use from config)
+num_iterations = 50000 # number of optimization steps (-1 = use from config)
 device_batch_size = 32 # per-device batch size
 # Optimization (will use defaults from model config if not overridden)
 learning_rate = -1.0 # learning rate (-1 = use config default)
 grad_clip = 1.0 # gradient clipping
 warmup_iters = -1 # warmup iterations (-1 = use config default)
 # Evaluation
-eval_every = 500 # evaluate val loss every N steps
+eval_every = 5000 # evaluate val loss every N steps
 eval_max_batches = 50 # max batches for validation
-# Output
+# Checkpointing
+save_every = 5000 # save checkpoint every N steps
 checkpoint_dir = "" # checkpoint directory (empty = auto)
 model_tag = "" # optional tag for checkpoint directory
 
@@ -239,8 +240,9 @@ for step in range(config["max_iters"] + 1):
 
         model.train()
 
-    # Save checkpoint at the end
-    if master_process and last_step:
+    # Save checkpoint periodically and at the end
+    should_save = (step % save_every == 0 and step > 0) or last_step
+    if master_process and should_save:
         output_dirname = model_tag if model_tag else f"tct_{model_size}"
         if checkpoint_dir:
             ckpt_dir = Path(checkpoint_dir)
@@ -262,7 +264,7 @@ for step in range(config["max_iters"] + 1):
                 "tct_config": config,
             }
         )
-        print0(f"Saved checkpoint to {ckpt_dir}")
+        print0(f"Saved checkpoint to {ckpt_dir / f'model_{step:05d}.pt'}")
 
     if last_step:
         break
