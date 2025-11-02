@@ -92,305 +92,142 @@
 
 ---
 
-## Phase 3: Full Training (Scale Up) - SMALL MODEL
+## Phase 3: Full Training (Scale Up) - SMALL MODEL ✅ IN PROGRESS
 
-**Configuration**: context_size=512, stride=32, vocab_size=8192
+**Configuration**: context_size=1024, stride=32, vocab_size=8192
 **Model**: Small (20M params) - Fast experimentation baseline
-**Budget**: ~$15, ~2 hours on 8×A100 (or ~16 hours on single GPU)
+**Budget**: ~$15, ~2.5 hours on single RTX 4070
 
-### 3.1 Full Data Preparation with Striding ⚠️ NEW
+### 3.1 Full Data Preparation with Striding ✅ COMPLETED
 
-**IMPORTANT**: We now use stride=32 to keep vocab_size=8192
+**IMPORTANT**: Using stride=32 to keep vocab_size=8192, context_size=1024 for better workflow coverage
 
-- [ ] **Step 1**: Verify `prepare_training_data.py` supports `--stride` parameter
-  ```bash
-  cd ~/git/nanochat-tct/tct-bundle/scripts
-  python prepare_training_data.py --help | grep -i stride
-  ```
+- [x] **Step 1**: Verified `prepare_training_data.py` supports `--stride` parameter ✅
 
-  **If stride is not supported**, we need to modify the script first (see below)
-
-- [ ] **Step 2**: Prepare complete dataset with stride
+- [x] **Step 2**: Prepared complete dataset with stride ✅
   ```bash
   cd ~/git/nanochat-tct/tct-bundle/scripts
   python prepare_training_data.py \
     --input ~/Desktop/data/workflows-100k/json/ \
-    --output ~/Desktop/data/prepared-100k-512-s32/ \
-    --context-size 512 \
+    --output ~/Desktop/data/prepared-100k-1024-s32/ \
+    --context-size 1024 \
     --stride 32 \
     --train-split 0.8
   ```
 
-  **Expected time**: ~10-15 minutes (100k workflows, strided windowing)
-  **Expected output**:
-  - `train.pt` (shape: [N, 513] where 513 = 1 position + 512 content)
-  - `val.pt` (shape: [M, 513])
-  - `metadata.json` (includes stride info)
+  **Actual results**:
+  - `train.pt` (shape: [772186, 1024])
+  - `val.pt` (shape: [193047, 1024])
+  - `metadata.json` ✅
+  - Total windows: 965,233
+  - Processing time: ~3 minutes
+  - Skipped 81,539 short sequences (<1023 tokens)
 
-  **Expected sizes**:
-  - Fewer windows than stride=1 (better: focuses on important parts)
-  - Total windows: ~500k-1M (estimate, depends on workflow lengths)
-  - Disk space: ~2-4GB total
+- [x] **Step 3**: Verified prepared dataset ✅
 
-- [ ] **Step 3**: Verify prepared dataset
-  ```bash
-  cd ~/git/nanochat-tct
-  python3 -c "
-  import torch, json
-  from pathlib import Path
+  **Validation results**:
+  - [x] Train shape: [772186, 1024] ✅
+  - [x] Val shape: [193047, 1024] ✅
+  - [x] `metadata.json` has `"stride": 32` ✅
+  - [x] Max position token: 5,301 < 8192 ✅
+  - [x] Context size: 1024 ✅
+  - [x] All token IDs within vocab_size=8192 ✅
 
-  data_dir = Path.home() / 'Desktop/data/prepared-100k-512-s32'
-  train = torch.load(data_dir / 'train.pt')
-  val = torch.load(data_dir / 'val.pt')
+### 3.2 Choose Model Size & Budget ✅ COMPLETED
+- [x] **Decision**: Small model selected
 
-  with open(data_dir / 'metadata.json') as f:
-      meta = json.load(f)
+  | Model | Params | Architecture | Cost | Time (RTX 4070) | Use Case |
+  |-------|--------|--------------|------|-----------------|----------|
+  | **Small** | **20M** | **384d×8L×6H** | $0 | **2.5h** | **Baseline experiment** ⭐ |
+  | Medium | 100M | 768d×8L×12H | TBD | ~8h | Production quality 🎯 |
+  | Large | 200M | 1024d×12L×16H | TBD | ~15h | Maximum quality 🏆 |
 
-  print('=== Dataset Verification ===')
-  print(f'Train shape: {train.shape}')
-  print(f'Val shape: {val.shape}')
-  print(f'Context size: {meta[\"context_size\"]}')
-  print(f'Stride: {meta.get(\"stride\", \"NOT SET - CHECK!\")}')
-  print(f'Total workflows: {meta[\"total_workflows\"]}')
-  print()
-  print('Sample window (first 20 tokens):')
-  print(f'Position token: {train[0, 0].item()}')
-  print(f'Content tokens: {train[0, 1:21].tolist()}')
-  print()
-  print('Max position token:', train[:, 0].max().item())
-  print('Expected: < 8192 for vocab compatibility')
-  "
+- [x] Updated `scripts/tct_train.py` with Small config
+- [x] Updated `tct-bundle/adapters/model_config.py` to context_size=1024
+
+### 3.3 Launch Full Training with Checkpointing ✅ IN PROGRESS
+
+**Goal**: Train Small (20M) model on 100k workflows (50,000 iterations)
+
+**Current Status**: Training running (started 2025-11-02 18:19)
+- **Progress**: ~7% complete (step 3,500/50,000)
+- **Loss**: 9.01 → 1.44 (84% reduction, excellent progress ✅)
+- **Speed**: ~167-199ms/step, ~195k tokens/sec
+- **GPU**: RTX 4070 Ti (8GB VRAM, ~70% utilization)
+- **ETA**: ~2 hours remaining
+
+- [x] **Step 1**: Verified model config ✅
+  ```
+  Vocab size: 8,192 ✅
+  Context size: 1024 ✅
+  d_model: 384 ✅
+  n_layers: 8 ✅
+  n_heads: 6 ✅
+  Total params: 20,447,232
   ```
 
-  **Validation checklist**:
-  - [ ] Train shape is [N, 513] ✓
-  - [ ] Val shape is [M, 513] ✓
-  - [ ] `metadata.json` has `"stride": 32` ✓
-  - [ ] Max position token < 8192 ✓ (CRITICAL!)
-  - [ ] Context size = 512 ✓
-
-### 3.2 Choose Model Size & Budget
-- [ ] **Decision**: Select model configuration based on budget
-
-  | Model | Params | Architecture | Cost | Time (8×A100) | Use Case |
-  |-------|--------|--------------|------|---------------|----------|
-  | Small | **20M** | **384d×8L×6H** | $15 | 2h | **Optimized for workflows** ⭐ |
-  | Medium | 100M | 768d×8L×12H | $50 | 7h | Production quality 🎯 |
-  | Large | 200M | 1024d×12L×16H | $100 | 15h | Maximum quality 🏆 |
-
-- [ ] Update `scripts/tct_train.py` with chosen config:
+- [x] **Step 2**: Training script configured with parameters:
   ```python
-  config = get_config("medium")  # or "small" / "large"
+  model_size = "small"
+  data_dir = "~/Desktop/data/prepared-100k-1024-s32"
+  num_iterations = 50000
+  device_batch_size = 32
+  eval_every = 5000  # Validation evaluation
+  save_every = 5000  # Checkpoint saving
   ```
 
-### 3.3 Launch Full Training with Checkpointing & Resumption
-
-**Goal**: Train Small (20M) model on 100k workflows with proper checkpointing for continuation if interrupted
-
-- [ ] **Step 1**: Update model config to use correct parameters
+- [x] **Step 3**: Launched training ✅
   ```bash
   cd ~/git/nanochat-tct
-
-  # Verify model config has been updated to context_size=512
-  python3 -c "
-  import sys
-  sys.path.insert(0, 'tct-bundle/adapters')
-  from model_config import get_config
-
-  config = get_config('small')
-  print('=== Small Model Configuration ===')
-  print(f'Vocab size: {config[\"vocab_size\"]}')
-  print(f'Context size: {config[\"context_size\"]}')
-  print(f'd_model: {config[\"d_model\"]}')
-  print(f'n_layers: {config[\"n_layers\"]}')
-  print(f'n_heads: {config[\"n_heads\"]}')
-
-  assert config['vocab_size'] == 8192, 'Vocab must be 8192!'
-  assert config['context_size'] == 512, 'Context must be 512!'
-  print('✅ Config validated')
-  "
+  python -m scripts.tct_train
   ```
 
-  **If context_size ≠ 512**, update `tct-bundle/adapters/model_config.py` first!
-
-- [ ] **Step 2**: Create experiment directory with proper structure
-  ```bash
-  # Create organized experiment directory
-  EXP_NAME="exp001-small-100k-ctx512-s32"
-  EXP_DIR="experiments/${EXP_NAME}"
-
-  mkdir -p ${EXP_DIR}/{checkpoints,logs,generated_samples}
-
-  cd ~/git/nanochat-tct
-  echo "# Experiment 001 - Small Model Baseline (100k workflows)
-
-**Date**: $(date)
-**Configuration**:
-- Model: Small (20M params, 384d×8L×6H)
-- Data: 100k workflows
-- Context size: 512 tokens
-- Stride: 32 (position mapping for vocab_size=8192)
-- Vocab size: 8,192 (TCT base, no expansion)
-- Training: 50,000 iterations
-- Batch size: 32 (effective batch with gradient accumulation)
-- Learning rate: 3e-4 with warmup
-- Checkpoints: Every 5,000 iterations
-- Evaluation: Every 500 iterations
-
-**Goal**: Establish baseline performance for context_size=512 approach
-
-**Status**: Ready to launch
-  " > ${EXP_DIR}/README.md
-
-  # Save config snapshot
-  cp tct-bundle/adapters/model_config.py ${EXP_DIR}/model_config_snapshot.py
-  cp scripts/tct_train.py ${EXP_DIR}/train_script_snapshot.py
-
-  echo "Experiment directory created: ${EXP_DIR}"
-  ```
-
-- [ ] **Step 3**: Launch training with proper checkpointing
-  ```bash
-  cd ~/git/nanochat-tct
-
-  # Set experiment parameters
-  EXP_NAME="exp001-small-100k-ctx512-s32"
-  DATA_DIR="${HOME}/Desktop/data/prepared-100k-512-s32"
-  CHECKPOINT_DIR="${HOME}/Desktop/checkpoints/${EXP_NAME}"
-  LOG_FILE="experiments/${EXP_NAME}/logs/training_$(date +%Y%m%d_%H%M%S).log"
-
-  mkdir -p ${CHECKPOINT_DIR}
-  mkdir -p $(dirname ${LOG_FILE})
-
-  # Launch training (single GPU)
-  python -m scripts.tct_train \
-    --model_size=small \
-    --data_dir=${DATA_DIR} \
-    --checkpoint_dir=${CHECKPOINT_DIR} \
-    --num_iterations=50000 \
-    --device_batch_size=32 \
-    --eval_every=500 \
-    --learning_rate=3e-4 \
-    --warmup_iters=2000 \
-    --grad_clip=1.0 \
-    2>&1 | tee ${LOG_FILE}
-
-  # For multi-GPU (8×A100), use:
-  # torchrun --standalone --nproc_per_node=8 -m scripts.tct_train \
-  #   --model_size=small \
-  #   --data_dir=${DATA_DIR} \
-  #   --checkpoint_dir=${CHECKPOINT_DIR} \
-  #   --num_iterations=50000 \
-  #   --device_batch_size=32 \
-  #   --eval_every=500 \
-  #   2>&1 | tee ${LOG_FILE}
-  ```
-
-  **Training will create**:
-  - Checkpoints every 5,000 iterations:
+  **Training creates**:
+  - Checkpoints every 5,000 iterations → `~/Desktop/checkpoints/tct_small/`
     - `model_005000.pt`, `model_010000.pt`, ..., `model_050000.pt`
-    - `optim_005000.pt` (optimizer state for resumption)
-    - `meta_005000.json` (training metadata)
-  - Log file with full output in `experiments/${EXP_NAME}/logs/`
+    - Includes optimizer state for potential resumption
+  - Validation evaluation every 5,000 steps
 
-- [ ] **Step 4**: Monitor training (check every 30 min for first 2 hours)
+- [ ] **Step 4**: Monitor training progress
 
-  **Health Checks**:
-  - [ ] Loss decreases steadily (target: <2.0 by iteration 50k)
-  - [ ] Gradient norms healthy (0.5 - 2.0 range, logged in output)
-  - [ ] Validation loss decreases with training loss
-  - [ ] GPU utilization >80% (check with `nvidia-smi`)
-  - [ ] No OOM errors in logs
-  - [ ] Checkpoints save successfully (check ${CHECKPOINT_DIR})
+  **Health Checks** (monitored during training):
+  - [x] Loss decreases steadily ✅ (9.01 → 1.44 at step 3,500)
+  - [x] Gradient norms healthy ✅
+  - [ ] Validation loss evaluated at step 5,000
+  - [x] GPU utilization ~70% ✅
+  - [x] No OOM errors ✅
+  - [ ] First checkpoint at step 5,000
 
-  **Quick monitoring script**:
-  ```bash
-  # Monitor latest log file
-  tail -f experiments/exp001-small-100k-ctx512-s32/logs/*.log
+  **Monitoring**:
+  - Check background process: `BashOutput tool with bash_id: b646b4`
+  - Monitor GPU: `nvidia-smi`
+  - Check checkpoints: `ls -lth ~/Desktop/checkpoints/tct_small/`
 
-  # Check GPU usage
-  watch -n 5 nvidia-smi
+### 3.4 Training Timeline & Progress
 
-  # Check latest checkpoint
-  ls -lth ${HOME}/Desktop/checkpoints/exp001-small-100k-ctx512-s32/ | head -5
-  ```
+**Small Model (20M params) on 100k workflows** (RTX 4070):
+- **Total iterations**: 50,000
+- **Estimated time**: ~2.5 hours
+- **Checkpoint frequency**: Every 5,000 steps (~30 minutes)
+- **Validation frequency**: Every 5,000 steps
 
-### 3.4 Training Continuation / Resumption (if interrupted)
+**Current Progress** (as of last check):
+- Step: ~3,500/50,000 (7%)
+- Loss: 9.01 → 1.44 (strong learning ✅)
+- Speed: ~167-199ms/step, ~195k tokens/sec
+- Time remaining: ~2 hours
 
-**IMPORTANT**: If training is interrupted (crash, OOM, manual stop, etc.), you can resume from the last checkpoint!
-
-- [ ] **Find last checkpoint**:
-  ```bash
-  cd ~/git/nanochat-tct
-  EXP_NAME="exp001-small-100k-ctx512-s32"
-  CHECKPOINT_DIR="${HOME}/Desktop/checkpoints/${EXP_NAME}"
-
-  # List all checkpoints
-  ls -lt ${CHECKPOINT_DIR}/model_*.pt
-
-  # Find the latest iteration number
-  LATEST_CKPT=$(ls ${CHECKPOINT_DIR}/model_*.pt | sed 's/.*model_0*\([0-9]*\)\.pt/\1/' | sort -n | tail -1)
-  echo "Latest checkpoint: iteration ${LATEST_CKPT}"
-  ```
-
-- [ ] **Resume training from checkpoint**:
-  ```bash
-  cd ~/git/nanochat-tct
-
-  EXP_NAME="exp001-small-100k-ctx512-s32"
-  DATA_DIR="${HOME}/Desktop/data/prepared-100k-512-s32"
-  CHECKPOINT_DIR="${HOME}/Desktop/checkpoints/${EXP_NAME}"
-
-  # Get latest checkpoint iteration
-  LATEST_CKPT=$(ls ${CHECKPOINT_DIR}/model_*.pt | sed 's/.*model_0*\([0-9]*\)\.pt/\1/' | sort -n | tail -1)
-
-  # Resume training (will load model_XXXXXX.pt and optim_XXXXXX.pt)
-  python -m scripts.tct_train \
-    --model_size=small \
-    --data_dir=${DATA_DIR} \
-    --checkpoint_dir=${CHECKPOINT_DIR} \
-    --num_iterations=50000 \
-    --device_batch_size=32 \
-    --eval_every=500 \
-    --resume_from_iteration=${LATEST_CKPT} \
-    2>&1 | tee experiments/${EXP_NAME}/logs/training_resumed_$(date +%Y%m%d_%H%M%S).log
-  ```
-
-  **What happens on resume**:
-  1. Script loads `model_${LATEST_CKPT}.pt` (model weights)
-  2. Script loads `optim_${LATEST_CKPT}.pt` (optimizer state - Adam momentum, etc.)
-  3. Training continues from iteration `${LATEST_CKPT} + 1`
-  4. Learning rate schedule continues from correct step
-  5. All state is preserved - exact continuation!
-
-- [ ] **Verify resumption worked**:
-  ```bash
-  # Check logs for resumption message
-  tail -50 experiments/${EXP_NAME}/logs/training_resumed_*.log | grep -i "resumed\|checkpoint"
-
-  # Should see something like:
-  # "Resuming from checkpoint: iteration 15000"
-  # "Loaded model weights from: .../model_015000.pt"
-  # "Loaded optimizer state from: .../optim_015000.pt"
-  ```
-
-### 3.5 Training Timeline & Expectations
-
-**Small Model (20M params) on 100k workflows**:
-- **Single GPU (e.g., RTX 4090)**: ~16-20 hours for 50k iterations
-- **8×A100**: ~2-3 hours for 50k iterations
-- **Checkpoints**: Every 5k iterations = ~2-3 hours apart (single GPU)
+**Expected Milestones**:
+- Step 5,000 (30 min): First checkpoint + validation
+- Step 10,000 (1h): Second checkpoint
+- Step 25,000 (2h): Mid-training checkpoint
+- Step 50,000 (2.5h): Final model
 
 **Expected Results** (after 50k iterations):
-- Training loss: <2.0 (ideally 1.5-1.8)
-- Validation loss: <2.5 (some gap is normal)
-- Gradient norm: stable in 0.5-2.0 range
-- Generated workflows: Valid JSON structure with recognizable GitHub Actions syntax
-
-**If training doesn't finish in one session**:
-- Checkpoints saved every 5k iterations provide resumption points
-- Can stop/resume as many times as needed
-- Total progress = last checkpoint iteration → target iteration
+- Training loss: <2.0 (ideally 1.0-1.5)
+- Validation loss: <2.5
+- Perplexity: <10
+- Generated workflows: Valid JSON with GitHub Actions schema
 
 ---
 
