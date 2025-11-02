@@ -9,6 +9,8 @@ Development guide for integrating TCT tokenization into nanochat to train workfl
 - TCT's schema-aware tokenization (8,192 vocab, optimized for workflows)
 - 100k real-world workflows (~/Desktop/data/workflows-100k/json/)
 
+**Configuration**: context_size=1024, stride=32 (finalized after analysis)
+
 **Success criteria**: Generate valid, useful GitHub Actions workflows
 
 ## 📂 Repository Structure
@@ -71,13 +73,14 @@ cd ~/git/nanochat-tct/tct-bundle/scripts
 python3 prepare_training_data.py \
   --input ~/Desktop/data/workflows-100k/json/ \
   --output ~/Desktop/data/prepared-sample/ \
-  --context-size 512 \
+  --context-size 1024 \
+  --stride 32 \
   --train-split 0.8 \
   --max-files 10
 
 # Verify output
 python3 -c "import torch; print(torch.load('~/Desktop/data/prepared-sample/train.pt').shape)"
-# Expected: torch.Size([N, 513]) where N = number of windows
+# Expected: torch.Size([N, 1024]) where N = number of windows
 ```
 
 ### Phase 2: Integration (First Training Run)
@@ -102,16 +105,16 @@ tokenizer = TCTTokenizer()
 # Use pre-prepared TCT data
 train_loader = tokenizing_distributed_data_loader(
     device_batch_size=32,
-    context_size=512,
+    context_size=1024,
     split="train",
     data_dir=os.path.expanduser("~/Desktop/data/prepared-sample/")
 )
 
 # Model config optimized for workflows
-config = get_config("small")  # Start with small (50M) for quick testing
+config = get_config("small")  # Start with small (20M) for quick testing
 model = GPT(
     vocab_size=config["vocab_size"],      # 8192
-    context_size=config["context_size"],  # 512
+    context_size=config["context_size"],  # 1024
     d_model=config["d_model"],
     n_layers=config["n_layers"],
     n_heads=config["n_heads"],
@@ -140,12 +143,14 @@ If smoke test passes → integration successful!
 cd ~/git/nanochat-tct/tct-bundle/scripts
 python3 prepare_training_data.py \
   --input ~/Desktop/data/workflows-100k/json/ \
-  --output ~/Desktop/data/prepared/ \
-  --context-size 512 \
+  --output ~/Desktop/data/prepared-100k-1024-s32/ \
+  --context-size 1024 \
+  --stride 32 \
   --train-split 0.8
 
-# Takes ~5 minutes, creates ~5GB of data
-# Output: train.pt (~2M windows), val.pt (~500k windows)
+# Takes ~3 minutes, creates ~3GB of data
+# Output: train.pt (772k windows), val.pt (193k windows)
+# Total: 965k windows from 100k workflows
 ```
 
 **Step 7: Choose model size & train**
@@ -173,19 +178,20 @@ See `tct-bundle/adapters/model_config.py` for complete configs.
 ## 📊 Model Configurations
 
 All configs optimized for workflows (not chat):
-- **Vocab**: 8,192 (not 50k+ BPE)
-- **Context**: 512 (not 2048 - workflows average 180 tokens)
-- **Layers**: 6-12 (not 20+ - structured data is easier than natural language)
+- **Vocab**: 8,192 (TCT base vocabulary)
+- **Context**: 1024 (handles 98th percentile of workflow lengths)
+- **Layers**: 6-12 (structured data requires less depth than natural language)
+- **Position encoding**: Strided windowing (stride=32) keeps positions < 8,192
 
 ```python
-# Small (50M params)
-vocab=8192, context=512, d_model=512, layers=6, heads=8
+# Small (20M params) - Current training run ✅
+vocab=8192, context=1024, d_model=384, layers=8, heads=6
 
-# Medium (100M params) ⭐ Recommended
-vocab=8192, context=512, d_model=768, layers=8, heads=12
+# Medium (100M params) ⭐ Recommended for production
+vocab=8192, context=1024, d_model=768, layers=8, heads=12
 
-# Large (200M params)
-vocab=8192, context=512, d_model=1024, layers=12, heads=16
+# Large (200M params) - Maximum quality
+vocab=8192, context=1024, d_model=1024, layers=12, heads=16
 ```
 
 ## ✅ Quality Checkpoints
