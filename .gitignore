@@ -5,3 +5,10 @@ rustbpe/target/
 dev-ignore/
 report.md
 eval_bundle/
+
+# TCT wheel files and build artifacts
+*.whl
+*wheel*.zip
+tct-github-workflow/
+tct-github-workflow-py/
+tct/
