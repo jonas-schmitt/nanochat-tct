@@ -103,104 +103,45 @@ To customize your nanochat, see [Guide: infusing identity to your nanochat](http
 
 Additionally, to add new abilities to nanochat, see [Guide: counting r in strawberry (and how to add abilities generally)](https://github.com/karpathy/nanochat/discussions/164).
 
-## TCT Extension: GitHub Actions Workflow Generation
+## TCT Extension: Workflow Generation
 
-This fork extends nanochat with **TCT (Type-Constrained Tokenization)** for training models to generate GitHub Actions workflows. TCT is a schema-aware tokenization method that significantly improves compression and generation quality for structured data like YAML/JSON workflows.
+This fork extends nanochat to train models for GitHub Actions workflow generation using **TCT (Type-Constrained Tokenization)** - a schema-aware tokenization approach optimized for structured data.
 
-### What is TCT?
-
-**Type-Constrained Tokenization (TCT)** is a specialized tokenization approach that:
-- Uses a compact 8,192 token vocabulary (vs. 50k-200k for GPT-2/4 BPE)
-- Encodes workflow structure (keys, values, indentation) explicitly
-- Achieves 9.3% fewer tokens than Tiktoken GPT-4o on typical workflows (measured on benchmark set)
-- Generates schema-compliant outputs (valid JSON/YAML with required fields)
-
-### Training Workflow Generation Models
-
-The TCT integration allows training models specifically for GitHub Actions workflows:
+### Quick Start
 
 ```bash
-# 1. Prepare workflow training data (100k workflows, strided windowing)
+# 1. Prepare workflow data
 cd tct-bundle/scripts
 python prepare_training_data.py \
-  --input ~/Desktop/data/workflows-100k/json/ \
-  --output ~/Desktop/data/prepared-100k-1024-s32/ \
-  --context-size 1024 \
-  --stride 32 \
-  --train-split 0.8
+  --input ~/data/workflows/ \
+  --output ~/data/prepared/ \
+  --context-size 1024
 
-# 2. Train a Small model (20M params, ~2.5 hours on RTX 4070)
+# 2. Train model
 cd ~/git/nanochat-tct
 python -m scripts.tct_train
 ```
 
-**Model configurations** (optimized for workflows, not chat):
-- **Small** (20M params): 384d×8L×6H, 1024 context, ~2.5h single GPU
-- **Medium** (100M params): 768d×8L×12H, 1024 context, ~8h single GPU
-- **Large** (200M params): 1024d×12L×16H, 1024 context, ~15h single GPU
+### Key Differences
 
-All configs use `vocab_size=8192` (TCT base vocabulary) and `context_size=1024` (handles 98th percentile of workflow lengths).
+The TCT extension adapts nanochat for structured workflow generation:
+- **Tokenizer**: TCT (8,192 vocab) instead of GPT-4 BPE (50k+ vocab)
+- **Data**: Pre-windowed GitHub workflows instead of streaming text
+- **Context**: 1024 tokens (optimized for typical workflow lengths)
+- **Output**: Valid JSON/YAML workflows with required schema fields
 
-### Architecture Differences from Standard Nanochat
+### Model Configurations
 
-| Component | Standard Nanochat | TCT Extension |
-|-----------|-------------------|---------------|
-| **Tokenizer** | GPT-4 BPE (50k+ vocab) | TCT (8,192 vocab) |
-| **Training Data** | FineWeb text shards | GitHub workflows (JSON) |
-| **Window Format** | Raw tokens | `[position, tok_0, ..., tok_N]` |
-| **Context Size** | 2048 tokens | 1024 tokens (optimized for workflows) |
-| **Data Preparation** | Streaming tokenization | Pre-windowed with stride=32 |
-| **Generation** | Text completion | Structured workflow generation |
+All models use `vocab_size=8192` and `context_size=1024`:
+- **Small** (20M params): 384d×8L×6H - Fast experimentation (~2.5h single GPU)
+- **Medium** (100M params): 768d×8L×12H - Production quality (~8h single GPU)
+- **Large** (200M params): 1024d×12L×16H - Maximum quality (~15h single GPU)
 
-### Key Files and Documentation
+### Documentation
 
-**TCT Integration Bundle** (`tct-bundle/`):
-- `adapters/tct_tokenizer_adapter.py` - Drop-in replacement for BPE tokenizer
-- `adapters/tct_dataloader.py` - Loads pre-prepared windowed data
-- `adapters/model_config.py` - Model configs optimized for workflows
-- `scripts/prepare_training_data.py` - Converts workflows to training windows
-- `docs/TCT.md` - Complete TCT API reference
-- `docs/SETUP.md` - Integration setup guide
-- `examples/` - Quickstart and windowing examples
-
-**Training & Generation**:
-- `scripts/tct_train.py` - Training script for workflow models
-- `scripts/generate_workflow.py` - Generate workflows from trained checkpoints
-
-**Documentation**:
+- `tct-bundle/` - TCT integration (adapters, data prep, examples)
 - `CLAUDE.md` - Developer guide for TCT integration
 - `TODO.md` - Training progress and experimentation roadmap
-- `POC_RESULTS.md` - Proof-of-concept validation results
-
-### Why TCT for Workflows?
-
-**Compression**: TCT uses 9.3% fewer tokens than Tiktoken GPT-4o on typical workflows (benchmark: medium complexity workflows with 50-200 lines)
-
-**Quality**: Schema-aware tokenization ensures generated workflows have:
-- Valid JSON/YAML structure
-- Required fields (`on`, `jobs`, `steps`)
-- Proper nesting and indentation
-- Semantically coherent job/step sequences
-
-**Efficiency**: Smaller vocabulary (8,192 vs 50k+) means:
-- Faster training (smaller embedding matrices)
-- Better token distribution (more training signal per token)
-- Lower memory footprint
-
-**Position Encoding**: Strided windowing (stride=32) keeps position tokens within vocab:
-- Longest workflow: 170k tokens → 5,301 positions (< 8,192 ✓)
-- Context=1024 covers 568% of average workflow (180 tokens)
-- Handles 98th percentile of workflow lengths
-
-### Current Status
-
-**Phase 3: Full Training (In Progress)**
-- **Model**: Small (20M params)
-- **Data**: 100k GitHub Actions workflows (965k windows)
-- **Configuration**: context=1024, stride=32, vocab=8192
-- **Progress**: Training running (~2.5h total on RTX 4070)
-
-See `TODO.md` for detailed progress and next steps.
 
 ## Questions
 
