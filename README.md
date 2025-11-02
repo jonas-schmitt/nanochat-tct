@@ -103,6 +103,105 @@ To customize your nanochat, see [Guide: infusing identity to your nanochat](http
 
 Additionally, to add new abilities to nanochat, see [Guide: counting r in strawberry (and how to add abilities generally)](https://github.com/karpathy/nanochat/discussions/164).
 
+## TCT Extension: GitHub Actions Workflow Generation
+
+This fork extends nanochat with **TCT (Type-Constrained Tokenization)** for training models to generate GitHub Actions workflows. TCT is a schema-aware tokenization method that significantly improves compression and generation quality for structured data like YAML/JSON workflows.
+
+### What is TCT?
+
+**Type-Constrained Tokenization (TCT)** is a specialized tokenization approach that:
+- Uses a compact 8,192 token vocabulary (vs. 50k+ for GPT-2/4 BPE)
+- Encodes workflow structure (keys, values, indentation) explicitly
+- Achieves ~9.3 chars/token compression on GitHub workflows (3x better than BPE)
+- Generates schema-compliant outputs (valid JSON/YAML with required fields)
+
+### Training Workflow Generation Models
+
+The TCT integration allows training models specifically for GitHub Actions workflows:
+
+```bash
+# 1. Prepare workflow training data (100k workflows, strided windowing)
+cd tct-bundle/scripts
+python prepare_training_data.py \
+  --input ~/Desktop/data/workflows-100k/json/ \
+  --output ~/Desktop/data/prepared-100k-1024-s32/ \
+  --context-size 1024 \
+  --stride 32 \
+  --train-split 0.8
+
+# 2. Train a Small model (20M params, ~2.5 hours on RTX 4070)
+cd ~/git/nanochat-tct
+python -m scripts.tct_train
+```
+
+**Model configurations** (optimized for workflows, not chat):
+- **Small** (20M params): 384d×8L×6H, 1024 context, ~2.5h single GPU
+- **Medium** (100M params): 768d×8L×12H, 1024 context, ~8h single GPU
+- **Large** (200M params): 1024d×12L×16H, 1024 context, ~15h single GPU
+
+All configs use `vocab_size=8192` (TCT base vocabulary) and `context_size=1024` (handles 98th percentile of workflow lengths).
+
+### Architecture Differences from Standard Nanochat
+
+| Component | Standard Nanochat | TCT Extension |
+|-----------|-------------------|---------------|
+| **Tokenizer** | GPT-4 BPE (50k+ vocab) | TCT (8,192 vocab) |
+| **Training Data** | FineWeb text shards | GitHub workflows (JSON) |
+| **Window Format** | Raw tokens | `[position, tok_0, ..., tok_N]` |
+| **Context Size** | 2048 tokens | 1024 tokens (optimized for workflows) |
+| **Data Preparation** | Streaming tokenization | Pre-windowed with stride=32 |
+| **Generation** | Text completion | Structured workflow generation |
+
+### Key Files and Documentation
+
+**TCT Integration Bundle** (`tct-bundle/`):
+- `adapters/tct_tokenizer_adapter.py` - Drop-in replacement for BPE tokenizer
+- `adapters/tct_dataloader.py` - Loads pre-prepared windowed data
+- `adapters/model_config.py` - Model configs optimized for workflows
+- `scripts/prepare_training_data.py` - Converts workflows to training windows
+- `docs/TCT.md` - Complete TCT API reference
+- `docs/SETUP.md` - Integration setup guide
+- `examples/` - Quickstart and windowing examples
+
+**Training & Generation**:
+- `scripts/tct_train.py` - Training script for workflow models
+- `scripts/generate_workflow.py` - Generate workflows from trained checkpoints
+
+**Documentation**:
+- `CLAUDE.md` - Developer guide for TCT integration
+- `TODO.md` - Training progress and experimentation roadmap
+- `POC_RESULTS.md` - Proof-of-concept validation results
+
+### Why TCT for Workflows?
+
+**Compression**: TCT achieves 9.3 chars/token vs. GPT-2's ~3.2 chars/token on workflows
+
+**Quality**: Schema-aware tokenization ensures generated workflows have:
+- Valid JSON/YAML structure
+- Required fields (`on`, `jobs`, `steps`)
+- Proper nesting and indentation
+- Semantically coherent job/step sequences
+
+**Efficiency**: Smaller vocabulary (8,192 vs 50k+) means:
+- Faster training (smaller embedding matrices)
+- Better token distribution (more training signal per token)
+- Lower memory footprint
+
+**Position Encoding**: Strided windowing (stride=32) keeps position tokens within vocab:
+- Longest workflow: 170k tokens → 5,301 positions (< 8,192 ✓)
+- Context=1024 covers 568% of average workflow (180 tokens)
+- Handles 98th percentile of workflow lengths
+
+### Current Status
+
+**Phase 3: Full Training (In Progress)**
+- **Model**: Small (20M params)
+- **Data**: 100k GitHub Actions workflows (965k windows)
+- **Configuration**: context=1024, stride=32, vocab=8192
+- **Progress**: Training running (~2.5h total on RTX 4070)
+
+See `TODO.md` for detailed progress and next steps.
+
 ## Questions
 
 nanochat is designed to be short and sweet. One big advantage of this is that we can package up all of the files together and copy paste them to your favorite LLM to ask arbitrary questions. As an example, I like to package up the repo using the [files-to-prompt](https://github.com/simonw/files-to-prompt) utility like so:
