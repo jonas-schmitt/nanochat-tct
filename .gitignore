@@ -12,3 +12,7 @@ eval_bundle/
 tct-github-workflow/
 tct-github-workflow-py/
 tct/
+
+# Model checkpoints (large files, don't commit)
+checkpoints/
+*.pt

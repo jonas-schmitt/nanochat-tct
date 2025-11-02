@@ -8,15 +8,15 @@ Three preset configurations optimized for GitHub Actions workflow generation:
 """
 
 # =============================================================================
-# Small Configuration (50M params) - Recommended for experiments
+# Small Configuration (20M params) - Optimized for workflow generation
 # =============================================================================
 SMALL_CONFIG = {
-    # Model architecture
+    # Model architecture (optimized for hierarchical workflows)
     "vocab_size": 8192,        # TCT vocabulary
     "context_size": 512,       # Workflows rarely exceed 500 tokens
-    "d_model": 512,            # Embedding dimension
-    "n_layers": 6,             # Transformer layers
-    "n_heads": 8,              # Attention heads
+    "d_model": 384,            # Embedding dimension (narrower, efficient)
+    "n_layers": 8,             # Transformer layers (depth for hierarchy)
+    "n_heads": 6,              # Attention heads (64 head_dim - optimal)
     "dropout": 0.1,
 
     # Training
@@ -38,9 +38,9 @@ SMALL_CONFIG = {
     "save_interval": 5000,
 
     # Estimated
-    "parameters": "~47M",
-    "training_time": "~3 hours on 8×A100",
-    "budget": "~$20",
+    "parameters": "~20M",
+    "training_time": "~2 hours on 8×A100",
+    "budget": "~$15",
 }
 
 # =============================================================================
