@@ -15,4 +15,4 @@ tct/
 
 # Model checkpoints (large files, don't commit)
 checkpoints/
-*.pt
+*.ptCLAUDE.md
