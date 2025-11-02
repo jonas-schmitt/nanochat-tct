@@ -27,13 +27,14 @@ except ImportError:
 from tqdm import tqdm
 
 
-def prepare_windows(json_files, context_size=256, skip_short=True):
+def prepare_windows(json_files, context_size=256, stride=1, skip_short=True):
     """
     Convert JSON workflows to training windows.
 
     Args:
         json_files: List of paths to JSON workflow files
         context_size: Window size (number of content tokens, excluding position token)
+        stride: Stride for windowing (default: 1 for all positions, 32 for vocab_size=8192)
         skip_short: Skip sequences shorter than context_size
 
     Returns:
@@ -59,10 +60,15 @@ def prepare_windows(json_files, context_size=256, skip_short=True):
                 # For short sequences, just create one window with padding
                 # (alternative: skip entirely if skip_short=True)
 
-            # Extract sliding windows
-            for start in range(0, len(tokens) - context_size):
+            # Extract strided windows (stride controls position sampling)
+            for start in range(0, len(tokens) - context_size, stride):
                 end = start + context_size
-                window = extract_window(tokens, start, end)
+                # Map position: divide by stride to keep position tokens < 8192
+                mapped_start = start // stride
+                # Extract window with mapped position
+                window_tokens = tokens[start:end]
+                # Create window: [mapped_position, content_tok_0, ..., content_tok_N]
+                window = [mapped_start] + window_tokens
                 windows.append(window)
 
         except Exception as e:
@@ -104,6 +110,12 @@ def main():
         help="Train/val split ratio (default: 0.8 for 80%% train)",
     )
     parser.add_argument(
+        "--stride",
+        type=int,
+        default=1,
+        help="Stride for windowing (default: 1 for all positions, use 32 for vocab_size=8192)",
+    )
+    parser.add_argument(
         "--no-skip-short",
         action="store_true",
         help="Don't skip sequences shorter than context_size",
@@ -124,12 +136,14 @@ def main():
 
     print(f"Found {len(json_files)} JSON workflow files")
     print(f"Context size: {args.context_size}")
+    print(f"Stride: {args.stride}" + (" (strided windowing for vocab_size=8192)" if args.stride > 1 else ""))
     print()
 
     # Prepare windows
     windows = prepare_windows(
         json_files,
         context_size=args.context_size,
+        stride=args.stride,
         skip_short=not args.no_skip_short,
     )
 
@@ -174,6 +188,7 @@ def main():
     # Save metadata
     metadata = {
         "context_size": args.context_size,
+        "stride": args.stride,
         "train_split": args.train_split,
         "num_workflows": len(json_files),
         "num_windows": len(windows),
