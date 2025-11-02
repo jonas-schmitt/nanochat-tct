@@ -141,7 +141,6 @@ All models use `vocab_size=8192` and `context_size=1024`:
 
 - `tct-bundle/` - TCT integration (adapters, data prep, examples)
 - `TODO.md` - Training progress and experimentation roadmap
-- `CLAUDE.md` - Developer guide for TCT integration (local only, not in git)
 
 ## Questions
 
