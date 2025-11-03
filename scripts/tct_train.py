@@ -35,7 +35,7 @@ from nanochat.loss_eval import evaluate_bpb
 # TCT imports
 from model_config import get_config
 from tct_tokenizer_adapter import TCTTokenizer
-from tct_dataloader import create_dataloader
+from tct_epoch_dataloader import create_epoch_offset_dataloader
 
 print_banner()
 
@@ -45,8 +45,8 @@ run = "dummy" # wandb run name ("dummy" = no logging)
 # Runtime
 device_type = "" # cuda|cpu|mps (empty = autodetect)
 # Model
-model_size = "small" # small|medium|large
-data_dir = str(Path.home() / "Desktop/data/prepared-100k-1024-s32") # TCT prepared data directory
+model_size = "medium-small" # small|medium-small|medium|large
+data_dir = str(Path.home() / "Desktop/data/workflows-100k/json") # Workflow JSON directory
 # Training
 num_iterations = 50000 # number of optimization steps (-1 = use from config)
 device_batch_size = 32 # per-device batch size
@@ -142,47 +142,54 @@ optimizer = torch.optim.AdamW(
 )
 print0()
 
-# Initialize dataloaders
-print0(f"Loading data from {data_dir}...")
-data_path = Path(data_dir)
-train_path = data_path / "train.pt"
-val_path = data_path / "val.pt"
+# Initialize dataloaders with epoch-based offset windowing
+print0(f"Loading workflows from {data_dir}...")
 
-if not train_path.exists():
-    print0(f"Error: Training data not found at {train_path}")
-    print0("Run: python tct-bundle/scripts/prepare_training_data.py")
+if not Path(data_dir).exists():
+    print0(f"Error: Workflow directory not found: {data_dir}")
     sys.exit(1)
 
-train_loader = create_dataloader(
-    train_path,
+print0("Creating epoch-based offset dataloaders...")
+train_loader = create_epoch_offset_dataloader(
+    workflow_dir=data_dir,
+    context_size=config["context_size"],
+    offset_stride=32,  # 32 different views across epochs
     batch_size=device_batch_size,
-    shuffle=True,
-    num_workers=0, # 0 for debugging, increase for performance
+    split="train",
+    train_split=0.9,
+    num_workers=0,  # 0 for debugging, increase for performance
     pin_memory=(device_type == "cuda"),
 )
 
-if val_path.exists():
-    val_loader = create_dataloader(
-        val_path,
-        batch_size=device_batch_size,
-        shuffle=False,
-        num_workers=0,
-        pin_memory=(device_type == "cuda"),
-    )
-    has_val = True
-else:
-    print0("Warning: No validation data found")
-    has_val = False
+val_loader = create_epoch_offset_dataloader(
+    workflow_dir=data_dir,
+    context_size=config["context_size"],
+    offset_stride=32,
+    batch_size=device_batch_size,
+    split="val",
+    train_split=0.9,
+    num_workers=0,
+    pin_memory=(device_type == "cuda"),
+)
+has_val = True
 
+train_dataset = train_loader.dataset
+val_dataset = val_loader.dataset
+
+print0(f"Training windows (epoch 0): {len(train_dataset)}")
+print0(f"Validation windows (epoch 0): {len(val_dataset)}")
 print0()
 
-# Create infinite iterator for training
-def infinite_dataloader(loader):
+# Create infinite iterator for training with epoch updates
+def infinite_dataloader_with_epochs(loader, dataset):
+    epoch = 0
     while True:
+        dataset.set_epoch(epoch)
         for batch in loader:
             yield batch
+        epoch += 1
 
-train_iter = infinite_dataloader(train_loader)
+train_iter = infinite_dataloader_with_epochs(train_loader, train_dataset)
 
 # Learning rate scheduler
 def get_lr_multiplier(step):
@@ -227,7 +234,8 @@ for step in range(config["max_iters"] + 1):
                 val_losses.append(loss.item())
 
         val_loss = sum(val_losses) / len(val_losses)
-        print0(f"Step {step:05d} | Val loss: {val_loss:.4f}")
+        val_perplexity = torch.exp(torch.tensor(val_loss)).item()
+        print0(f"Step {step:05d} | Val loss: {val_loss:.4f} | Val perplexity: {val_perplexity:.2f}")
 
         if val_loss < min_val_loss:
             min_val_loss = val_loss
@@ -235,6 +243,7 @@ for step in range(config["max_iters"] + 1):
         wandb_run.log({
             "step": step,
             "val/loss": val_loss,
+            "val/perplexity": val_perplexity,
             "total_training_time": total_training_time,
         })
 
@@ -309,16 +318,18 @@ for step in range(config["max_iters"] + 1):
 
     tokens_per_sec = int(device_batch_size * config["context_size"] / dt)
     pct_done = 100 * step / config["max_iters"]
+    train_perplexity = torch.exp(torch.tensor(debiased_loss)).item()
 
     if step % 10 == 0:
         print0(f"step {step:05d}/{config['max_iters']:05d} ({pct_done:.1f}%) | "
-               f"loss: {debiased_loss:.4f} | lr: {config['learning_rate'] * lrm:.2e} | "
-               f"dt: {dt*1000:.1f}ms | tok/s: {tokens_per_sec:,}")
+               f"loss: {debiased_loss:.4f} | ppl: {train_perplexity:.2f} | "
+               f"lr: {config['learning_rate'] * lrm:.2e} | dt: {dt*1000:.1f}ms | tok/s: {tokens_per_sec:,}")
 
     if step % 100 == 0:
         wandb_run.log({
             "step": step,
             "train/loss": debiased_loss,
+            "train/perplexity": train_perplexity,
             "train/lr": config["learning_rate"] * lrm,
             "train/dt": dt,
             "train/tok_per_sec": tokens_per_sec,

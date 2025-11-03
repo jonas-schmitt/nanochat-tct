@@ -27,7 +27,7 @@ except ImportError:
 from tqdm import tqdm
 
 
-def prepare_windows(json_files, context_size=256, stride=1, skip_short=True):
+def prepare_windows(json_files, context_size=256, stride=1, position_stride=None, skip_short=True):
     """
     Convert JSON workflows to training windows.
 
@@ -35,12 +35,18 @@ def prepare_windows(json_files, context_size=256, stride=1, skip_short=True):
         json_files: List of paths to JSON workflow files
         context_size: TOTAL window size (including position token)
                      E.g., context_size=1024 means 1 position + 1023 content tokens
-        stride: Stride for windowing (default: 1 for all positions, 32 for vocab_size=8192)
+        stride: Stride for windowing (how much to slide between windows)
+        position_stride: Stride for position mapping (defaults to stride if not specified)
+                        E.g., stride=512, position_stride=32 means:
+                        - Windows slide by 512 tokens (50% overlap for 1024 context)
+                        - But positions mapped with granularity of 32 tokens (for vocab)
         skip_short: Skip sequences shorter than context_size
 
     Returns:
         List of windows: [[position, tok_0, ..., tok_N], ...] each of length context_size
     """
+    if position_stride is None:
+        position_stride = stride
     windows = []
     skipped = 0
 
@@ -64,11 +70,12 @@ def prepare_windows(json_files, context_size=256, stride=1, skip_short=True):
                 # For short sequences, just create one window with padding
                 # (alternative: skip entirely if skip_short=True)
 
-            # Extract strided windows (stride controls position sampling)
+            # Extract strided windows (stride controls window sliding)
             for start in range(0, len(tokens) - content_size + 1, stride):
                 end = start + content_size
-                # Map position: divide by stride to keep position tokens < 8192
-                mapped_start = start // stride
+                # Map position: divide by position_stride to keep position tokens < 8192
+                # This allows fine-grained position info even with large windowing stride
+                mapped_start = start // position_stride
                 # Extract window with mapped position
                 window_tokens = tokens[start:end]
                 # Create window: [mapped_position, content_tok_0, ..., content_tok_(N-1)]
@@ -118,7 +125,13 @@ def main():
         "--stride",
         type=int,
         default=1,
-        help="Stride for windowing (default: 1 for all positions, use 32 for vocab_size=8192)",
+        help="Stride for windowing (default: 1 for all positions, use 512 for 50%% overlap)",
+    )
+    parser.add_argument(
+        "--position-stride",
+        type=int,
+        default=None,
+        help="Stride for position mapping (default: same as --stride, use 32 for vocab_size=8192)",
     )
     parser.add_argument(
         "--no-skip-short",
@@ -141,7 +154,13 @@ def main():
 
     print(f"Found {len(json_files)} JSON workflow files")
     print(f"Context size: {args.context_size}")
-    print(f"Stride: {args.stride}" + (" (strided windowing for vocab_size=8192)" if args.stride > 1 else ""))
+    print(f"Windowing stride: {args.stride}")
+    position_stride = args.position_stride if args.position_stride is not None else args.stride
+    print(f"Position stride: {position_stride} (for vocab mapping)")
+    if args.stride != position_stride:
+        overlap_pct = ((args.context_size - args.stride) / args.context_size) * 100
+        print(f"  → {overlap_pct:.1f}% overlap between windows")
+        print(f"  → Position granularity: every {position_stride} tokens")
     print()
 
     # Prepare windows
@@ -149,6 +168,7 @@ def main():
         json_files,
         context_size=args.context_size,
         stride=args.stride,
+        position_stride=args.position_stride,
         skip_short=not args.no_skip_short,
     )
 
@@ -194,6 +214,7 @@ def main():
     metadata = {
         "context_size": args.context_size,
         "stride": args.stride,
+        "position_stride": position_stride,
         "train_split": args.train_split,
         "num_workflows": len(json_files),
         "num_windows": len(windows),

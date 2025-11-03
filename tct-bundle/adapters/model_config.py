@@ -44,6 +44,42 @@ SMALL_CONFIG = {
 }
 
 # =============================================================================
+# Medium-Small Configuration (~35M params) - Deep for hierarchy, narrow for efficiency
+# =============================================================================
+MEDIUM_SMALL_CONFIG = {
+    # Model architecture (depth-first: trust TCT position encoding for context)
+    "vocab_size": 8193,        # TCT vocabulary (8192 base) + 1 dedicated PAD token (8192)
+    "context_size": 1024,      # Total window size (1 position + 1023 content tokens)
+    "d_model": 384,            # Same as small (position tokens handle context disambiguation)
+    "n_layers": 12,            # +50% MORE DEPTH than small for workflow hierarchy
+    "n_heads": 6,              # head_dim = 64 (optimal)
+    "dropout": 0.1,
+
+    # Training
+    "batch_size": 32,
+    "gradient_accumulation": 4,  # Effective batch = 128
+    "learning_rate": 3e-4,
+    "weight_decay": 0.1,
+    "warmup_iters": 1500,
+    "max_iters": 50000,
+
+    # Optimization
+    "beta1": 0.9,
+    "beta2": 0.95,
+    "grad_clip": 1.0,
+
+    # Logging
+    "eval_interval": 500,
+    "log_interval": 10,
+    "save_interval": 5000,
+
+    # Estimated
+    "parameters": "~35M",
+    "training_time": "~2.5-3 hours on 8×A100",
+    "budget": "~$20",
+}
+
+# =============================================================================
 # Medium Configuration (100M params) - Recommended for production
 # =============================================================================
 MEDIUM_CONFIG = {
@@ -121,6 +157,7 @@ LARGE_CONFIG = {
 
 CONFIGS = {
     "small": SMALL_CONFIG,
+    "medium-small": MEDIUM_SMALL_CONFIG,
     "medium": MEDIUM_CONFIG,
     "large": LARGE_CONFIG,
 }
@@ -130,7 +167,7 @@ def get_config(size="medium"):
     Get model configuration by size.
 
     Args:
-        size: "small", "medium", or "large"
+        size: "small", "medium-small", "medium", or "large"
 
     Returns:
         Configuration dictionary
@@ -141,26 +178,29 @@ def get_config(size="medium"):
 
 def print_config_comparison():
     """Print comparison table of all configurations"""
-    print("=" * 80)
+    print("=" * 100)
     print("TCT Workflow Generation - Model Configurations")
-    print("=" * 80)
+    print("=" * 100)
     print()
-    print(f"{'Metric':<25} {'Small':<20} {'Medium':<20} {'Large':<20}")
-    print("-" * 80)
+    print(f"{'Metric':<25} {'Small':<18} {'Medium-Small':<18} {'Medium':<18} {'Large':<18}")
+    print("-" * 100)
 
     keys = ["vocab_size", "context_size", "d_model", "n_layers", "n_heads",
             "parameters", "training_time", "budget"]
 
     for key in keys:
-        values = [CONFIGS[size].get(key, "N/A") for size in ["small", "medium", "large"]]
-        print(f"{key:<25} {str(values[0]):<20} {str(values[1]):<20} {str(values[2]):<20}")
+        values = [CONFIGS[size].get(key, "N/A") for size in ["small", "medium-small", "medium", "large"]]
+        print(f"{key:<25} {str(values[0]):<18} {str(values[1]):<18} {str(values[2]):<18} {str(values[3]):<18}")
 
-    print("=" * 80)
+    print("=" * 100)
     print()
     print("Recommendations:")
-    print("  - Small: Quick experiments, proof of concept")
-    print("  - Medium: Production workflow generation (RECOMMENDED)")
-    print("  - Large: Maximum quality, research")
+    print("  - Small: Quick experiments, proof of concept (~20M)")
+    print("  - Medium-Small: Deep & efficient (384×12, ~35M) ⭐ RECOMMENDED first try with ASCII+position encoding")
+    print("  - Medium: Production workflow generation (~103M)")
+    print("  - Large: Maximum quality, research (~205M)")
+    print()
+    print("Note: Start with Medium-Small. If performance < 95%, scale to Medium (512×10 or 768×8).")
     print()
 
 if __name__ == "__main__":
