@@ -15,4 +15,7 @@ tct/
 
 # Model checkpoints (large files, don't commit)
 checkpoints/
-*.ptCLAUDE.md
+*.pt
+
+# Local developer guide (keep local-only)
+CLAUDE.md
