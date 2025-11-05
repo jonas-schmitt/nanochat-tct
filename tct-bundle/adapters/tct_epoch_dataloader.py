@@ -35,7 +35,8 @@ class EpochOffsetWorkflowDataset(Dataset):
     This provides natural data augmentation while maintaining no overlap within epochs.
     """
 
-    def __init__(self, workflow_files, context_size=1024, offset_stride=32, split="train"):
+    def __init__(self, workflow_files, context_size=1024, offset_stride=32, split="train",
+                 workflow_dir=None, train_split=0.9):
         """
         Initialize dataset.
 
@@ -44,6 +45,8 @@ class EpochOffsetWorkflowDataset(Dataset):
             context_size: Size of context window (default: 1024)
             offset_stride: Stride for epoch offset (default: 32, gives 32 different views)
             split: "train" or "val" (affects shuffling)
+            workflow_dir: Path to workflow directory (for caching, optional)
+            train_split: Train/val split ratio (for cache naming, default: 0.9)
         """
         self.workflow_files = list(workflow_files)
         self.context_size = context_size
@@ -53,14 +56,43 @@ class EpochOffsetWorkflowDataset(Dataset):
         # Current epoch offset (set by set_epoch())
         self.current_offset = 0
 
-        # Pre-load and tokenize all workflows
-        print(f"Loading and tokenizing {len(self.workflow_files)} workflows...")
-        self.tokenized_workflows = []
-        for wf_file in self.workflow_files:
-            with open(wf_file) as f:
-                json_str = f.read()
-            tokens = encode(json_str)
-            self.tokenized_workflows.append(torch.tensor(tokens, dtype=torch.long))
+        # Try to load from cache if workflow_dir provided
+        cache_file = None
+        if workflow_dir is not None:
+            workflow_dir_path = Path(workflow_dir)
+            cache_dir = workflow_dir_path / ".cache"
+            cache_dir.mkdir(exist_ok=True)
+            # Cache key: split + train_split + number of files
+            cache_file = cache_dir / f"tokenized_{split}_split{int(train_split*100)}_{len(self.workflow_files)}files.pt"
+
+            if cache_file.exists():
+                print(f"Loading tokenized workflows from cache: {cache_file}")
+                try:
+                    self.tokenized_workflows = torch.load(cache_file)
+                    print(f"Loaded {len(self.tokenized_workflows)} tokenized workflows from cache ✅")
+                except Exception as e:
+                    print(f"Warning: Failed to load cache ({e}), will tokenize from scratch")
+                    cache_file = None  # Force re-tokenization
+                    self.tokenized_workflows = None
+
+        # Tokenize if no cache or cache load failed
+        if cache_file is None or not hasattr(self, 'tokenized_workflows') or self.tokenized_workflows is None:
+            print(f"Tokenizing {len(self.workflow_files)} workflows...")
+            self.tokenized_workflows = []
+            for wf_file in self.workflow_files:
+                with open(wf_file) as f:
+                    json_str = f.read()
+                tokens = encode(json_str)
+                self.tokenized_workflows.append(torch.tensor(tokens, dtype=torch.long))
+
+            # Save to cache if workflow_dir provided
+            if workflow_dir is not None and cache_file is not None:
+                print(f"Saving tokenized workflows to cache: {cache_file}")
+                try:
+                    torch.save(self.tokenized_workflows, cache_file)
+                    print(f"Cache saved successfully ✅")
+                except Exception as e:
+                    print(f"Warning: Failed to save cache ({e})")
 
         # Build initial window index
         self._rebuild_window_index()
@@ -209,6 +241,8 @@ def create_epoch_offset_dataloader(
         context_size=context_size,
         offset_stride=offset_stride,
         split=split,
+        workflow_dir=workflow_dir,
+        train_split=train_split,
     )
 
     # Create dataloader
@@ -218,7 +252,7 @@ def create_epoch_offset_dataloader(
         shuffle=(split == "train"),
         num_workers=num_workers,
         pin_memory=pin_memory,
-        drop_last=False,
+        drop_last=True,  # Drop incomplete batches to prevent OOM from recompilation
     )
 
     return loader

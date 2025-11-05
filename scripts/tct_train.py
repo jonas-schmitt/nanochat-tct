@@ -45,11 +45,11 @@ run = "dummy" # wandb run name ("dummy" = no logging)
 # Runtime
 device_type = "" # cuda|cpu|mps (empty = autodetect)
 # Model
-model_size = "medium-small" # small|medium-small|medium|large
+model_size = "medium" # small|medium-small|medium|medium-512|large-512|large
 data_dir = str(Path.home() / "Desktop/data/workflows-100k/json") # Workflow JSON directory
 # Training
 num_iterations = 50000 # number of optimization steps (-1 = use from config)
-device_batch_size = 32 # per-device batch size
+device_batch_size = 16 # per-device batch size (768×8 with context=1024 should fit in 8GB)
 # Optimization (will use defaults from model config if not overridden)
 learning_rate = -1.0 # learning rate (-1 = use config default)
 grad_clip = 1.0 # gradient clipping
@@ -61,6 +61,7 @@ eval_max_batches = 50 # max batches for validation
 save_every = 5000 # save checkpoint every N steps
 checkpoint_dir = "" # checkpoint directory (empty = auto)
 model_tag = "" # optional tag for checkpoint directory
+resume_from = "" # No resume - train from scratch
 
 # CLI config override
 config_keys = [k for k,v in globals().items() if not k.startswith('_') and isinstance(v, (int, float, bool, str))]
@@ -142,6 +143,41 @@ optimizer = torch.optim.AdamW(
 )
 print0()
 
+# Resume from checkpoint if specified
+start_step = 0
+if resume_from:
+    resume_path = Path(resume_from).expanduser()
+    if not resume_path.exists():
+        print0(f"Error: Checkpoint not found: {resume_path}")
+        sys.exit(1)
+
+    print0(f"Resuming from checkpoint: {resume_path}")
+    checkpoint = torch.load(resume_path, map_location=device)
+    orig_model.load_state_dict(checkpoint)
+
+    # Load optimizer state
+    optim_path = resume_path.parent / resume_path.name.replace("model_", "optim_")
+    if optim_path.exists():
+        print0(f"Loading optimizer state from: {optim_path}")
+        try:
+            optim_checkpoint = torch.load(optim_path, map_location=device)
+            optimizer.load_state_dict(optim_checkpoint)
+            print0("Optimizer state loaded successfully")
+        except Exception as e:
+            print0(f"Warning: Could not load optimizer state: {e}")
+            print0("Continuing with fresh optimizer state")
+
+    # Extract step number from checkpoint name (e.g., model_010000.pt -> 10000)
+    import re
+    match = re.search(r'_(\d+)\.pt$', resume_path.name)
+    if match:
+        start_step = int(match.group(1))
+        print0(f"Resuming from step: {start_step}")
+
+    # Recompile model after loading weights
+    model = torch.compile(orig_model, dynamic=False)
+    print0()
+
 # Initialize dataloaders with epoch-based offset windowing
 print0(f"Loading workflows from {data_dir}...")
 
@@ -150,10 +186,13 @@ if not Path(data_dir).exists():
     sys.exit(1)
 
 print0("Creating epoch-based offset dataloaders...")
+# For context=512, offset_stride=16 gives 32 epochs (512/16=32)
+# For context=1024, offset_stride=32 gives 32 epochs (1024/32=32)
+offset_stride = config["context_size"] // 32
 train_loader = create_epoch_offset_dataloader(
     workflow_dir=data_dir,
     context_size=config["context_size"],
-    offset_stride=32,  # 32 different views across epochs
+    offset_stride=offset_stride,
     batch_size=device_batch_size,
     split="train",
     train_split=0.9,
@@ -164,7 +203,7 @@ train_loader = create_epoch_offset_dataloader(
 val_loader = create_epoch_offset_dataloader(
     workflow_dir=data_dir,
     context_size=config["context_size"],
-    offset_stride=32,
+    offset_stride=offset_stride,
     batch_size=device_batch_size,
     split="val",
     train_split=0.9,
@@ -216,7 +255,7 @@ smooth_train_loss = 0
 ema_beta = 0.9
 total_training_time = 0
 
-for step in range(config["max_iters"] + 1):
+for step in range(start_step + 1, config["max_iters"] + 1):
     last_step = step == config["max_iters"]
 
     # Evaluate validation loss

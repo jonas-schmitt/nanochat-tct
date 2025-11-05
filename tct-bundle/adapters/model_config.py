@@ -84,20 +84,20 @@ MEDIUM_SMALL_CONFIG = {
 # =============================================================================
 MEDIUM_CONFIG = {
     # Model architecture
-    "vocab_size": 8192,        # TCT vocabulary (8192 base, stride=32 for position mapping)
+    "vocab_size": 8193,        # TCT vocabulary (8192 base) + 1 dedicated PAD token (8192)
     "context_size": 1024,      # Total window size (1 position + 1023 content tokens)
     "d_model": 768,            # Larger embeddings
     "n_layers": 8,             # More depth
     "n_heads": 12,             # More attention heads
-    "dropout": 0.1,
+    "dropout": 0.2,            # Increased from 0.1 for stronger regularization
 
     # Training
     "batch_size": 32,
     "gradient_accumulation": 4,
-    "learning_rate": 3e-4,
+    "learning_rate": 2e-4,     # Reduced from 3e-4 for more conservative training
     "weight_decay": 0.1,
     "warmup_iters": 2000,
-    "max_iters": 100000,
+    "max_iters": 50000,        # Reduced from 100k based on overfitting observations
 
     # Optimization
     "beta1": 0.9,
@@ -152,6 +152,78 @@ LARGE_CONFIG = {
 }
 
 # =============================================================================
+# Medium-512 Configuration (100M params, context=512) - GPU memory optimized
+# =============================================================================
+MEDIUM_512_CONFIG = {
+    # Model architecture
+    "vocab_size": 8193,        # TCT vocabulary (8192 base) + 1 dedicated PAD token (8192)
+    "context_size": 512,       # Reduced context for larger batch size / bigger model
+    "d_model": 768,            # Larger embeddings than medium-small
+    "n_layers": 8,             # Same depth as medium
+    "n_heads": 12,             # More attention heads
+    "dropout": 0.1,
+
+    # Training
+    "batch_size": 20,          # Larger batch possible with smaller context
+    "gradient_accumulation": 4,
+    "learning_rate": 3e-4,
+    "weight_decay": 0.1,
+    "warmup_iters": 2000,
+    "max_iters": 100000,
+
+    # Optimization
+    "beta1": 0.9,
+    "beta2": 0.95,
+    "grad_clip": 1.0,
+
+    # Logging
+    "eval_interval": 500,
+    "log_interval": 10,
+    "save_interval": 5000,
+
+    # Estimated
+    "parameters": "~100M",
+    "training_time": "~7-8 hours on RTX 4090",
+    "budget": "~$50",
+}
+
+# =============================================================================
+# Large-512 Configuration (183M params, context=512) - Maximum 8GB GPU capacity
+# =============================================================================
+LARGE_512_CONFIG = {
+    # Model architecture (LARGE model scaled for 8GB GPU)
+    "vocab_size": 8193,        # TCT vocabulary (8192 base) + 1 dedicated PAD token (8192)
+    "context_size": 512,       # Reduced context for 8GB memory constraint
+    "d_model": 1024,           # Large embeddings (16 heads × 64 head_dim)
+    "n_layers": 12,            # Deep model for workflow hierarchy
+    "n_heads": 16,             # head_dim = 64 (optimal)
+    "dropout": 0.2,            # Increased from 0.1 for stronger regularization
+
+    # Training
+    "batch_size": 20,          # Batch size for context=512
+    "gradient_accumulation": 4,
+    "learning_rate": 2e-4,     # Reduced from 3e-4 for more conservative training
+    "weight_decay": 0.1,
+    "warmup_iters": 2000,
+    "max_iters": 50000,        # Reduced from 100k (will resume from 10k → 50k total)
+
+    # Optimization
+    "beta1": 0.9,
+    "beta2": 0.95,
+    "grad_clip": 1.0,
+
+    # Logging
+    "eval_interval": 500,
+    "log_interval": 10,
+    "save_interval": 5000,
+
+    # Estimated
+    "parameters": "~183M",
+    "training_time": "~11-12 hours on RTX 4090",
+    "budget": "~$75",
+}
+
+# =============================================================================
 # Configuration Selection Helper
 # =============================================================================
 
@@ -159,6 +231,8 @@ CONFIGS = {
     "small": SMALL_CONFIG,
     "medium-small": MEDIUM_SMALL_CONFIG,
     "medium": MEDIUM_CONFIG,
+    "medium-512": MEDIUM_512_CONFIG,
+    "large-512": LARGE_512_CONFIG,
     "large": LARGE_CONFIG,
 }
 
