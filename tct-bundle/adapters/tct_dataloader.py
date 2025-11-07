@@ -194,7 +194,14 @@ class TCTEpochPrefixFIMDataset(Dataset):
                     self.prefix_index.append((wf_idx, window_start, prefix_len))
 
     def _get_window_positions(self, workflow_len):
-        """Get non-overlapping window start positions for a workflow."""
+        """
+        Get non-overlapping window start positions for a workflow.
+
+        CRITICAL: In epochs with offset > 0, we MUST include an initial short
+        window [0:offset] to ensure ALL tokens are seen in every epoch.
+        Without this, tokens [0:offset) are never trained on in later epochs,
+        creating systematic data gaps for beginning-of-workflow tokens.
+        """
         positions = []
 
         # Handle workflows smaller than context_size
@@ -203,11 +210,22 @@ class TCTEpochPrefixFIMDataset(Dataset):
                 positions.append(0)  # Only include in epoch 0
             return positions
 
+        # CRITICAL FIX: Add initial short window when offset > 0
+        # This window will be [0:offset] and padded to context_size in __getitem__
+        # Ensures all tokens from the beginning of the workflow are trained on
+        if self.current_offset > 0:
+            positions.append(0)
+
         # Create non-overlapping windows starting from offset
         pos = self.current_offset
         while pos + self.context_size <= workflow_len:
             positions.append(pos)
             pos += self.context_size
+
+        # CRITICAL FIX: Add final short window if there are remaining tokens
+        # This ensures tokens at the end of the workflow are also trained on
+        if pos < workflow_len:
+            positions.append(pos)
 
         return positions
 
