@@ -86,7 +86,7 @@ learning_rate = -1.0 # learning rate (-1 = use config default)
 grad_clip = 1.0 # gradient clipping
 warmup_iters = -1 # warmup iterations (-1 = use config default)
 # Evaluation
-eval_every = 2000 # evaluate val loss every N steps (more frequent for early feedback)
+eval_every = 5000 # evaluate val loss every N steps (aligned with checkpoints)
 eval_max_batches = 50 # max batches for validation
 # Checkpointing
 save_every = 5000 # save checkpoint every N steps
