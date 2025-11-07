@@ -1,31 +1,45 @@
 """
 Model Configuration for Workflow Generation with TCT
 
-Three preset configurations optimized for GitHub Actions workflow generation:
-- Small: 50M params, $20 budget
-- Medium: 100M params, $50 budget
-- Large: 200M params, $100 budget
+Six preset configurations optimized for GitHub Actions workflow generation:
+
+**Default (context=512, faster, recommended):**
+- Small:  20M params, ~2h training, $10 budget
+- Medium: 90M params, ~8h training, $45 budget  ⭐ RECOMMENDED
+- Large:  183M params, ~12h training, $75 budget
+
+**Alternative (context=1024, better coverage, slower):**
+- Small-1024:  20M params, ~3h training, $15 budget
+- Medium-1024: 90M params, ~12h training, $60 budget
+- Large-1024:  183M params, ~18h training, $90 budget
+
+**Context size tradeoffs:**
+- 512:  Covers 30% of workflows entirely, 2× faster than 1024
+- 1024: Covers 56% of workflows entirely, better for long workflows
+
+**Recommendation:** Start with Medium (512) for production, use Medium-1024 if
+workflows are frequently >512 tokens.
 """
 
 # =============================================================================
-# Small Configuration (20M params) - Optimized for workflow generation
+# Small Configuration (20M params, context=512) - Quick baseline
 # =============================================================================
 SMALL_CONFIG = {
-    # Model architecture (optimized for hierarchical workflows)
-    "vocab_size": 8192,        # TCT vocabulary (8192 base, stride=32 for position mapping)
-    "context_size": 1024,      # Total window size (1 position + 1023 content tokens)
-    "d_model": 384,            # Embedding dimension (narrower, efficient)
-    "n_layers": 8,             # Transformer layers (depth for hierarchy)
-    "n_heads": 6,              # Attention heads (64 head_dim - optimal)
-    "dropout": 0.2,            # Increased from 0.1 for stronger regularization
+    # Model architecture
+    "vocab_size": 8192,        # TCT vocabulary (8190 base + MASK + PAD)
+    "context_size": 512,       # Context window
+    "d_model": 384,            # Embedding dimension
+    "n_layers": 8,             # Transformer layers
+    "n_heads": 6,              # Attention heads (head_dim = 64)
+    "dropout": 0.2,            # Strong regularization
 
     # Training
     "batch_size": 32,
     "gradient_accumulation": 4,  # Effective batch = 128
-    "learning_rate": 2e-4,     # Reduced from 3e-4 for more conservative training
+    "learning_rate": 2e-4,
     "weight_decay": 0.1,
     "warmup_iters": 1000,
-    "max_iters": 50000,
+    "max_iters": 20000,        # Quick baseline
 
     # Optimization
     "beta1": 0.9,
@@ -39,65 +53,65 @@ SMALL_CONFIG = {
 
     # Estimated
     "parameters": "~20M",
-    "training_time": "~2 hours on 8×A100",
+    "training_time": "~2 hours on RTX 4090",
+    "budget": "~$10",
+}
+
+# =============================================================================
+# Small-1024 Configuration (20M params, context=1024) - Alternative baseline
+# =============================================================================
+SMALL_1024_CONFIG = {
+    # Model architecture (same as Small, but 1024 context)
+    "vocab_size": 8192,
+    "context_size": 1024,      # 2× context vs small
+    "d_model": 384,
+    "n_layers": 8,
+    "n_heads": 6,
+    "dropout": 0.2,
+
+    # Training (adjusted for larger context)
+    "batch_size": 16,          # Reduced for memory
+    "gradient_accumulation": 8,  # Effective batch = 128
+    "learning_rate": 2e-4,
+    "weight_decay": 0.1,
+    "warmup_iters": 1000,
+    "max_iters": 20000,
+
+    # Optimization
+    "beta1": 0.9,
+    "beta2": 0.95,
+    "grad_clip": 1.0,
+
+    # Logging
+    "eval_interval": 500,
+    "log_interval": 10,
+    "save_interval": 5000,
+
+    # Estimated
+    "parameters": "~20M",
+    "training_time": "~3 hours on RTX 4090",
     "budget": "~$15",
 }
 
 # =============================================================================
-# Medium-Small Configuration (~35M params) - Deep for hierarchy, narrow for efficiency
-# =============================================================================
-MEDIUM_SMALL_CONFIG = {
-    # Model architecture (depth-first: trust TCT position encoding for context)
-    "vocab_size": 8192,        # TCT vocabulary (8190 base + MASK at 8190 + PAD at 8191)
-    "context_size": 1024,      # Total window size (1 position + 1023 content tokens)
-    "d_model": 384,            # Same as small (position tokens handle context disambiguation)
-    "n_layers": 12,            # +50% MORE DEPTH than small for workflow hierarchy
-    "n_heads": 6,              # head_dim = 64 (optimal)
-    "dropout": 0.2,            # Increased from 0.1 for stronger regularization
-
-    # Training
-    "batch_size": 32,
-    "gradient_accumulation": 4,  # Effective batch = 128
-    "learning_rate": 2e-4,     # Reduced from 3e-4 for more conservative training
-    "weight_decay": 0.1,
-    "warmup_iters": 1500,
-    "max_iters": 50000,
-
-    # Optimization
-    "beta1": 0.9,
-    "beta2": 0.95,
-    "grad_clip": 1.0,
-
-    # Logging
-    "eval_interval": 500,
-    "log_interval": 10,
-    "save_interval": 5000,
-
-    # Estimated
-    "parameters": "~35M",
-    "training_time": "~2.5-3 hours on 8×A100",
-    "budget": "~$20",
-}
-
-# =============================================================================
-# Medium Configuration (100M params) - Recommended for production
+# Medium Configuration (90M params, context=512) - RECOMMENDED PRODUCTION ⭐
 # =============================================================================
 MEDIUM_CONFIG = {
-    # Model architecture
-    "vocab_size": 8192,        # TCT vocabulary (8190 base + MASK at 8190 + PAD at 8191)
-    "context_size": 1024,      # Total window size (1 position + 1023 content tokens)
-    "d_model": 768,            # Larger embeddings
-    "n_layers": 8,             # More depth
-    "n_heads": 12,             # More attention heads
-    "dropout": 0.2,            # Increased from 0.1 for stronger regularization
+    # Model architecture (10 layers for hierarchical workflow structure)
+    "vocab_size": 8192,
+    "context_size": 512,
+    "d_model": 768,            # GPT-2 Small standard
+    "n_layers": 10,            # +2 layers vs previous for hierarchy
+    "n_heads": 12,             # head_dim = 64
+    "dropout": 0.2,
 
     # Training
-    "batch_size": 32,
-    "gradient_accumulation": 4,
-    "learning_rate": 2e-4,     # Reduced from 3e-4 for more conservative training
+    "batch_size": 20,
+    "gradient_accumulation": 4,  # Effective batch = 80
+    "learning_rate": 2e-4,
     "weight_decay": 0.1,
     "warmup_iters": 2000,
-    "max_iters": 50000,        # Reduced from 100k based on overfitting observations
+    "max_iters": 40000,        # ~12 epochs (prevents overfitting)
 
     # Optimization
     "beta1": 0.9,
@@ -110,102 +124,66 @@ MEDIUM_CONFIG = {
     "save_interval": 5000,
 
     # Estimated
-    "parameters": "~103M",
-    "training_time": "~7 hours on 8×A100",
-    "budget": "~$50",
+    "parameters": "~90M",
+    "training_time": "~8 hours on RTX 4090",
+    "budget": "~$45",
 }
 
 # =============================================================================
-# Large Configuration (200M params) - Maximum quality
+# Medium-1024 Configuration (90M params, context=1024) - Alternative production
+# =============================================================================
+MEDIUM_1024_CONFIG = {
+    # Model architecture (same as Medium, but 1024 context)
+    "vocab_size": 8192,
+    "context_size": 1024,      # 2× context vs medium
+    "d_model": 768,
+    "n_layers": 10,
+    "n_heads": 12,
+    "dropout": 0.2,
+
+    # Training (adjusted for larger context)
+    "batch_size": 10,          # Reduced for memory
+    "gradient_accumulation": 8,  # Effective batch = 80
+    "learning_rate": 2e-4,
+    "weight_decay": 0.1,
+    "warmup_iters": 2000,
+    "max_iters": 40000,
+
+    # Optimization
+    "beta1": 0.9,
+    "beta2": 0.95,
+    "grad_clip": 1.0,
+
+    # Logging
+    "eval_interval": 500,
+    "log_interval": 10,
+    "save_interval": 5000,
+
+    # Estimated
+    "parameters": "~90M",
+    "training_time": "~12 hours on RTX 4090",
+    "budget": "~$60",
+}
+
+# =============================================================================
+# Large Configuration (183M params, context=512) - Maximum quality
 # =============================================================================
 LARGE_CONFIG = {
-    # Model architecture
-    "vocab_size": 8192,        # TCT vocabulary (8192 base, stride=32 for position mapping)
-    "context_size": 1024,      # Total window size (1 position + 1023 content tokens)
+    # Model architecture (maximum capacity for 8GB GPU)
+    "vocab_size": 8192,
+    "context_size": 512,
     "d_model": 1024,           # Large embeddings
     "n_layers": 12,            # Deep model
-    "n_heads": 16,             # Many attention heads
-    "dropout": 0.1,
+    "n_heads": 16,             # head_dim = 64
+    "dropout": 0.2,
 
     # Training
-    "batch_size": 32,
+    "batch_size": 20,
     "gradient_accumulation": 4,
-    "learning_rate": 3e-4,
+    "learning_rate": 2e-4,
     "weight_decay": 0.1,
     "warmup_iters": 2000,
-    "max_iters": 150000,
-
-    # Optimization
-    "beta1": 0.9,
-    "beta2": 0.95,
-    "grad_clip": 1.0,
-
-    # Logging
-    "eval_interval": 500,
-    "log_interval": 10,
-    "save_interval": 5000,
-
-    # Estimated
-    "parameters": "~205M",
-    "training_time": "~15 hours on 8×A100",
-    "budget": "~$100",
-}
-
-# =============================================================================
-# Medium-512 Configuration (100M params, context=512) - GPU memory optimized
-# =============================================================================
-MEDIUM_512_CONFIG = {
-    # Model architecture
-    "vocab_size": 8192,        # TCT vocabulary (8190 base + MASK at 8190 + PAD at 8191)
-    "context_size": 512,       # Reduced context for larger batch size / bigger model
-    "d_model": 768,            # Larger embeddings than medium-small
-    "n_layers": 8,             # Same depth as medium
-    "n_heads": 12,             # More attention heads
-    "dropout": 0.2,            # Increased from 0.1 for stronger regularization
-
-    # Training
-    "batch_size": 20,          # Larger batch possible with smaller context
-    "gradient_accumulation": 4,
-    "learning_rate": 2e-4,     # Reduced from 3e-4 for more conservative training
-    "weight_decay": 0.1,
-    "warmup_iters": 2000,
-    "max_iters": 50000,        # Reduced from 100k based on overfitting observations
-
-    # Optimization
-    "beta1": 0.9,
-    "beta2": 0.95,
-    "grad_clip": 1.0,
-
-    # Logging
-    "eval_interval": 500,
-    "log_interval": 10,
-    "save_interval": 5000,
-
-    # Estimated
-    "parameters": "~100M",
-    "training_time": "~7-8 hours on RTX 4090",
-    "budget": "~$50",
-}
-
-# =============================================================================
-# Large-512 Configuration (183M params, context=512) - Maximum 8GB GPU capacity
-# =============================================================================
-LARGE_512_CONFIG = {
-    # Model architecture (LARGE model scaled for 8GB GPU)
-    "vocab_size": 8192,        # TCT vocabulary (8190 base + MASK at 8190 + PAD at 8191)
-    "context_size": 512,       # Reduced context for 8GB memory constraint
-    "d_model": 1024,           # Large embeddings (16 heads × 64 head_dim)
-    "n_layers": 12,            # Deep model for workflow hierarchy
-    "n_heads": 16,             # head_dim = 64 (optimal)
-    "dropout": 0.2,            # Increased from 0.1 for stronger regularization
-
-    # Training
-    "batch_size": 20,          # Batch size for context=512
-    "gradient_accumulation": 4,
-    "learning_rate": 2e-4,     # Reduced from 3e-4 for more conservative training
-    "weight_decay": 0.1,
-    "warmup_iters": 2000,
-    "max_iters": 50000,        # Reduced from 100k (will resume from 10k → 50k total)
+    "max_iters": 50000,        # Reduced from 100k (overfitting observed)
 
     # Optimization
     "beta1": 0.9,
@@ -219,8 +197,44 @@ LARGE_512_CONFIG = {
 
     # Estimated
     "parameters": "~183M",
-    "training_time": "~11-12 hours on RTX 4090",
+    "training_time": "~12 hours on RTX 4090",
     "budget": "~$75",
+}
+
+# =============================================================================
+# Large-1024 Configuration (183M params, context=1024) - Maximum everything
+# =============================================================================
+LARGE_1024_CONFIG = {
+    # Model architecture (maximum capacity + context)
+    "vocab_size": 8192,
+    "context_size": 1024,      # 2× context vs large
+    "d_model": 1024,
+    "n_layers": 12,
+    "n_heads": 16,
+    "dropout": 0.2,
+
+    # Training (adjusted for larger context)
+    "batch_size": 10,          # Reduced for memory
+    "gradient_accumulation": 8,
+    "learning_rate": 2e-4,
+    "weight_decay": 0.1,
+    "warmup_iters": 2000,
+    "max_iters": 50000,
+
+    # Optimization
+    "beta1": 0.9,
+    "beta2": 0.95,
+    "grad_clip": 1.0,
+
+    # Logging
+    "eval_interval": 500,
+    "log_interval": 10,
+    "save_interval": 5000,
+
+    # Estimated
+    "parameters": "~183M",
+    "training_time": "~18 hours on RTX 4090",
+    "budget": "~$90",
 }
 
 # =============================================================================
@@ -228,12 +242,15 @@ LARGE_512_CONFIG = {
 # =============================================================================
 
 CONFIGS = {
+    # Default: 512 context (faster, recommended)
     "small": SMALL_CONFIG,
-    "medium-small": MEDIUM_SMALL_CONFIG,
     "medium": MEDIUM_CONFIG,
-    "medium-512": MEDIUM_512_CONFIG,
-    "large-512": LARGE_512_CONFIG,
     "large": LARGE_CONFIG,
+
+    # Alternative: 1024 context (better coverage)
+    "small-1024": SMALL_1024_CONFIG,
+    "medium-1024": MEDIUM_1024_CONFIG,
+    "large-1024": LARGE_1024_CONFIG,
 }
 
 def get_config(size="medium"):
@@ -241,40 +258,68 @@ def get_config(size="medium"):
     Get model configuration by size.
 
     Args:
-        size: "small", "medium-small", "medium", or "large"
+        size: Config name - "small", "medium" (default), "large",
+              or with -1024 suffix for 1024 context versions
 
     Returns:
-        Configuration dictionary
+        Configuration dictionary (copy, safe to modify)
+
+    Raises:
+        ValueError: If config name not found
+
+    Example:
+        >>> config = get_config("medium")  # 90M params, 512 context
+        >>> config = get_config("medium-1024")  # 90M params, 1024 context
     """
     if size not in CONFIGS:
-        raise ValueError(f"Unknown config size: {size}. Choose from: {list(CONFIGS.keys())}")
+        available = ", ".join(CONFIGS.keys())
+        raise ValueError(
+            f"Unknown config: '{size}'\n"
+            f"Available configs: {available}\n"
+            f"  Default (512 ctx): small, medium ⭐, large\n"
+            f"  Alternative (1024 ctx): small-1024, medium-1024, large-1024"
+        )
     return CONFIGS[size].copy()
 
 def print_config_comparison():
-    """Print comparison table of all configurations"""
-    print("=" * 100)
+    """Print comparison table of all configurations."""
+    print("=" * 120)
     print("TCT Workflow Generation - Model Configurations")
-    print("=" * 100)
+    print("=" * 120)
     print()
-    print(f"{'Metric':<25} {'Small':<18} {'Medium-Small':<18} {'Medium':<18} {'Large':<18}")
-    print("-" * 100)
 
-    keys = ["vocab_size", "context_size", "d_model", "n_layers", "n_heads",
-            "parameters", "training_time", "budget"]
+    # Table header
+    print(f"{'Config':<15} {'Params':<10} {'Context':<8} {'d_model':<8} {'Layers':<8} {'Heads':<8} {'Time':<20} {'Budget':<10}")
+    print("-" * 120)
 
-    for key in keys:
-        values = [CONFIGS[size].get(key, "N/A") for size in ["small", "medium-small", "medium", "large"]]
-        print(f"{key:<25} {str(values[0]):<18} {str(values[1]):<18} {str(values[2]):<18} {str(values[3]):<18}")
+    # Default configs (512 context)
+    print("DEFAULT (512 context, faster):")
+    for name in ["small", "medium", "large"]:
+        cfg = CONFIGS[name]
+        print(f"  {name:<13} {cfg['parameters']:<10} {cfg['context_size']:<8} {cfg['d_model']:<8} "
+              f"{cfg['n_layers']:<8} {cfg['n_heads']:<8} {cfg['training_time']:<20} {cfg['budget']:<10}")
 
-    print("=" * 100)
+    print()
+
+    # Alternative configs (1024 context)
+    print("ALTERNATIVE (1024 context, better coverage):")
+    for name in ["small-1024", "medium-1024", "large-1024"]:
+        cfg = CONFIGS[name]
+        print(f"  {name:<13} {cfg['parameters']:<10} {cfg['context_size']:<8} {cfg['d_model']:<8} "
+              f"{cfg['n_layers']:<8} {cfg['n_heads']:<8} {cfg['training_time']:<20} {cfg['budget']:<10}")
+
+    print()
+    print("=" * 120)
     print()
     print("Recommendations:")
-    print("  - Small: Quick experiments, proof of concept (~20M)")
-    print("  - Medium-Small: Deep & efficient (384×12, ~35M) ⭐ RECOMMENDED first try with ASCII+position encoding")
-    print("  - Medium: Production workflow generation (~103M)")
-    print("  - Large: Maximum quality, research (~205M)")
+    print("  ⭐ RECOMMENDED: medium (90M, 512 ctx) - Best balance for production")
+    print("  - Use medium-1024 if workflows frequently >512 tokens")
+    print("  - Use small for quick iteration/debugging")
+    print("  - Use large if medium accuracy <95%")
     print()
-    print("Note: Start with Medium-Small. If performance < 95%, scale to Medium (512×10 or 768×8).")
+    print("Context tradeoffs:")
+    print("  - 512:  Covers 30% of workflows entirely, 2× faster than 1024")
+    print("  - 1024: Covers 56% of workflows entirely, better for long workflows")
     print()
 
 if __name__ == "__main__":

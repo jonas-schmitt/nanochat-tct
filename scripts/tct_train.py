@@ -45,8 +45,8 @@ run = "dummy" # wandb run name ("dummy" = no logging)
 # Runtime
 device_type = "" # cuda|cpu|mps (empty = autodetect)
 # Model
-model_size = "medium-512" # small|medium-small|medium|medium-512|large-512|large
-data_dir = str(Path.home() / "Desktop/data/workflows-100k/json") # Workflow JSON directory
+model_size = "medium" # small|medium|large (512 ctx) or small-1024|medium-1024|large-1024
+data_dir = str(Path.home() / "Desktop/data/workflows/json") # Workflow JSON directory
 # Training
 num_iterations = 50000 # number of optimization steps (-1 = use from config)
 device_batch_size = 20 # per-device batch size (768×8 with context=512 should fit in 8GB)

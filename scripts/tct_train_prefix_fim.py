@@ -63,7 +63,7 @@ run = "dummy" # wandb run name ("dummy" = no logging)
 # Runtime
 device_type = "" # cuda|cpu|mps (empty = autodetect)
 # Model
-model_size = "small-512" # small-512|medium-512|large-512 (start small for testing)
+model_size = "small" # small|medium|large (512 ctx) or small-1024|medium-1024|large-1024
 data_dir = str(Path.home() / "Desktop/data/workflows/json") # Workflow JSON directory
 # Training
 num_iterations = 20000 # number of optimization steps (-1 = use from config)
