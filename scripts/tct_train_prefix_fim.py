@@ -74,8 +74,11 @@ geometric_p = 0.5   # geometric distribution parameter (0.5 = balanced decoder/F
                     # p=0.5 → 50% k=0, 50% k=1+
                     # p=0.33 → 33% k=0, 67% k=1+
 # Prefix sampling parameters
-prefix_mode = "log" # "all"|"log"|"sample"|"hybrid" (log = powers of 2, much faster)
-prefix_count = 20     # Number of prefixes for "sample"/"hybrid" modes (only used for long prefixes)
+prefix_mode = "log" # "all"|"log"|"linear"|"sample"|"hybrid"
+                    # log: [1,2,4,8,...] ~10 samples (fastest)
+                    # linear: evenly spaced, uses prefix_count
+                    # all: enumerate all 1-512 (slowest, 51x more)
+prefix_count = 20     # Number of prefixes for "linear"/"sample"/"hybrid" modes
 prefix_bias = "uniform" # "uniform" or "short" (bias toward short contexts)
 # Optimization (will use defaults from model config if not overridden)
 learning_rate = -1.0 # learning rate (-1 = use config default)

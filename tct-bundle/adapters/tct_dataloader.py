@@ -69,11 +69,12 @@ class TCTEpochPrefixFIMDataset(Dataset):
                         p=0.33 → 33% k=0, 67% k=1+
             seed: Random seed (optional)
             prefix_mode: Prefix sampling strategy:
-                        - "all": Enumerate all prefix lengths 1-N
-                        - "log": Log-spaced [1,2,4,8,16,32,...,N]
+                        - "all": Enumerate all prefix lengths 1-N (512 samples)
+                        - "log": Log-spaced [1,2,4,8,16,32,...,N] (~10 samples)
+                        - "linear": Linear-spaced using prefix_count samples
                         - "sample": Random sample prefix_count lengths
-                        - "hybrid": Enumerate 1-64 + sample remaining
-            prefix_count: Number of prefixes for "sample"/"hybrid" (default: 100)
+                        - "hybrid": Enumerate 1-64 + sample remaining (~164 samples)
+            prefix_count: Number of prefixes for "linear"/"sample"/"hybrid" (default: 100)
             prefix_bias: "uniform" or "short" (bias toward short contexts)
         """
         self.workflow_files = list(workflow_files)
@@ -236,7 +237,7 @@ class TCTEpochPrefixFIMDataset(Dataset):
             return list(range(1, max_len + 1))
 
         elif self.prefix_mode == "log":
-            # Log-spaced sampling
+            # Log-spaced sampling: [1, 2, 4, 8, 16, 32, 64, 128, 256, 512]
             lengths = []
             power = 0
             while True:
@@ -249,6 +250,32 @@ class TCTEpochPrefixFIMDataset(Dataset):
             if max_len not in lengths:
                 lengths.append(max_len)
             return lengths
+
+        elif self.prefix_mode == "linear":
+            # Linear-spaced sampling: evenly distribute prefix_count samples
+            count = min(self.prefix_count, max_len)
+            if count >= max_len:
+                # If count >= max_len, just enumerate all
+                return list(range(1, max_len + 1))
+
+            # Linspace from 1 to max_len
+            # Always include 1 and max_len, distribute rest evenly
+            if count <= 2:
+                return [1, max_len]
+
+            step = (max_len - 1) / (count - 1)
+            samples = [int(round(1 + i * step)) for i in range(count)]
+
+            # Ensure unique and sorted
+            samples = sorted(set(samples))
+
+            # Ensure we have 1 and max_len
+            if 1 not in samples:
+                samples = [1] + samples
+            if max_len not in samples:
+                samples.append(max_len)
+
+            return samples
 
         elif self.prefix_mode == "sample":
             # Random uniform or biased sampling
