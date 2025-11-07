@@ -51,7 +51,7 @@ from nanochat.checkpoint_manager import save_checkpoint
 from nanochat.loss_eval import evaluate_bpb
 
 # TCT Prefix-Aware FIM imports
-from model_config_multimask_fim import get_config  # Reuse model configs
+from model_config import get_config
 from tct_tokenizer_adapter import TCTTokenizer
 from tct_dataloader import tokenizing_distributed_data_loader
 

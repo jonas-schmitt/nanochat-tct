@@ -35,7 +35,7 @@ from nanochat.loss_eval import evaluate_bpb
 # TCT imports
 from model_config import get_config
 from tct_tokenizer_adapter import TCTTokenizer
-from tct_epoch_dataloader import create_epoch_offset_dataloader
+from tct_dataloader import tokenizing_distributed_data_loader
 
 print_banner()
 
@@ -187,33 +187,50 @@ if not Path(data_dir).exists():
 
 print0("Creating epoch-based offset dataloaders...")
 # For context=512, offset_stride=16 gives 32 epochs (512/16=32)
-# For context=1024, offset_stride=32 gives 32 epochs (1024/32=32)
-offset_stride = config["context_size"] // 32
-train_loader = create_epoch_offset_dataloader(
-    workflow_dir=data_dir,
+# Create prefix-aware datasets (decoder-only mode)
+train_dataset = tokenizing_distributed_data_loader(
+    device_batch_size=device_batch_size,
     context_size=config["context_size"],
-    offset_stride=offset_stride,
-    batch_size=device_batch_size,
     split="train",
+    data_dir=data_dir,
     train_split=0.9,
-    num_workers=0,  # 0 for debugging, increase for performance
-    pin_memory=(device_type == "cuda"),
+    geometric_p=1.0,  # Pure decoder-only (no FIM)
+    prefix_mode="log",  # Efficient prefix sampling
+    prefix_count=20,
+    prefix_bias="uniform",
 )
 
-val_loader = create_epoch_offset_dataloader(
-    workflow_dir=data_dir,
+val_dataset = tokenizing_distributed_data_loader(
+    device_batch_size=device_batch_size,
     context_size=config["context_size"],
-    offset_stride=offset_stride,
-    batch_size=device_batch_size,
     split="val",
+    data_dir=data_dir,
     train_split=0.9,
-    num_workers=0,
-    pin_memory=(device_type == "cuda"),
+    geometric_p=1.0,  # Pure decoder-only (no FIM)
+    prefix_mode="log",
+    prefix_count=20,
+    prefix_bias="uniform",
 )
 has_val = True
 
-train_dataset = train_loader.dataset
-val_dataset = val_loader.dataset
+# Create dataloaders
+from torch.utils.data import DataLoader
+
+train_loader = DataLoader(
+    train_dataset,
+    batch_size=device_batch_size,
+    shuffle=False,  # Don't shuffle - epoch offset provides diversity
+    num_workers=0,
+    pin_memory=(device_type == "cuda"),
+)
+
+val_loader = DataLoader(
+    val_dataset,
+    batch_size=device_batch_size,
+    shuffle=False,
+    num_workers=0,
+    pin_memory=(device_type == "cuda"),
+)
 
 print0(f"Training windows (epoch 0): {len(train_dataset)}")
 print0(f"Validation windows (epoch 0): {len(val_dataset)}")
