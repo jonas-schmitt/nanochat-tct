@@ -40,6 +40,9 @@ import numpy as np
 sys.path.insert(0, str(Path(__file__).parent.parent.parent / "tct-github-workflow/target/wheels"))
 import tct_github_workflow as tct
 
+# Import TCT constants
+from tct_constants import TCT_PAD_TOKEN_ID, TCT_TOTAL_VOCAB_SIZE
+
 
 class TCTEpochPrefixFIMDataset(Dataset):
     """
@@ -204,7 +207,19 @@ class TCTEpochPrefixFIMDataset(Dataset):
         print(f"Epoch {epoch}: offset={self.current_offset}, {len(self):,} examples")
 
     def _rebuild_prefix_index(self):
-        """Build index of (workflow_idx, window_start, prefix_length) tuples."""
+        """
+        Build index of (workflow_idx, window_start, prefix_length) tuples for all training examples.
+
+        This creates the complete mapping from flat dataset index → training example parameters.
+        For mode="all" with 100k workflows, this generates ~175M index entries.
+
+        Process for each workflow:
+        1. Get non-overlapping window positions (respecting epoch offset)
+        2. For each window, sample prefix lengths based on prefix_mode
+        3. Append (workflow_idx, window_start, prefix_len) tuple to index
+
+        The index enables PyTorch DataLoader's required __len__() and __getitem__(idx) API.
+        """
         print(f"Building prefix index (mode={self.prefix_mode})...", flush=True)
         self.prefix_index = []
         self._cached_len = None
@@ -352,12 +367,26 @@ class TCTEpochPrefixFIMDataset(Dataset):
 
     def __getitem__(self, idx):
         """
-        Get training example at index.
+        Get training example at index with prefix-aware FIM masking.
+
+        This method creates training examples with varying prefix lengths (1-context_size)
+        and optional FIM (Fill-in-the-Middle) masking controlled by geometric_p parameter.
+
+        Process:
+        1. Extract (workflow_idx, window_start, prefix_len) from prefix_index
+        2. Sample num_masks ~ Geometric(p=geometric_p) for FIM
+        3. Create masked input using TCT's extract_window_fim
+        4. Pad both input and target to context_size with PAD tokens
+        5. Apply windowing position encoding (modulo vocab size)
+        6. Create (x, y) pair for causal language modeling
+
+        Args:
+            idx (int): Index into prefix_index
 
         Returns:
-            (x, y) tuple:
-            - x: Input tokens [context_size+1] with masks
-            - y: Target tokens [context_size+1] unmasked
+            tuple[torch.Tensor, torch.Tensor]: (x, y) pair where:
+                - x: Input tokens [context_size] with FIM masks and window position
+                - y: Target tokens [context_size] unmasked, padding masked as -1
         """
         wf_idx, window_start, prefix_len = self.prefix_index[idx]
         tokens = self.tokenized_workflows[wf_idx]
@@ -390,20 +419,19 @@ class TCTEpochPrefixFIMDataset(Dataset):
         fim_window = torch.tensor(fim_window, dtype=torch.long)
 
         # Pad to context_size+1 (1 for window position + context_size for content)
-        PAD_TOKEN = 8191
         expected_len = self.context_size + 1
         if len(fim_window) < expected_len:
-            padding = torch.full((expected_len - len(fim_window),), PAD_TOKEN, dtype=torch.long)
+            padding = torch.full((expected_len - len(fim_window),), TCT_PAD_TOKEN_ID, dtype=torch.long)
             fim_window = torch.cat([fim_window, padding])
 
         # Apply modulo to window position to keep in vocab bounds
-        window_position = fim_window[0].item() % 8192
+        window_position = fim_window[0].item() % TCT_TOTAL_VOCAB_SIZE
         fim_window[0] = window_position
 
         # Create target window
         target_window = window.clone()
         if actual_len < self.context_size:
-            padding = torch.full((self.context_size - actual_len,), PAD_TOKEN, dtype=torch.long)
+            padding = torch.full((self.context_size - actual_len,), TCT_PAD_TOKEN_ID, dtype=torch.long)
             target_window = torch.cat([target_window, padding])
 
         # Prepend window position to target
