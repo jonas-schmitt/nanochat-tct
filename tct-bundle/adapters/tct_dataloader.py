@@ -52,7 +52,8 @@ class TCTEpochPrefixFIMDataset(Dataset):
     def __init__(self, workflow_files, context_size=512, offset_stride=32,
                  split="train", workflow_dir=None, train_split=0.9,
                  geometric_p=0.5, seed=None,
-                 prefix_mode="log", prefix_count=20, prefix_bias="uniform"):
+                 prefix_mode="log", prefix_count=20, prefix_bias="uniform",
+                 cache_file=None):
         """
         Initialize prefix-aware FIM dataset.
 
@@ -76,6 +77,7 @@ class TCTEpochPrefixFIMDataset(Dataset):
                         - "hybrid": Enumerate 1-64 + sample remaining (~164 samples)
             prefix_count: Number of prefixes for "linear"/"sample"/"hybrid" (default: 100)
             prefix_bias: "uniform" or "short" (bias toward short contexts)
+            cache_file: Explicit cache file path (None = auto-detect, "none" = disable)
         """
         self.workflow_files = list(workflow_files)
         self.context_size = context_size
@@ -100,19 +102,42 @@ class TCTEpochPrefixFIMDataset(Dataset):
         # Load and tokenize workflows (reuse caching logic from old dataloader)
         self.tokenized_workflows = []
 
-        # Check for cached tokenization
-        cache_file = None
-        if workflow_dir is not None:
+        # Determine cache file to use
+        actual_cache_file = None
+        if cache_file == "none":
+            # Explicitly disable cache
+            print("Cache disabled (cache_file='none')")
+        elif cache_file:
+            # Use explicit cache file path
+            actual_cache_file = Path(cache_file)
+            if not actual_cache_file.exists():
+                print(f"Warning: Specified cache file not found: {actual_cache_file}")
+                actual_cache_file = None
+        elif workflow_dir is not None:
+            # Auto-detect cache file
             cache_dir = Path(workflow_dir) / ".cache"
             cache_dir.mkdir(exist_ok=True)
             split_pct = int(train_split * 100)
             num_files = len(self.workflow_files)
-            cache_file = cache_dir / f"tokenized_{split}_split{split_pct}_{num_files}files.pt"
+            auto_cache_file = cache_dir / f"tokenized_{split}_split{split_pct}_{num_files}files.pt"
 
-            if cache_file.exists():
-                print(f"Loading tokenized workflows from cache: {cache_file}")
-                self.tokenized_workflows = torch.load(cache_file)
-                print(f"Loaded {len(self.tokenized_workflows)} tokenized workflows from cache ✅")
+            if auto_cache_file.exists():
+                actual_cache_file = auto_cache_file
+            else:
+                # Try to find any cache file for this split (ignore file count)
+                import glob
+                cache_pattern = str(cache_dir / f"tokenized_{split}_split{split_pct}_*.pt")
+                existing_caches = sorted(glob.glob(cache_pattern))
+                if existing_caches:
+                    # Use the most recent cache
+                    actual_cache_file = Path(existing_caches[-1])
+                    print(f"Warning: Exact cache not found, using latest: {actual_cache_file.name}")
+
+        # Load cache if available
+        if actual_cache_file and actual_cache_file.exists():
+            print(f"Loading tokenized workflows from cache: {actual_cache_file}")
+            self.tokenized_workflows = torch.load(actual_cache_file)
+            print(f"Loaded {len(self.tokenized_workflows)} tokenized workflows from cache ✅")
 
         # Tokenize if not cached
         if len(self.tokenized_workflows) == 0:
@@ -142,11 +167,18 @@ class TCTEpochPrefixFIMDataset(Dataset):
                 print(f"  Removed {failed_count} invalid workflows ({100*failed_count/len(self.workflow_files):.1f}%)", flush=True)
                 print(f"  Successfully tokenized {len(self.tokenized_workflows)} workflows", flush=True)
 
-            # Save cache
-            if workflow_dir is not None and cache_file is not None:
-                print(f"Saving tokenized workflows to cache: {cache_file}")
+            # Save cache (only if not explicitly disabled)
+            if cache_file != "none" and workflow_dir is not None:
+                # Save to auto-detected location (don't overwrite explicit cache_file)
+                cache_dir = Path(workflow_dir) / ".cache"
+                cache_dir.mkdir(exist_ok=True)
+                split_pct = int(train_split * 100)
+                num_files = len(self.workflow_files)
+                save_cache_file = cache_dir / f"tokenized_{split}_split{split_pct}_{num_files}files.pt"
+
+                print(f"Saving tokenized workflows to cache: {save_cache_file}")
                 try:
-                    torch.save(self.tokenized_workflows, cache_file)
+                    torch.save(self.tokenized_workflows, save_cache_file)
                     print(f"Cache saved successfully ✅")
                 except Exception as e:
                     print(f"Warning: Failed to save cache ({e})")
@@ -403,12 +435,16 @@ class TCTEpochPrefixFIMDataset(Dataset):
 
 def tokenizing_distributed_data_loader(device_batch_size, context_size=512, split="train",
                                       data_dir=None, train_split=0.9, geometric_p=0.5,
-                                      prefix_mode="hybrid", prefix_count=100, prefix_bias="uniform"):
+                                      prefix_mode="hybrid", prefix_count=100, prefix_bias="uniform",
+                                      cache_file=None):
     """
     Create dataloader with prefix-aware FIM training.
 
     Drop-in replacement for old dataloader function.
     Compatible with nanochat's training loop.
+
+    Args:
+        cache_file: Explicit cache file path (None = auto-detect, "none" = disable cache)
     """
     import glob
 
@@ -441,6 +477,7 @@ def tokenizing_distributed_data_loader(device_batch_size, context_size=512, spli
         prefix_mode=prefix_mode,
         prefix_count=prefix_count,
         prefix_bias=prefix_bias,
+        cache_file=cache_file,
     )
 
     return dataset

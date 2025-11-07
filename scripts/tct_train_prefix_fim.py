@@ -65,6 +65,7 @@ device_type = "" # cuda|cpu|mps (empty = autodetect)
 # Model
 model_size = "small" # small|medium|large (512 ctx) or small-1024|medium-1024|large-1024
 data_dir = str(Path.home() / "Desktop/data/workflows/json") # Workflow JSON directory
+cache_file = "" # explicit cache file path (empty = auto-detect, "none" = no cache)
 # Training
 num_iterations = 20000 # number of optimization steps (-1 = use from config)
 device_batch_size = 32 # per-device batch size (smaller due to more diverse batch sizes)
@@ -74,10 +75,10 @@ geometric_p = 0.5   # geometric distribution parameter (0.5 = balanced decoder/F
                     # p=0.5 → 50% k=0, 50% k=1+
                     # p=0.33 → 33% k=0, 67% k=1+
 # Prefix sampling parameters
-prefix_mode = "log" # "all"|"log"|"linear"|"sample"|"hybrid"
-                    # log: [1,2,4,8,...] ~10 samples (fastest)
+prefix_mode = "all" # "all"|"log"|"linear"|"sample"|"hybrid"
+                    # all: enumerate all 1-512 (best for autocompletion)
+                    # log: [1,2,4,8,...] ~10 samples (faster)
                     # linear: evenly spaced, uses prefix_count
-                    # all: enumerate all 1-512 (slowest, 51x more)
 prefix_count = 20     # Number of prefixes for "linear"/"sample"/"hybrid" modes
 prefix_bias = "uniform" # "uniform" or "short" (bias toward short contexts)
 # Optimization (will use defaults from model config if not overridden)
@@ -236,6 +237,7 @@ train_dataset = tokenizing_distributed_data_loader(
     prefix_mode=prefix_mode,
     prefix_count=prefix_count,
     prefix_bias=prefix_bias,
+    cache_file=cache_file if cache_file else None,
 )
 
 val_dataset = tokenizing_distributed_data_loader(
@@ -248,6 +250,7 @@ val_dataset = tokenizing_distributed_data_loader(
     prefix_mode=prefix_mode,
     prefix_count=prefix_count,
     prefix_bias=prefix_bias,
+    cache_file=cache_file if cache_file else None,
 )
 has_val = True
 
