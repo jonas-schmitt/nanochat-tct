@@ -17,12 +17,12 @@ SMALL_CONFIG = {
     "d_model": 384,            # Embedding dimension (narrower, efficient)
     "n_layers": 8,             # Transformer layers (depth for hierarchy)
     "n_heads": 6,              # Attention heads (64 head_dim - optimal)
-    "dropout": 0.1,
+    "dropout": 0.2,            # Increased from 0.1 for stronger regularization
 
     # Training
     "batch_size": 32,
     "gradient_accumulation": 4,  # Effective batch = 128
-    "learning_rate": 3e-4,
+    "learning_rate": 2e-4,     # Reduced from 3e-4 for more conservative training
     "weight_decay": 0.1,
     "warmup_iters": 1000,
     "max_iters": 50000,
@@ -48,17 +48,17 @@ SMALL_CONFIG = {
 # =============================================================================
 MEDIUM_SMALL_CONFIG = {
     # Model architecture (depth-first: trust TCT position encoding for context)
-    "vocab_size": 8193,        # TCT vocabulary (8192 base) + 1 dedicated PAD token (8192)
+    "vocab_size": 8192,        # TCT vocabulary (8190 base + MASK at 8190 + PAD at 8191)
     "context_size": 1024,      # Total window size (1 position + 1023 content tokens)
     "d_model": 384,            # Same as small (position tokens handle context disambiguation)
     "n_layers": 12,            # +50% MORE DEPTH than small for workflow hierarchy
     "n_heads": 6,              # head_dim = 64 (optimal)
-    "dropout": 0.1,
+    "dropout": 0.2,            # Increased from 0.1 for stronger regularization
 
     # Training
     "batch_size": 32,
     "gradient_accumulation": 4,  # Effective batch = 128
-    "learning_rate": 3e-4,
+    "learning_rate": 2e-4,     # Reduced from 3e-4 for more conservative training
     "weight_decay": 0.1,
     "warmup_iters": 1500,
     "max_iters": 50000,
@@ -84,7 +84,7 @@ MEDIUM_SMALL_CONFIG = {
 # =============================================================================
 MEDIUM_CONFIG = {
     # Model architecture
-    "vocab_size": 8193,        # TCT vocabulary (8192 base) + 1 dedicated PAD token (8192)
+    "vocab_size": 8192,        # TCT vocabulary (8190 base + MASK at 8190 + PAD at 8191)
     "context_size": 1024,      # Total window size (1 position + 1023 content tokens)
     "d_model": 768,            # Larger embeddings
     "n_layers": 8,             # More depth
@@ -156,20 +156,20 @@ LARGE_CONFIG = {
 # =============================================================================
 MEDIUM_512_CONFIG = {
     # Model architecture
-    "vocab_size": 8193,        # TCT vocabulary (8192 base) + 1 dedicated PAD token (8192)
+    "vocab_size": 8192,        # TCT vocabulary (8190 base + MASK at 8190 + PAD at 8191)
     "context_size": 512,       # Reduced context for larger batch size / bigger model
     "d_model": 768,            # Larger embeddings than medium-small
     "n_layers": 8,             # Same depth as medium
     "n_heads": 12,             # More attention heads
-    "dropout": 0.1,
+    "dropout": 0.2,            # Increased from 0.1 for stronger regularization
 
     # Training
     "batch_size": 20,          # Larger batch possible with smaller context
     "gradient_accumulation": 4,
-    "learning_rate": 3e-4,
+    "learning_rate": 2e-4,     # Reduced from 3e-4 for more conservative training
     "weight_decay": 0.1,
     "warmup_iters": 2000,
-    "max_iters": 100000,
+    "max_iters": 50000,        # Reduced from 100k based on overfitting observations
 
     # Optimization
     "beta1": 0.9,
@@ -192,7 +192,7 @@ MEDIUM_512_CONFIG = {
 # =============================================================================
 LARGE_512_CONFIG = {
     # Model architecture (LARGE model scaled for 8GB GPU)
-    "vocab_size": 8193,        # TCT vocabulary (8192 base) + 1 dedicated PAD token (8192)
+    "vocab_size": 8192,        # TCT vocabulary (8190 base + MASK at 8190 + PAD at 8191)
     "context_size": 512,       # Reduced context for 8GB memory constraint
     "d_model": 1024,           # Large embeddings (16 heads × 64 head_dim)
     "n_layers": 12,            # Deep model for workflow hierarchy

@@ -1,240 +1,401 @@
 """
-TCT DataLoader for Workflow Training
+Prefix-Aware Fill-in-the-Middle (FIM) DataLoader for TCT Workflows
 
-Loads pre-prepared TCT windows and creates PyTorch DataLoader
-compatible with nanochat's training loop.
+Addresses core training issues by enumerating/sampling ALL prefix lengths:
+- Trains on contexts of length 1, 2, 3, ..., context_size
+- Matches inference distribution (generation starts from empty context)
+- Uses geometric FIM sampling for each prefix (balanced k=0/k=1)
 
-Usage:
-    from tct_dataloader import create_dataloader
+Key Innovation:
+Instead of fixed 512-token windows, create examples with varying prefix lengths:
+  - Prefix 1: [] → tok0 (with geometric FIM)
+  - Prefix 2: [tok0] → tok1 (with geometric FIM)
+  - ...
+  - Prefix 512: [tok0...tok510] → tok511 (with geometric FIM)
 
-    train_loader = create_dataloader(
-        "data/prepared/train.pt",
-        batch_size=32,
-        shuffle=True
-    )
+This fixes the train/test distribution mismatch where model only saw 512-token
+contexts but inference needs to work with 0, 1, 2, ... contexts.
 
-    for x, y in train_loader:
-        # x: [batch, context_size] - input tokens
-        # y: [batch, context_size] - target tokens (shifted by 1)
-        ...
+Prefix Sampling Modes:
+- "all": Enumerate every prefix length 1-N (N examples per window)
+- "log": Log-spaced sampling [1,2,4,8,16,...,N] (~log2(N) examples)
+- "sample": Uniform random sample (configurable count)
+- "hybrid": Enumerate short (1-64) + sample long (recommended)
+
+Interface:
+- Compatible with nanochat's training loop (same __getitem__ format)
+- Drop-in replacement for old dataloader
+- No changes to nanochat core required
 """
 
+import sys
+import random
+from pathlib import Path
+
 import torch
-from torch.utils.data import Dataset, DataLoader
+from torch.utils.data import Dataset
+import numpy as np
+
+# Import TCT functions
+sys.path.insert(0, str(Path(__file__).parent.parent.parent / "tct-github-workflow/target/wheels"))
+import tct_github_workflow as tct
 
 
-class TCTWindowDataset(Dataset):
+class TCTEpochPrefixFIMDataset(Dataset):
     """
-    Dataset for TCT windowed training data.
+    Dataset with prefix-aware geometric FIM training.
 
-    Loads pre-prepared windows from prepare_training_data.py and
-    creates (input, target) pairs for autoregressive training.
+    Creates multiple examples per base window, one for each sampled prefix length.
+    For each prefix, uses geometric distribution to sample FIM masks.
     """
 
-    def __init__(self, data_path):
+    def __init__(self, workflow_files, context_size=512, offset_stride=32,
+                 split="train", workflow_dir=None, train_split=0.9,
+                 geometric_p=0.5, seed=None,
+                 prefix_mode="log", prefix_count=20, prefix_bias="uniform"):
         """
-        Initialize dataset.
+        Initialize prefix-aware FIM dataset.
 
         Args:
-            data_path: Path to prepared windows tensor (e.g., train.pt)
+            workflow_files: List of paths to JSON workflow files
+            context_size: Maximum context size (default: 512)
+            offset_stride: Stride for epoch offset (default: 32)
+            split: "train" or "val"
+            workflow_dir: Path for caching (optional)
+            train_split: Train/val split ratio (default: 0.9)
+            geometric_p: Geometric distribution parameter for FIM (default: 0.5)
+                        p=1.0 → 100% decoder-only (k=0)
+                        p=0.5 → 50% k=0, 50% k=1+
+                        p=0.33 → 33% k=0, 67% k=1+
+            seed: Random seed (optional)
+            prefix_mode: Prefix sampling strategy:
+                        - "all": Enumerate all prefix lengths 1-N
+                        - "log": Log-spaced [1,2,4,8,16,32,...,N]
+                        - "sample": Random sample prefix_count lengths
+                        - "hybrid": Enumerate 1-64 + sample remaining
+            prefix_count: Number of prefixes for "sample"/"hybrid" (default: 100)
+            prefix_bias: "uniform" or "short" (bias toward short contexts)
         """
-        self.windows = torch.load(data_path)
+        self.workflow_files = list(workflow_files)
+        self.context_size = context_size
+        self.offset_stride = offset_stride
+        self.split = split
+        self.geometric_p = geometric_p
+        self.prefix_mode = prefix_mode
+        self.prefix_count = prefix_count
+        self.prefix_bias = prefix_bias
 
-        # Verify shape: [num_windows, context_size+1]
-        if len(self.windows.shape) != 2:
-            raise ValueError(
-                f"Expected 2D tensor [num_windows, context_size+1], "
-                f"got shape {self.windows.shape}"
-            )
+        # Random number generator
+        self.rng = random.Random(seed)
+        self.np_rng = np.random.RandomState(seed)
 
-        self.num_windows = self.windows.shape[0]
-        self.window_size = self.windows.shape[1]
+        # Current epoch offset
+        self.current_offset = 0
 
-        print(f"Loaded {self.num_windows} windows (window size: {self.window_size})")
+        # Index: (workflow_idx, window_start, prefix_length)
+        self.prefix_index = []
+        self._cached_len = None
+
+        # Load and tokenize workflows (reuse caching logic from old dataloader)
+        self.tokenized_workflows = []
+
+        # Check for cached tokenization
+        cache_file = None
+        if workflow_dir is not None:
+            cache_dir = Path(workflow_dir) / ".cache"
+            cache_dir.mkdir(exist_ok=True)
+            split_pct = int(train_split * 100)
+            num_files = len(self.workflow_files)
+            cache_file = cache_dir / f"tokenized_{split}_split{split_pct}_{num_files}files.pt"
+
+            if cache_file.exists():
+                print(f"Loading tokenized workflows from cache: {cache_file}")
+                self.tokenized_workflows = torch.load(cache_file)
+                print(f"Loaded {len(self.tokenized_workflows)} tokenized workflows from cache ✅")
+
+        # Tokenize if not cached
+        if len(self.tokenized_workflows) == 0:
+            print(f"Tokenizing {len(self.workflow_files)} workflows...", flush=True)
+            failed_count = 0
+            removed_files = []
+            for i, wf_file in enumerate(self.workflow_files):
+                if (i + 1) % 10000 == 0:
+                    print(f"  Progress: {i+1:,}/{len(self.workflow_files):,} workflows", flush=True)
+                try:
+                    with open(wf_file) as f:
+                        workflow_json = f.read()
+                    tokens = list(tct.encode(workflow_json))
+                    self.tokenized_workflows.append(torch.tensor(tokens, dtype=torch.long))
+                except Exception as e:
+                    failed_count += 1
+                    removed_files.append(wf_file)
+                    if failed_count <= 10:  # Print first 10 failures
+                        print(f"  ⚠️  Removing invalid workflow {Path(wf_file).name}: {str(e)[:100]}")
+                    # Remove the invalid file
+                    try:
+                        Path(wf_file).unlink()
+                    except Exception as rm_error:
+                        print(f"  ⚠️  Failed to remove {Path(wf_file).name}: {rm_error}")
+
+            if failed_count > 0:
+                print(f"  Removed {failed_count} invalid workflows ({100*failed_count/len(self.workflow_files):.1f}%)", flush=True)
+                print(f"  Successfully tokenized {len(self.tokenized_workflows)} workflows", flush=True)
+
+            # Save cache
+            if workflow_dir is not None and cache_file is not None:
+                print(f"Saving tokenized workflows to cache: {cache_file}")
+                try:
+                    torch.save(self.tokenized_workflows, cache_file)
+                    print(f"Cache saved successfully ✅")
+                except Exception as e:
+                    print(f"Warning: Failed to save cache ({e})")
+
+        # Build initial prefix index
+        self._rebuild_prefix_index()
+
+        # Print dataset info
+        k0_pct = int(geometric_p * 100)
+        k1_pct = 100 - k0_pct
+        print(f"Prefix FIM Dataset initialized:", flush=True)
+        print(f"  Total examples: {len(self):,}", flush=True)
+        print(f"  Prefix mode: {prefix_mode}", flush=True)
+        print(f"  FIM distribution: ~{k0_pct}% k=0, ~{k1_pct}% k=1+ (geometric_p={geometric_p})", flush=True)
+        print(f"  Offset: {self.current_offset}", flush=True)
+
+    def set_epoch(self, epoch):
+        """Set current epoch (updates offset for windowing)."""
+        self.current_offset = (epoch * self.offset_stride) % self.context_size
+        self._rebuild_prefix_index()
+        self.rng.seed(epoch)
+        self.np_rng.seed(epoch)
+        print(f"Epoch {epoch}: offset={self.current_offset}, {len(self):,} examples")
+
+    def _rebuild_prefix_index(self):
+        """Build index of (workflow_idx, window_start, prefix_length) tuples."""
+        print(f"Building prefix index (mode={self.prefix_mode})...", flush=True)
+        self.prefix_index = []
+        self._cached_len = None
+
+        for wf_idx, tokens in enumerate(self.tokenized_workflows):
+            if (wf_idx + 1) % 10000 == 0:
+                print(f"  Progress: {wf_idx+1:,}/{len(self.tokenized_workflows):,} workflows, {len(self.prefix_index):,} examples so far", flush=True)
+            # Get window positions for this workflow
+            window_positions = self._get_window_positions(len(tokens))
+
+            for window_start in window_positions:
+                # Determine max prefix length for this window
+                max_prefix_len = min(self.context_size, len(tokens) - window_start)
+
+                # Sample prefix lengths
+                prefix_lengths = self._sample_prefix_lengths(max_prefix_len)
+
+                # Add to index
+                for prefix_len in prefix_lengths:
+                    self.prefix_index.append((wf_idx, window_start, prefix_len))
+
+    def _get_window_positions(self, workflow_len):
+        """Get non-overlapping window start positions for a workflow."""
+        positions = []
+
+        # Handle workflows smaller than context_size
+        if workflow_len < self.context_size:
+            if self.current_offset == 0:
+                positions.append(0)  # Only include in epoch 0
+            return positions
+
+        # Create non-overlapping windows starting from offset
+        pos = self.current_offset
+        while pos + self.context_size <= workflow_len:
+            positions.append(pos)
+            pos += self.context_size
+
+        return positions
+
+    def _sample_prefix_lengths(self, max_len):
+        """Sample which prefix lengths to use for a window."""
+        if self.prefix_mode == "all":
+            # Enumerate all prefix lengths
+            return list(range(1, max_len + 1))
+
+        elif self.prefix_mode == "log":
+            # Log-spaced sampling
+            lengths = []
+            power = 0
+            while True:
+                length = 2 ** power
+                if length > max_len:
+                    break
+                lengths.append(length)
+                power += 1
+            # Always include max_len if not already there
+            if max_len not in lengths:
+                lengths.append(max_len)
+            return lengths
+
+        elif self.prefix_mode == "sample":
+            # Random uniform or biased sampling
+            count = min(self.prefix_count, max_len)
+
+            if self.prefix_bias == "short":
+                # Bias toward shorter contexts (important for generation)
+                weights = 1.0 / np.arange(1, max_len + 1)
+                weights = weights / weights.sum()
+                samples = self.np_rng.choice(max_len, size=count, replace=False, p=weights) + 1
+            else:
+                # Uniform sampling
+                samples = self.np_rng.choice(max_len, size=count, replace=False) + 1
+
+            return sorted(samples)
+
+        elif self.prefix_mode == "hybrid":
+            # Enumerate short (1-64), sample long (65-max)
+            short_end = min(64, max_len)
+            short = list(range(1, short_end + 1))
+
+            if max_len > 64:
+                # Sample from remaining range
+                remaining_count = min(self.prefix_count - len(short), max_len - 64)
+                long_samples = self.np_rng.choice(
+                    range(65, max_len + 1),
+                    size=remaining_count,
+                    replace=False
+                )
+                return short + sorted(long_samples.tolist())
+
+            return short
+
+        else:
+            raise ValueError(f"Unknown prefix_mode: {self.prefix_mode}")
 
     def __len__(self):
-        return self.num_windows
+        """Return total number of examples."""
+        if self._cached_len is None:
+            self._cached_len = len(self.prefix_index)
+        return self._cached_len
 
     def __getitem__(self, idx):
         """
-        Get training example.
+        Get training example at index.
 
         Returns:
             (x, y) tuple:
-            - x: Input tokens [context_size] (position + context, minus last token)
-            - y: Target tokens [context_size] (context, minus position token)
+            - x: Input tokens [context_size+1] with masks
+            - y: Target tokens [context_size+1] unmasked
         """
-        window = self.windows[idx]
+        wf_idx, window_start, prefix_len = self.prefix_index[idx]
+        tokens = self.tokenized_workflows[wf_idx]
 
-        # Window format: [position_token, tok_0, tok_1, ..., tok_N]
-        # Input: [position_token, tok_0, ..., tok_N-1]
-        # Target: [tok_0, tok_1, ..., tok_N]
+        # Calculate window end
+        window_end = min(window_start + prefix_len, len(tokens))
+        actual_len = window_end - window_start
 
-        x = window[:-1]  # Remove last token
-        y = window[1:]   # Remove position token
+        # Geometric sample number of masks
+        num_masks = self._geometric_sample_masks(actual_len)
+
+        # Sample random mask positions
+        if num_masks > 0:
+            mask_positions = sorted(self.rng.sample(range(actual_len), num_masks))
+        else:
+            mask_positions = []  # Decoder-only mode
+
+        # Extract original window for target
+        window = tokens[window_start:window_end]
+
+        # Use TCT API to create FIM window
+        fim_window = tct.extract_window_fim(
+            tokens.tolist(),
+            window_start,
+            window_end,
+            mask_positions
+        )
+
+        # Convert to tensor
+        fim_window = torch.tensor(fim_window, dtype=torch.long)
+
+        # Pad to context_size+1 (1 for window position + context_size for content)
+        PAD_TOKEN = 8191
+        expected_len = self.context_size + 1
+        if len(fim_window) < expected_len:
+            padding = torch.full((expected_len - len(fim_window),), PAD_TOKEN, dtype=torch.long)
+            fim_window = torch.cat([fim_window, padding])
+
+        # Apply modulo to window position to keep in vocab bounds
+        window_position = fim_window[0].item() % 8192
+        fim_window[0] = window_position
+
+        # Create target window
+        target_window = window.clone()
+        if actual_len < self.context_size:
+            padding = torch.full((self.context_size - actual_len,), PAD_TOKEN, dtype=torch.long)
+            target_window = torch.cat([target_window, padding])
+
+        # Prepend window position to target
+        target_with_position = torch.cat([
+            torch.tensor([window_position], dtype=torch.long),
+            target_window
+        ])
+
+        # Create (x, y) pair
+        x = fim_window[:-1].clone()  # Everything except last token
+        y = target_with_position[1:].clone()  # Skip window position
+
+        # Mask padding in targets (set to -1 so loss ignores them)
+        if actual_len < self.context_size:
+            y[actual_len:] = -1
 
         return x, y
 
+    def _geometric_sample_masks(self, max_masks):
+        """Sample number of masks using geometric distribution."""
+        # P(k masks) = (1-p)^k * p
+        p = self.geometric_p
+        probs = np.array([(1-p)**k * p for k in range(max_masks + 1)])
+        probs = probs / probs.sum()  # Normalize
 
-def create_dataloader(
-    data_path,
-    batch_size=32,
-    shuffle=True,
-    num_workers=4,
-    pin_memory=True,
-    drop_last=False,
-):
+        num_masks = self.np_rng.choice(max_masks + 1, p=probs)
+        return num_masks
+
+
+def tokenizing_distributed_data_loader(device_batch_size, context_size=512, split="train",
+                                      data_dir=None, train_split=0.9, geometric_p=0.5,
+                                      prefix_mode="hybrid", prefix_count=100, prefix_bias="uniform"):
     """
-    Create PyTorch DataLoader for TCT windows.
+    Create dataloader with prefix-aware FIM training.
 
-    Args:
-        data_path: Path to prepared windows (train.pt or val.pt)
-        batch_size: Batch size
-        shuffle: Whether to shuffle data
-        num_workers: Number of data loading workers
-        pin_memory: Pin memory for faster GPU transfer
-        drop_last: Drop last incomplete batch
-
-    Returns:
-        DataLoader yielding (x, y) batches
+    Drop-in replacement for old dataloader function.
+    Compatible with nanochat's training loop.
     """
-    dataset = TCTWindowDataset(data_path)
+    import glob
 
-    loader = DataLoader(
-        dataset,
-        batch_size=batch_size,
-        shuffle=shuffle,
-        num_workers=num_workers,
-        pin_memory=pin_memory,
-        drop_last=drop_last,
+    if data_dir is None:
+        raise ValueError("data_dir must be specified")
+
+    # Load workflow files
+    workflow_files = sorted(glob.glob(f"{data_dir}/*.json"))
+
+    if len(workflow_files) == 0:
+        raise ValueError(f"No workflow files found in {data_dir}")
+
+    # Split train/val
+    split_idx = int(len(workflow_files) * train_split)
+    if split == "train":
+        workflow_files = workflow_files[:split_idx]
+    else:
+        workflow_files = workflow_files[split_idx:]
+
+    print(f"Loading {split} split: {len(workflow_files)} workflows")
+
+    # Create dataset
+    dataset = TCTEpochPrefixFIMDataset(
+        workflow_files=workflow_files,
+        context_size=context_size,
+        split=split,
+        workflow_dir=data_dir,
+        train_split=train_split,
+        geometric_p=geometric_p,
+        prefix_mode=prefix_mode,
+        prefix_count=prefix_count,
+        prefix_bias=prefix_bias,
     )
 
-    return loader
-
-
-def create_train_val_loaders(
-    train_path="data/prepared/train.pt",
-    val_path="data/prepared/val.pt",
-    batch_size=32,
-    num_workers=4,
-):
-    """
-    Create training and validation dataloaders.
-
-    Args:
-        train_path: Path to training windows
-        val_path: Path to validation windows
-        batch_size: Batch size for both loaders
-        num_workers: Number of data loading workers
-
-    Returns:
-        (train_loader, val_loader) tuple
-    """
-    train_loader = create_dataloader(
-        train_path,
-        batch_size=batch_size,
-        shuffle=True,
-        num_workers=num_workers,
-    )
-
-    val_loader = create_dataloader(
-        val_path,
-        batch_size=batch_size,
-        shuffle=False,  # Don't shuffle validation
-        num_workers=num_workers,
-    )
-
-    return train_loader, val_loader
-
-
-# =============================================================================
-# Nanochat Compatibility Layer
-# =============================================================================
-
-def tokenizing_distributed_data_loader(
-    device_batch_size,
-    context_size,
-    split="train",
-    data_dir="data/prepared",
-    device=None,
-    num_workers=4,
-):
-    """
-    Nanochat-compatible data loader interface.
-
-    This function matches nanochat's data loader signature but loads
-    pre-prepared TCT windows instead of tokenizing on-the-fly.
-
-    Args:
-        device_batch_size: Batch size per device
-        context_size: Context window size (should match preparation)
-        split: "train" or "val"
-        data_dir: Directory containing prepared windows
-        device: Target device (for compatibility, not used)
-        num_workers: Number of data loading workers
-
-    Yields:
-        (x, y) batches compatible with nanochat training loop
-    """
-    import os
-
-    data_path = os.path.join(data_dir, f"{split}.pt")
-
-    if not os.path.exists(data_path):
-        raise FileNotFoundError(
-            f"Prepared data not found: {data_path}\n"
-            f"Run: python scripts/prepare_training_data.py "
-            f"--input data/json/ --output {data_dir}/"
-        )
-
-    loader = create_dataloader(
-        data_path,
-        batch_size=device_batch_size,
-        shuffle=(split == "train"),
-        num_workers=num_workers,
-    )
-
-    for x, y in loader:
-        # Move to device if specified
-        if device is not None:
-            x = x.to(device)
-            y = y.to(device)
-
-        yield x, y
-
-
-# =============================================================================
-# Usage Example
-# =============================================================================
-
-if __name__ == "__main__":
-    import os
-
-    # Check if prepared data exists
-    if not os.path.exists("data/prepared/train.pt"):
-        print("⚠️  Prepared data not found!")
-        print("Run: python scripts/prepare_training_data.py")
-        exit(1)
-
-    # Create dataloaders
-    print("Creating dataloaders...")
-    train_loader, val_loader = create_train_val_loaders(batch_size=4)
-
-    # Test training loader
-    print("\nTesting training loader:")
-    for i, (x, y) in enumerate(train_loader):
-        print(f"Batch {i}:")
-        print(f"  x shape: {x.shape}  (input)")
-        print(f"  y shape: {y.shape}  (target)")
-        print(f"  x[0, :10]: {x[0, :10]}")
-        print(f"  y[0, :10]: {y[0, :10]}")
-
-        # Verify target is shifted input
-        assert torch.equal(x[0, 1:], y[0, :-1]), "Target should be shifted input!"
-
-        if i >= 2:  # Test only first 3 batches
-            break
-
-    print("\n✅ DataLoader test successful!")
-    print(f"Training batches: {len(train_loader)}")
-    print(f"Validation batches: {len(val_loader)}")
+    return dataset

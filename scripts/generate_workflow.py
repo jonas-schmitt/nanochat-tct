@@ -47,7 +47,22 @@ def load_model(checkpoint_path, device="cuda"):
     if Path(meta_path).exists():
         with open(meta_path) as f:
             meta = json.load(f)
-        model_config_kwargs = meta["model_config"]
+        # Handle both old and new metadata formats
+        if "model_config" in meta:
+            model_config_kwargs = meta["model_config"]
+        elif "config" in meta:
+            # New format: convert config to model_config_kwargs
+            config = meta["config"]
+            model_config_kwargs = dict(
+                sequence_len=config["context_size"],
+                vocab_size=config["vocab_size"],
+                n_layer=config["n_layers"],
+                n_head=config["n_heads"],
+                n_kv_head=config["n_heads"],
+                n_embd=config["d_model"],
+            )
+        else:
+            raise ValueError(f"Unknown metadata format in {meta_path}")
     else:
         # Fallback to default small config
         print("Warning: No metadata found, using default small config")

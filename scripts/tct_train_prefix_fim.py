@@ -1,21 +1,39 @@
 """
-TCT Training Script for GitHub Actions Workflow Generation
+TCT Prefix-Aware FIM (Fill-in-the-Middle) Training Script for GitHub Actions Workflow Generation
 
-Train a decoder-only transformer on GitHub workflows using TCT tokenization.
+Train a decoder-only transformer on GitHub workflows using TCT tokenization with prefix-aware geometric FIM.
+
+ADDRESSES CORE TRAINING ISSUES:
+- Trains on contexts of ALL lengths: 1, 2, 3, ..., context_size (not just fixed 512)
+- Matches inference distribution (generation starts from empty/short context)
+- Uses geometric FIM sampling for each prefix (balanced k=0/k=1 distribution)
+
+Key Innovation:
+Instead of fixed 512-token windows, creates examples with varying prefix lengths:
+  - Prefix 1: [] → tok0 (with geometric FIM)
+  - Prefix 2: [tok0] → tok1 (with geometric FIM)
+  - ...
+  - Prefix 512: [tok0...tok510] → tok511 (with geometric FIM)
+
+This fixes train/test distribution mismatch where model only saw 512-token
+contexts but inference needs to work with 0, 1, 2, ... contexts.
 
 Usage:
     # Smoke test (10 iterations)
-    python -m scripts.tct_train --num_iterations 10 --model_size small
+    python -m scripts.tct_train_prefix_fim --num_iterations 10
 
-    # Full training
-    python -m scripts.tct_train --model_size medium --data_dir ~/Desktop/data/prepared/
+    # Full prefix-aware FIM training
+    python -m scripts.tct_train_prefix_fim --data_dir ~/Desktop/data/workflows-100k/json
 
-    # Distributed training
-    torchrun --nproc_per_node=8 -m scripts.tct_train --model_size medium
+    # Pure decoder-only (no FIM)
+    python -m scripts.tct_train_prefix_fim --geometric_p 1.0
+
+    # Balanced decoder-only + FIM (recommended)
+    python -m scripts.tct_train_prefix_fim --geometric_p 0.5
 """
 
 import os
-os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True"
+os.environ["PYTORCH_ALLOC_CONF"] = "expandable_segments:True"
 import sys
 import time
 from pathlib import Path
@@ -32,10 +50,10 @@ from nanochat.common import compute_init, compute_cleanup, print0, DummyWandb, p
 from nanochat.checkpoint_manager import save_checkpoint
 from nanochat.loss_eval import evaluate_bpb
 
-# TCT imports
-from model_config import get_config
+# TCT Prefix-Aware FIM imports
+from model_config_multimask_fim import get_config  # Reuse model configs
 from tct_tokenizer_adapter import TCTTokenizer
-from tct_epoch_dataloader import create_epoch_offset_dataloader
+from tct_dataloader import tokenizing_distributed_data_loader
 
 print_banner()
 
@@ -45,17 +63,26 @@ run = "dummy" # wandb run name ("dummy" = no logging)
 # Runtime
 device_type = "" # cuda|cpu|mps (empty = autodetect)
 # Model
-model_size = "medium-512" # small|medium-small|medium|medium-512|large-512|large
-data_dir = str(Path.home() / "Desktop/data/workflows-100k/json") # Workflow JSON directory
+model_size = "small-512" # small-512|medium-512|large-512 (start small for testing)
+data_dir = str(Path.home() / "Desktop/data/workflows/json") # Workflow JSON directory
 # Training
-num_iterations = 50000 # number of optimization steps (-1 = use from config)
-device_batch_size = 20 # per-device batch size (768×8 with context=512 should fit in 8GB)
+num_iterations = 20000 # number of optimization steps (-1 = use from config)
+device_batch_size = 32 # per-device batch size (smaller due to more diverse batch sizes)
+# FIM parameters
+geometric_p = 0.5   # geometric distribution parameter (0.5 = balanced decoder/FIM)
+                    # p=1.0 → 100% decoder-only (k=0)
+                    # p=0.5 → 50% k=0, 50% k=1+
+                    # p=0.33 → 33% k=0, 67% k=1+
+# Prefix sampling parameters
+prefix_mode = "log" # "all"|"log"|"sample"|"hybrid" (log = powers of 2, much faster)
+prefix_count = 20     # Number of prefixes for "sample"/"hybrid" modes (only used for long prefixes)
+prefix_bias = "uniform" # "uniform" or "short" (bias toward short contexts)
 # Optimization (will use defaults from model config if not overridden)
 learning_rate = -1.0 # learning rate (-1 = use config default)
 grad_clip = 1.0 # gradient clipping
 warmup_iters = -1 # warmup iterations (-1 = use config default)
 # Evaluation
-eval_every = 5000 # evaluate val loss every N steps
+eval_every = 2000 # evaluate val loss every N steps (more frequent for early feedback)
 eval_max_batches = 50 # max batches for validation
 # Checkpointing
 save_every = 5000 # save checkpoint every N steps
@@ -69,8 +96,8 @@ exec(open(os.path.join('nanochat', 'configurator.py')).read())
 user_config = {k: globals()[k] for k in config_keys}
 # -----------------------------------------------------------------------------
 
-# Load TCT model configuration
-print0(f"Loading {model_size.upper()} model configuration...")
+# Load model configuration
+print0(f"Loading {model_size.upper()} Prefix-Aware FIM model configuration...")
 config = get_config(model_size)
 
 # Override with CLI args if provided
@@ -82,11 +109,15 @@ if warmup_iters >= 0:
     config["warmup_iters"] = warmup_iters
 
 print0(f"Model configuration:")
-print0(f"  Vocab size: {config['vocab_size']:,}")
+print0(f"  Vocab size: {config['vocab_size']:,} (8190 base + MASK at 8190 + PAD at 8191)")
 print0(f"  Context size: {config['context_size']}")
 print0(f"  Model dim: {config['d_model']}")
 print0(f"  Layers: {config['n_layers']}")
 print0(f"  Heads: {config['n_heads']}")
+print0(f"  Prefix mode: {prefix_mode}")
+k0_pct = int(geometric_p * 100)
+k1_pct = 100 - k0_pct
+print0(f"  FIM distribution: ~{k0_pct}% k=0, ~{k1_pct}% k=1+ (geometric_p={geometric_p})")
 print0(f"  Max iterations: {config['max_iters']:,}")
 print0(f"  Learning rate: {config['learning_rate']}")
 print0()
@@ -101,7 +132,7 @@ get_max_memory = torch.cuda.max_memory_allocated if device_type == "cuda" else l
 
 # wandb init
 use_dummy_wandb = run == "dummy" or not master_process
-wandb_run = DummyWandb() if use_dummy_wandb else wandb.init(project="nanochat-tct", name=run, config={**user_config, **config})
+wandb_run = DummyWandb() if use_dummy_wandb else wandb.init(project="nanochat-tct-prefix-fim", name=run, config={**user_config, **config})
 
 # Initialize TCT tokenizer
 print0("Initializing TCT tokenizer...")
@@ -127,7 +158,9 @@ with torch.device("meta"):
 model.to_empty(device=device)
 model.init_weights()
 orig_model = model # uncompiled model for saving
-model = torch.compile(model, dynamic=False)
+# Only compile if not resuming (to avoid OOM during resume)
+if not resume_from:
+    model = torch.compile(model, dynamic=False)
 
 num_params = sum(p.numel() for p in model.parameters())
 print0(f"Number of parameters: {num_params:,}")
@@ -174,49 +207,68 @@ if resume_from:
         start_step = int(match.group(1))
         print0(f"Resuming from step: {start_step}")
 
-    # Recompile model after loading weights
-    model = torch.compile(orig_model, dynamic=False)
+    # Note: Running without torch.compile when resuming to avoid OOM
+    # This is slower but necessary with limited GPU memory
+    model = orig_model
     print0()
 
-# Initialize dataloaders with epoch-based offset windowing
+# Initialize Prefix-Aware FIM datasets
 print0(f"Loading workflows from {data_dir}...")
 
 if not Path(data_dir).exists():
     print0(f"Error: Workflow directory not found: {data_dir}")
     sys.exit(1)
 
-print0("Creating epoch-based offset dataloaders...")
+print0("Creating Prefix-Aware FIM datasets...")
 # For context=512, offset_stride=16 gives 32 epochs (512/16=32)
-# For context=1024, offset_stride=32 gives 32 epochs (1024/32=32)
 offset_stride = config["context_size"] // 32
-train_loader = create_epoch_offset_dataloader(
-    workflow_dir=data_dir,
+
+train_dataset = tokenizing_distributed_data_loader(
+    device_batch_size=device_batch_size,
     context_size=config["context_size"],
-    offset_stride=offset_stride,
-    batch_size=device_batch_size,
     split="train",
+    data_dir=data_dir,
     train_split=0.9,
-    num_workers=0,  # 0 for debugging, increase for performance
-    pin_memory=(device_type == "cuda"),
+    geometric_p=geometric_p,
+    prefix_mode=prefix_mode,
+    prefix_count=prefix_count,
+    prefix_bias=prefix_bias,
 )
 
-val_loader = create_epoch_offset_dataloader(
-    workflow_dir=data_dir,
+val_dataset = tokenizing_distributed_data_loader(
+    device_batch_size=device_batch_size,
     context_size=config["context_size"],
-    offset_stride=offset_stride,
-    batch_size=device_batch_size,
     split="val",
+    data_dir=data_dir,
     train_split=0.9,
-    num_workers=0,
-    pin_memory=(device_type == "cuda"),
+    geometric_p=geometric_p,
+    prefix_mode=prefix_mode,
+    prefix_count=prefix_count,
+    prefix_bias=prefix_bias,
 )
 has_val = True
 
-train_dataset = train_loader.dataset
-val_dataset = val_loader.dataset
+# Create dataloaders
+from torch.utils.data import DataLoader
 
-print0(f"Training windows (epoch 0): {len(train_dataset)}")
-print0(f"Validation windows (epoch 0): {len(val_dataset)}")
+train_loader = DataLoader(
+    train_dataset,
+    batch_size=device_batch_size,
+    shuffle=False,  # Don't shuffle - epoch offset provides diversity
+    num_workers=0,
+    pin_memory=(device_type == "cuda"),
+)
+
+val_loader = DataLoader(
+    val_dataset,
+    batch_size=device_batch_size,
+    shuffle=False,
+    num_workers=0,
+    pin_memory=(device_type == "cuda"),
+)
+
+print0(f"Training examples (epoch 0): {len(train_dataset):,}")
+print0(f"Validation examples (epoch 0): {len(val_dataset):,}")
 print0()
 
 # Create infinite iterator for training with epoch updates
@@ -244,7 +296,7 @@ def get_lr_multiplier(step):
 
 # -----------------------------------------------------------------------------
 # Training loop
-print0("Starting training...")
+print0("Starting Prefix-Aware FIM training...")
 print0(f"  Iterations: {config['max_iters']:,}")
 print0(f"  Batch size: {device_batch_size}")
 print0(f"  Gradient clip: {grad_clip}")
@@ -291,99 +343,75 @@ for step in range(start_step + 1, config["max_iters"] + 1):
     # Save checkpoint periodically and at the end
     should_save = (step % save_every == 0 and step > 0) or last_step
     if master_process and should_save:
-        output_dirname = model_tag if model_tag else f"tct_{model_size}"
-        if checkpoint_dir:
-            ckpt_dir = Path(checkpoint_dir)
-        else:
-            ckpt_dir = Path.home() / "Desktop" / "checkpoints" / output_dirname
-
-        ckpt_dir.mkdir(parents=True, exist_ok=True)
-
+        output_dirname = model_tag if model_tag else f"tct_prefix_fim_{model_size}_p{int(geometric_p*100)}"
+        ckpt_dir = Path(checkpoint_dir if checkpoint_dir else "checkpoints") / output_dirname
         save_checkpoint(
             str(ckpt_dir),
             step,
             orig_model.state_dict(),
             [optimizer.state_dict()],
-            {
-                "step": step,
-                "val_loss": val_loss if has_val else None,
-                "model_config": model_config_kwargs,
-                "user_config": user_config,
-                "tct_config": config,
-            }
+            {"config": config, "model_size": model_size, "geometric_p": geometric_p, "prefix_mode": prefix_mode}
         )
-        print0(f"Saved checkpoint to {ckpt_dir / f'model_{step:05d}.pt'}")
-
-    if last_step:
-        break
+        print0(f"Saved checkpoint to {ckpt_dir}")
 
     # Training step
-    synchronize()
     t0 = time.time()
 
     # Get batch
     x, y = next(train_iter)
     x, y = x.to(device), y.to(device)
 
-    # Forward & backward
+    # Forward pass
     with autocast_ctx:
         loss = model(x, y)
 
-    train_loss = loss.detach().item()
+    # Backward pass
     loss.backward()
 
     # Gradient clipping
-    if grad_clip > 0.0:
-        torch.nn.utils.clip_grad_norm_(orig_model.parameters(), grad_clip)
+    if grad_clip > 0:
+        torch.nn.utils.clip_grad_norm_(model.parameters(), grad_clip)
+
+    # Learning rate schedule
+    lr_multiplier = get_lr_multiplier(step)
+    for param_group in optimizer.param_groups:
+        param_group["lr"] = config["learning_rate"] * lr_multiplier
 
     # Optimizer step
-    lrm = get_lr_multiplier(step)
-    for param_group in optimizer.param_groups:
-        param_group["lr"] = config["learning_rate"] * lrm
-
     optimizer.step()
-    model.zero_grad(set_to_none=True)
+    optimizer.zero_grad()
 
     synchronize()
     t1 = time.time()
     dt = t1 - t0
+    total_training_time += dt
 
     # Logging
+    train_loss = loss.item()
     smooth_train_loss = ema_beta * smooth_train_loss + (1 - ema_beta) * train_loss
-    debiased_loss = smooth_train_loss / (1 - ema_beta**(step + 1))
+    train_perplexity = torch.exp(torch.tensor(smooth_train_loss)).item()
 
-    if step > 10:
-        total_training_time += dt
+    if step % config["log_interval"] == 0:
+        lr = optimizer.param_groups[0]["lr"]
+        tokens_per_sec = device_batch_size * config["context_size"] / dt
+        print0(f"step {step:05d}/{config['max_iters']:05d} ({100*step/config['max_iters']:.1f}%) | "
+               f"loss: {train_loss:.4f} | ppl: {train_perplexity:.2f} | "
+               f"lr: {lr:.2e} | dt: {dt*1000:.1f}ms | tok/s: {tokens_per_sec:,.0f}")
 
-    tokens_per_sec = int(device_batch_size * config["context_size"] / dt)
-    pct_done = 100 * step / config["max_iters"]
-    train_perplexity = torch.exp(torch.tensor(debiased_loss)).item()
-
-    if step % 10 == 0:
-        print0(f"step {step:05d}/{config['max_iters']:05d} ({pct_done:.1f}%) | "
-               f"loss: {debiased_loss:.4f} | ppl: {train_perplexity:.2f} | "
-               f"lr: {config['learning_rate'] * lrm:.2e} | dt: {dt*1000:.1f}ms | tok/s: {tokens_per_sec:,}")
-
-    if step % 100 == 0:
         wandb_run.log({
             "step": step,
-            "train/loss": debiased_loss,
+            "train/loss": train_loss,
             "train/perplexity": train_perplexity,
-            "train/lr": config["learning_rate"] * lrm,
-            "train/dt": dt,
-            "train/tok_per_sec": tokens_per_sec,
+            "train/lr": lr,
+            "train/dt_ms": dt * 1000,
+            "train/tokens_per_sec": tokens_per_sec,
             "total_training_time": total_training_time,
         })
 
-# Final stats
-print0()
-print0(f"Peak memory: {get_max_memory() / 1024 / 1024:.1f} MiB")
-print0(f"Total training time: {total_training_time/60:.1f}m")
-if has_val:
-    print0(f"Min validation loss: {min_val_loss:.4f}")
-print0()
 print0("Training complete!")
+print0(f"Total training time: {total_training_time/3600:.2f} hours")
+print0(f"Best validation loss: {min_val_loss:.4f}")
 
 # Cleanup
-wandb_run.finish()
 compute_cleanup()
+wandb_run.finish()
