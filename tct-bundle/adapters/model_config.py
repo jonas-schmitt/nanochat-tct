@@ -108,7 +108,7 @@ MEDIUM_CONFIG = {
     # Training
     "batch_size": 20,
     "gradient_accumulation": 4,  # Effective batch = 80
-    "learning_rate": 2e-4,
+    "learning_rate": 1.2e-4,   # Reduced from 2e-4 (4.5x more params than small)
     "weight_decay": 0.1,
     "warmup_iters": 2000,
     "max_iters": 40000,        # ~12 epochs (prevents overfitting)
@@ -144,7 +144,7 @@ MEDIUM_1024_CONFIG = {
     # Training (adjusted for larger context)
     "batch_size": 10,          # Reduced for memory
     "gradient_accumulation": 8,  # Effective batch = 80
-    "learning_rate": 2e-4,
+    "learning_rate": 1.2e-4,   # Reduced from 2e-4 (4.5x more params than small)
     "weight_decay": 0.1,
     "warmup_iters": 2000,
     "max_iters": 40000,
@@ -180,7 +180,7 @@ LARGE_CONFIG = {
     # Training
     "batch_size": 20,
     "gradient_accumulation": 4,
-    "learning_rate": 2e-4,
+    "learning_rate": 8e-5,     # Reduced from 2e-4 (9x more params than small)
     "weight_decay": 0.1,
     "warmup_iters": 2000,
     "max_iters": 50000,        # Reduced from 100k (overfitting observed)
@@ -216,7 +216,7 @@ LARGE_1024_CONFIG = {
     # Training (adjusted for larger context)
     "batch_size": 10,          # Reduced for memory
     "gradient_accumulation": 8,
-    "learning_rate": 2e-4,
+    "learning_rate": 8e-5,     # Reduced from 2e-4 (9x more params than small)
     "weight_decay": 0.1,
     "warmup_iters": 2000,
     "max_iters": 50000,
