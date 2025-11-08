@@ -1,0 +1,144 @@
+
+                                                       █████                █████
+                                                      ░░███                ░░███
+     ████████    ██████   ████████    ██████   ██████  ░███████    ██████  ███████
+    ░░███░░███  ░░░░░███ ░░███░░███  ███░░███ ███░░███ ░███░░███  ░░░░░███░░░███░
+     ░███ ░███   ███████  ░███ ░███ ░███ ░███░███ ░░░  ░███ ░███   ███████  ░███
+     ░███ ░███  ███░░███  ░███ ░███ ░███ ░███░███  ███ ░███ ░███  ███░░███  ░███ ███
+     ████ █████░░████████ ████ █████░░██████ ░░██████  ████ █████░░███████  ░░█████
+    ░░░░ ░░░░░  ░░░░░░░░ ░░░░ ░░░░░  ░░░░░░   ░░░░░░  ░░░░ ░░░░░  ░░░░░░░░   ░░░░░
+    
+Overriding: model_size = small-1024
+Overriding: geometric_p = 1.0
+Overriding: prefix_mode = all
+Overriding: num_iterations = 100000
+Overriding: device_batch_size = 16
+Overriding: eval_every = 5000
+Overriding: save_every = 5000
+Overriding: cache_file = ~/Desktop/data/prepared-118k-1024-s32/train.pt
+Loading SMALL-1024 Prefix-Aware FIM model configuration...
+Model configuration:
+  Vocab size: 8,192 (8190 base + MASK at 8190 + PAD at 8191)
+  Context size: 1024
+  Model dim: 384
+  Layers: 8
+  Heads: 6
+  Prefix mode: all
+  FIM distribution: ~100% k=0, ~0% k=1+ (geometric_p=1.0)
+  Max iterations: 100,000
+  Learning rate: 0.0002
+
+Autodetected device type: cuda
+/home/josch/git/nanochat-tct/.venv/lib/python3.12/site-packages/torch/__init__.py:1617: UserWarning: Please use the new API settings to control TF32 behavior, such as torch.backends.cudnn.conv.fp32_precision = 'tf32' or torch.backends.cuda.matmul.fp32_precision = 'ieee'. Old settings, e.g, torch.backends.cuda.matmul.allow_tf32 = True, torch.backends.cudnn.allow_tf32 = True, allowTF32CuDNN() and allowTF32CuBLAS() will be deprecated after Pytorch 2.9. Please see https://pytorch.org/docs/main/notes/cuda.html#tensorfloat-32-tf32-on-ampere-and-later-devices (Triggered internally at /pytorch/aten/src/ATen/Context.cpp:80.)
+  _C._set_float32_matmul_precision(precision)
+2025-11-08 10:40:47,322 - nanochat.common - [32m[1mINFO[0m - Distributed world size: 1
+Initializing TCT tokenizer...
+TCT vocab size: 8,192
+
+Initializing model...
+Number of parameters: 20,447,232
+
+Initializing optimizer...
+
+Loading workflows from /home/josch/Desktop/data/workflows/json...
+Creating Prefix-Aware FIM datasets...
+Loading train split: 106602 workflows
+Warning: Specified cache file not found: ~/Desktop/data/prepared-118k-1024-s32/train.pt
+Tokenizing 106602 workflows...
+  ⚠️  Removing invalid workflow 06wj_syncRepos_sync-coding.json: Schema validation failed: Data did not match any variant of GithubWorkflowOnEnum enum
+  ⚠️  Removing invalid workflow 0hmX_tiny-world_.asset-template-addon.json.json: Schema validation failed: missing field `on`
+  ⚠️  Removing invalid workflow 0hmX_tiny-world_.asset-template-csharp-addon.json.json: Schema validation failed: missing field `on`
+  ⚠️  Removing invalid workflow 0maru_twitter_login_install-flutter.json: Schema validation failed: invalid type: string "BRANCH=$1\ncd $HOME git clone https://github.com/flu
+  ⚠️  Removing invalid workflow 0x1-company_club_install-flutter.json: Schema validation failed: invalid type: string "BRANCH=$1 git clone https://github.com/flutter/flutt
+  ⚠️  Removing invalid workflow 0x1-company_nererun_install-flutter.json: Schema validation failed: invalid type: string "BRANCH=$1 git clone https://github.com/flutter/flutt
+  ⚠️  Removing invalid workflow 12Dinisha_Spotify-API-Music-Recommendation-Using-LSTM_setuptools .json: Schema validation failed: invalid type: string "from setuptools import setup, find_packages\nsetup( 
+  ⚠️  Removing invalid workflow 202055112_traffic_simulator_requirements.json: Schema validation failed: invalid type: string "pygame", expected struct GithubWorkflow
+  ⚠️  Removing invalid workflow 29cmb_BlueGoosePlatformer_build-love-file.json: Schema validation failed: Data did not match any variant of GithubWorkflowOnEnum enum
+  ⚠️  Removing invalid workflow 2MIRACLE-BTC_Jenkins-CICD-test_advertisements-errors.json: Schema validation failed: Data did not match any variant of GithubWorkflowOnEnum enum
+  Progress: 10,000/106,602 workflows
+  Progress: 20,000/106,602 workflows
+  Progress: 30,000/106,602 workflows
+  Progress: 40,000/106,602 workflows
+  Progress: 50,000/106,602 workflows
+  Progress: 60,000/106,602 workflows
+  Progress: 70,000/106,602 workflows
+  Progress: 80,000/106,602 workflows
+  Progress: 90,000/106,602 workflows
+  Progress: 100,000/106,602 workflows
+  Removed 1212 invalid workflows (1.1%)
+  Successfully tokenized 105390 workflows
+Saving tokenized workflows to cache: /home/josch/Desktop/data/workflows/json/.cache/tokenized_train_split90_106602files.pt
+Cache saved successfully ✅
+Building prefix index (mode=all)...
+  Progress: 10,000/105,390 workflows, 17,252,264 examples so far
+  Progress: 20,000/105,390 workflows, 35,441,448 examples so far
+  Progress: 30,000/105,390 workflows, 53,060,976 examples so far
+  Progress: 40,000/105,390 workflows, 70,513,141 examples so far
+  Progress: 50,000/105,390 workflows, 91,877,394 examples so far
+  Progress: 60,000/105,390 workflows, 108,032,080 examples so far
+  Progress: 70,000/105,390 workflows, 124,668,096 examples so far
+  Progress: 80,000/105,390 workflows, 142,246,566 examples so far
+  Progress: 90,000/105,390 workflows, 159,678,237 examples so far
+  Progress: 100,000/105,390 workflows, 178,357,887 examples so far
+Prefix FIM Dataset initialized:
+  Total examples: 186,644,244
+  Prefix mode: all
+  FIM distribution: ~100% k=0, ~0% k=1+ (geometric_p=1.0)
+  Offset: 0
+Loading val split: 11724 workflows
+Warning: Specified cache file not found: ~/Desktop/data/prepared-118k-1024-s32/train.pt
+Tokenizing 11724 workflows...
+  ⚠️  Removing invalid workflow tejas-jm_CaptionKraft_requirements.json: Schema validation failed: invalid type: string "tensorflow keras numpy matplotlib seaborn plotly sci
+  ⚠️  Removing invalid workflow tensorflow_io_build.bazel.json: Schema validation failed: invalid type: string "set -x\n\nPYTHON=python3 if [[ $# == 1 ]]; then PYTH
+  ⚠️  Removing invalid workflow tensorflow_rust_requirements.json: Schema validation failed: invalid type: string "tensorflow == 2.18.0 tf_keras == 2.18.0", expected s
+  ⚠️  Removing invalid workflow thc1006_nephoran-intent-operator_security-scan-config.json.json: Schema validation failed: missing field `on`
+  ⚠️  Removing invalid workflow the-virtual-brain_tvb-root_mrs-ci-rtx.json: Schema validation failed: invalid type: string "FROM nvidia/cuda:11.2.2-devel-ubuntu20.04\nRUN apt-g
+  ⚠️  Removing invalid workflow thealphakenya_qmoi-enhanced_nightly.json: Schema validation failed: Type error for key 'nightly-build': Data did not match any variant of Gith
+  ⚠️  Removing invalid workflow thealphakenya_qmoi-enhanced_nightly.json.backup.json: Schema validation failed: Type error for key 'nightly-build': Data did not match any variant of Gith
+  ⚠️  Removing invalid workflow theam_ellmental.py_type-checks.json: Schema validation failed: Type error for key 'build': Data did not match any variant of GithubWorkfl
+  ⚠️  Removing invalid workflow thisistamim_Face-Detection-OpenCV_README.json: Schema validation failed: missing field `on`
+  ⚠️  Removing invalid workflow thomasddn_ha-volvo-cars_mypy.json: Schema validation failed: missing field `on`
+  Progress: 10,000/11,724 workflows
+  Removed 101 invalid workflows (0.9%)
+  Successfully tokenized 11623 workflows
+Saving tokenized workflows to cache: /home/josch/Desktop/data/workflows/json/.cache/tokenized_val_split90_11724files.pt
+Cache saved successfully ✅
+Building prefix index (mode=all)...
+  Progress: 10,000/11,623 workflows, 17,255,961 examples so far
+Prefix FIM Dataset initialized:
+  Total examples: 20,182,066
+  Prefix mode: all
+  FIM distribution: ~100% k=0, ~0% k=1+ (geometric_p=1.0)
+  Offset: 0
+Training examples (epoch 0): 186,644,244
+Validation examples (epoch 0): 20,182,066
+
+Starting Prefix-Aware FIM training...
+  Iterations: 100,000
+  Batch size: 16
+  Gradient clip: 1.0
+
+Building prefix index (mode=all)...
+  Progress: 10,000/105,390 workflows, 17,252,264 examples so far
+  Progress: 20,000/105,390 workflows, 35,441,448 examples so far
+  Progress: 30,000/105,390 workflows, 53,060,976 examples so far
+  Progress: 40,000/105,390 workflows, 70,513,141 examples so far
+  Progress: 50,000/105,390 workflows, 91,877,394 examples so far
+  Progress: 60,000/105,390 workflows, 108,032,080 examples so far
+  Progress: 70,000/105,390 workflows, 124,668,096 examples so far
+  Progress: 80,000/105,390 workflows, 142,246,566 examples so far
+  Progress: 90,000/105,390 workflows, 159,678,237 examples so far
+  Progress: 100,000/105,390 workflows, 178,357,887 examples so far
+Epoch 0: offset=0, 186,644,244 examples
+W1108 12:04:10.466000 17191 .venv/lib/python3.12/site-packages/torch/_inductor/utils.py:1558] [0/0] Not enough SMs to use max_autotune_gemm mode
+step 00010/100000 (0.0%) | loss: 9.0082 | ppl: 353.58 | lr: 2.20e-06 | dt: 92.6ms | tok/s: 176,880
+step 00020/100000 (0.0%) | loss: 9.0002 | ppl: 2725.68 | lr: 4.20e-06 | dt: 94.1ms | tok/s: 174,194
+step 00030/100000 (0.0%) | loss: 8.9617 | ppl: 5475.34 | lr: 6.20e-06 | dt: 93.5ms | tok/s: 175,194
+step 00040/100000 (0.0%) | loss: 8.9358 | ppl: 6830.17 | lr: 8.20e-06 | dt: 94.0ms | tok/s: 174,259
+step 00050/100000 (0.1%) | loss: 8.8781 | ppl: 7160.05 | lr: 1.02e-05 | dt: 94.1ms | tok/s: 174,108
+step 00060/100000 (0.1%) | loss: 8.7893 | ppl: 6941.85 | lr: 1.22e-05 | dt: 95.4ms | tok/s: 171,822
+step 00070/100000 (0.1%) | loss: 8.6958 | ppl: 6425.45 | lr: 1.42e-05 | dt: 95.3ms | tok/s: 171,902
+step 00080/100000 (0.1%) | loss: 8.5920 | ppl: 5889.88 | lr: 1.62e-05 | dt: 96.0ms | tok/s: 170,613
+step 00090/100000 (0.1%) | loss: 8.4565 | ppl: 5260.06 | lr: 1.82e-05 | dt: 95.2ms | tok/s: 172,091
+step 00100/100000 (0.1%) | loss: 8.3046 | ppl: 4596.59 | lr: 2.02e-05 | dt: 96.7ms | tok/s: 169,346
+step 00110/100000 (0.1%) | loss: 8.1439 | ppl: 3960.41 | lr: 2.22e-05 | dt: 104.8ms | tok/s: 156,358

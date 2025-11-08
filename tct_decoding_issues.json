@@ -1,0 +1,141 @@
+{
+  "description": "TCT decoding issues found during medium model checkpoint investigation",
+  "date": "2025-11-07",
+  "checkpoint": "tct_prefix_fim_medium_p100/model_040000.pt (and model_035000.pt)",
+  "issues": [
+    {
+      "issue_type": "generated_from_scratch_fails",
+      "description": "Model generates tokens from scratch but they fail to decode immediately",
+      "seed": 42,
+      "temperature": 0.8,
+      "top_k": 100,
+      "max_tokens": 300,
+      "prompt_tokens": [],
+      "generated_tokens": [1, 0, 1, 5, 1, 4, 5, 1, 4, 113, 117, 67, 108, 3, 16, 67, 79, 78, 32, 80, 66, 79, 80, 69, 67, 32, 80, 65, 66, 72, 36, 95, 78, 80, 68, 84, 72, 79, 78, 111, 67, 69, 119, 2, 78, 80, 83, 36, 83, 65],
+      "error_at_length_1": "Decode failed: Unexpected end of token stream while decoding String: expected length or dictionary marker",
+      "error_at_length_2": "Decode failed: Unexpected end of token stream while decoding GithubWorkflowOnEnum.variant_index: expected variant index",
+      "error_at_length_5": "Decode failed: Unexpected end of token stream while decoding Event.variant_index: expected variant index",
+      "error_at_length_10": "Decode failed: Unexpected end of token stream while decoding Env.discriminator: expected discriminator",
+      "error_at_length_20": "Decode failed: Unexpected end of token stream while decoding String.byte: expected byte",
+      "error_at_length_50": "Decode failed: Unexpected end of token stream while decoding String.byte: expected byte",
+      "notes": "First token is 1 (same as valid workflows), but second token is 0 instead of expected 1024. All tokens are within vocab range [0-125]."
+    },
+    {
+      "issue_type": "generated_full_300_tokens",
+      "description": "Different run with full 300 tokens generated",
+      "error_message": "Decode failed: Unexpected end of token stream while decoding ConstrainedU32.digit: expected integer digit",
+      "notes": "Error message varies between runs due to random sampling, but all fail to decode"
+    },
+    {
+      "issue_type": "extension_from_valid_prefix_fails",
+      "description": "Model can decode the prefix but generates invalid continuation tokens",
+      "valid_prefix_workflow": {"name": "CI", "on": "push", "jobs": {}},
+      "prefix_tokens": [1, 1024, 50, 0, 25, 0, 0, 0, 0, 0, 0],
+      "generated_total_tokens": 211,
+      "tokens_consumed_by_decoder": 11,
+      "new_tokens_generated": 200,
+      "valid_new_tokens": 0,
+      "notes": "Model extends prefix with 200 tokens, but decoder only consumes the original 11-token prefix. All 200 new tokens are invalid/surplus."
+    },
+    {
+      "issue_type": "training_data_windows_not_decodable",
+      "description": "Training data consists of windowed segments that are not individually decodable",
+      "training_data_shape": [870351, 1024],
+      "example_0_first_30_tokens": [0, 1, 34, 66, 2326, 4149, 32, 1029, 1074, 5902, 2024, 2538, 1548, 116, 1541, 3115, 2000, 1074, 114, 1551, 1165, 1026, 3767, 3699, 4, 1098, 7284, 1029, 1074, 1282],
+      "example_1_first_30_tokens": [1, 1285, 4694, 1026, 5910, 6, 1025, 6, 19, 2280, 1053, 2274, 2939, 95, 1774, 5701, 4491, 32, 1710, 32, 2608, 1569, 3798, 1167, 6654, 1456, 1794, 114, 2240, 1028],
+      "example_2_first_30_tokens": [2, 1768, 2592, 1068, 1035, 2133, 4742, 1030, 1101, 10, 1167, 98, 1217, 1995, 1074, 1485, 1024, 44, 3668, 1768, 2592, 1068, 3, 56, 1167, 6654, 1126, 1699, 5452, 1219],
+      "decode_error_example_0": "Decode failed: Unexpected end of token stream while decoding String.length_digit: expected length digit",
+      "notes": "Each training example is a 1024-token window extracted with stride=32 from complete workflows. Windows are not complete modules and cannot be decoded independently."
+    },
+    {
+      "issue_type": "valid_workflow_tokens_for_comparison",
+      "description": "Tokens from a properly encoded minimal valid workflow",
+      "workflow": {"name": "CI", "on": "push", "jobs": {"build": {"runs-on": "ubuntu-latest", "steps": [{"uses": "actions/checkout@v4"}]}}},
+      "tokens": [1, 1024, 50, 0, 25, 0, 0, 0, 1, 1024, 20, 0, 0, 0, 0, 0, 1024, 0, 0, 0, 0, 0, 0, 1, 1, 0, 5, 1, 4, 117, 115, 101, 115, 3, 1024, 1, 0, 0, 0, 0, 0, 0, 0, 0],
+      "total_tokens": 44,
+      "decode_success": true,
+      "notes": "Valid workflows start with token 1, then token 1024. Single token cannot be decoded (needs multiple tokens to form a module)."
+    },
+    {
+      "issue_type": "position_token_discovery",
+      "description": "Training data uses position tokens that must be stripped before decoding",
+      "window_format": "[position_token, content_tokens...]",
+      "example_window_position_0": [0, 1, 1024, 50, 0, 25, 0, 0, 0, 1, 1024],
+      "example_window_position_5": [5, 0, 0, 0, 1, 1024, 20, 0, 0, 0, 0],
+      "decoding_rules": {
+        "with_position_token": "FAILS - 'Invalid token 1024 for this type'",
+        "without_position_token": "WORKS - window[1:] decodes successfully"
+      },
+      "notes": "Position token is prepended by extract_window() for training. It indicates absolute position in original sequence. Must be stripped before decoding: decode(window[1:])."
+    },
+    {
+      "issue_type": "generation_with_position_token_0",
+      "description": "Attempting generation starting with position token 0",
+      "approach": "Force first token to be 0 (position), then generate",
+      "results": {
+        "temperature_0.1_greedy": {
+          "pattern": "Mode collapse - repetitive [1,1,1,1024,20,0] loop",
+          "generated_tokens": [0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1024, 20, 0, 1, 1, 1, 1, 1024, 20, 0],
+          "error": "Invalid data: Key '' does not match pattern '^[_a-zA-Z][a-zA-Z0-9_-]*$'"
+        },
+        "temperature_1.2": {
+          "unique_tokens": 59,
+          "first_30": [0, 1, 0, 1, 0, 1, 1, 5, 1, 30, 1, 82, 1, 108, 16, 83, 1, 0, 1, 32, 98, 1, 98, 1, 14, 67, 317, 1, 1024, 66],
+          "error": "Invalid token '317' for this type"
+        },
+        "temperature_1.5": {
+          "unique_tokens": 83,
+          "first_30": [0, 1, 0, 1, 0, 1, 3328, 1, 11, 44, 113, 82, 1, 1, 16, 83, 1, 14, 66, 1, 7, 2, 18, 1, 124, 67, 317, 1, 1024, 5192],
+          "error": "Invalid token '317' for this type"
+        },
+        "temperature_2.0": {
+          "unique_tokens": 104,
+          "first_30": [0, 493, 0, 125, 3588, 1, 3328, 1, 5953, 1, 113, 82, 1, 108, 16, 83, 1, 0, 1, 32, 45, 66, 1, 6525, 124, 67, 317, 1, 7858, 1],
+          "error": "Arithmetic overflow in multi-token codec"
+        }
+      },
+      "notes": "Higher temperature increases diversity but doesn't fix schema violations. Model fundamentally cannot generate valid TCT sequences."
+    },
+    {
+      "issue_type": "greedy_generation_multiple_seeds",
+      "description": "Greedy generation (temperature=0) from scratch with different random seeds",
+      "checkpoint": "model_035000.pt (best validation)",
+      "all_samples_fail_with": "Invalid token '1024' for this type",
+      "seeds_tested": [42, 123, 456, 789, 999],
+      "tokens_consumed": 0,
+      "notes": "All greedy samples fail identically, suggesting deterministic failure mode regardless of initialization."
+    }
+  ],
+  "summary": {
+    "root_cause": "Model was trained on windowed segments (stride=32, context=1024) of workflows, not complete workflows. The model learns to predict next tokens given a window, but doesn't learn the TCT schema constraints needed to generate valid complete sequences.",
+    "what_works": [
+      "Model loads successfully",
+      "Model generates tokens within valid vocab range [0, 8191] (mostly)",
+      "When prompted with valid workflow prefix, it can be decoded (but extensions fail)",
+      "Training completed with good validation loss (1.654 @ step 35k, beating small model)",
+      "Position token mechanism works for training windows",
+      "Windows can be decoded correctly after stripping position token: decode(window[1:])"
+    ],
+    "what_doesnt_work": [
+      "Generating from scratch - fails immediately with schema violations",
+      "Extending workflows - generates invalid tokens after prefix (consumed 11/211)",
+      "Schema compliance - generated tokens violate TCT structural constraints",
+      "Completion detection - model doesn't know when workflow is complete",
+      "Module boundaries - model doesn't respect TCT's module-based decoding requirements",
+      "Token validity - generates tokens like 317, 3328 that are invalid for the schema context",
+      "Mode collapse - low temperature produces repetitive patterns"
+    ],
+    "hypothesis": "TCT requires multi-token sequences to form decodable modules. The model generates tokens that are individually plausible but violate inter-token schema constraints. Without explicit schema guidance during generation, the model drifts into invalid states.",
+    "key_discoveries": {
+      "position_tokens": "Training windows use format [position, content...]. Position token must be stripped before decoding.",
+      "window_decoding": "decode(window[1:]) works, decode(window) fails with 'Invalid token 1024'",
+      "generation_approach": "May need to integrate generated windows into existing encoded workflow sequences rather than generating from scratch"
+    },
+    "next_steps_suggested": [
+      "Implement window-based generation that maintains full workflow state",
+      "Integrate generated windows into existing encoded sequences",
+      "Investigate constrained decoding to enforce schema validity",
+      "Consider alternative training approach with schema-aware losses"
+    ]
+  }
+}
