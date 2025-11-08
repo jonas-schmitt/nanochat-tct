@@ -118,8 +118,8 @@ def main():
     parser.add_argument(
         "--train-split",
         type=float,
-        default=0.8,
-        help="Train/val split ratio (default: 0.8 for 80%% train)",
+        default=0.9,
+        help="Train/val split ratio (default: 0.9 for 90%% train)",
     )
     parser.add_argument(
         "--stride",
