@@ -87,7 +87,7 @@ grad_clip = 1.0 # gradient clipping
 warmup_iters = -1 # warmup iterations (-1 = use config default)
 # Evaluation
 eval_every = 5000 # evaluate val loss every N steps (aligned with checkpoints)
-eval_max_batches = 50 # max batches for validation
+eval_max_batches = 1000 # max batches for validation (1000 batches × 4 = 4k examples for fast, reliable metrics)
 # Checkpointing
 save_every = 5000 # save checkpoint every N steps
 checkpoint_dir = "" # checkpoint directory (empty = auto)

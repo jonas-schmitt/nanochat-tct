@@ -1,36 +1,72 @@
 """
-Model Configuration for Workflow Generation with TCT
+Model Configuration for Kubernetes Manifest Generation with TCT
 
-Three preset configurations optimized for GitHub Actions workflow generation
-with 1024 context (covers 56% of workflows entirely):
+Three preset configurations optimized for Kubernetes manifest generation
+with 2048 context (balanced coverage/speed):
 
-- Small:  20M params, 8 layers, ~3h training (100k steps), $15 budget
-- Medium: 50M params, 14 layers, ~15h training (100k steps), $75 budget  ⭐ RECOMMENDED
+- Small:  20M params, 8 layers, ~2 days training (100k steps), $10 budget  ⭐ RECOMMENDED START
+- Medium: 50M params, 14 layers, ~16h training (100k steps), $80 budget
 - Large:  138M params, 16 layers + SwiGLU, ~30h training (100k steps), $175 budget
 
-All configs emphasize depth over width for hierarchical workflow modeling.
-All configs train for 100k steps (~44 window visits each) for optimal learning.
+All configs emphasize depth over width for hierarchical manifest modeling.
+All configs train for 100k steps for optimal learning on 265k manifests.
 """
 
 # =============================================================================
-# Small Configuration (20M params, context=1024)
+# Small Configuration (20M params, context=2048) - RECOMMENDED START ⭐
 # =============================================================================
-SMALL_CONFIG = {
+SMALL_2048_CONFIG = {
     # Model architecture
-    "vocab_size": 8192,
+    "vocab_size": 20000,        # Kubernetes vocab size
+    "context_size": 2048,       # 2× context (covers ~70% of manifests entirely)
+    "d_model": 384,
+    "n_layers": 8,
+    "n_heads": 6,
+    "dropout": 0.1,
+
+    # Training (adjusted for 2048 context - half of 4096)
+    "batch_size": 16,            # Balanced for 2048 context
+    "gradient_accumulation": 8,  # Effective batch = 128
+    "learning_rate": 3e-4,
+    "weight_decay": 0.1,
+    "warmup_iters": 5000,
+    "max_iters": 100000,
+
+    # Optimization
+    "beta1": 0.9,
+    "beta2": 0.95,
+    "grad_clip": 1.0,
+
+    # Logging
+    "eval_interval": 500,
+    "log_interval": 10,
+    "save_interval": 5000,
+
+    # Estimated
+    "parameters": "~20M",
+    "training_time": "~2 days on RTX 4070 Laptop",
+    "budget": "~$10",
+}
+
+# =============================================================================
+# Small-1024 Configuration (20M params, context=1024) - Fast iteration
+# =============================================================================
+SMALL_1024_CONFIG = {
+    # Model architecture
+    "vocab_size": 20000,
     "context_size": 1024,
     "d_model": 384,
     "n_layers": 8,
     "n_heads": 6,
-    "dropout": 0.1,            # Light regularization (we only see ~3% of 110M examples in 100k steps)
+    "dropout": 0.1,
 
-    # Training (optimized for 100k steps, excellent generalization)
+    # Training (optimized for 100k steps)
     "batch_size": 32,          # Doubled from 16 (fits in 8GB, more stable gradients)
     "gradient_accumulation": 4,  # Reduced to keep effective batch = 128
-    "learning_rate": 3e-4,     # Increased for batch=32 and undertrained regime (only 2.9% data coverage)
+    "learning_rate": 3e-4,
     "weight_decay": 0.1,
-    "warmup_iters": 5000,      # 5% warmup (industry standard for long training)
-    "max_iters": 100000,       # Extended from 20k for better convergence
+    "warmup_iters": 5000,
+    "max_iters": 100000,
 
     # Optimization
     "beta1": 0.9,
@@ -49,11 +85,47 @@ SMALL_CONFIG = {
 }
 
 # =============================================================================
-# Medium Configuration (50M params, context=1024) - RECOMMENDED ⭐
+# Small-4096 Configuration (20M params, context=4096) - Full coverage
 # =============================================================================
-MEDIUM_CONFIG = {
+SMALL_4096_CONFIG = {
     # Model architecture
-    "vocab_size": 8192,
+    "vocab_size": 20000,
+    "context_size": 4096,       # 4× larger context (covers 82% of manifests entirely)
+    "d_model": 384,
+    "n_layers": 8,
+    "n_heads": 6,
+    "dropout": 0.1,
+
+    # Training (adjusted for 4096 context - uses more memory)
+    "batch_size": 8,             # Reduced from 32 due to 4× context size
+    "gradient_accumulation": 16,  # Keep effective batch = 128
+    "learning_rate": 3e-4,
+    "weight_decay": 0.1,
+    "warmup_iters": 5000,
+    "max_iters": 100000,
+
+    # Optimization
+    "beta1": 0.9,
+    "beta2": 0.95,
+    "grad_clip": 1.0,
+
+    # Logging
+    "eval_interval": 500,
+    "log_interval": 10,
+    "save_interval": 5000,
+
+    # Estimated
+    "parameters": "~20M",
+    "training_time": "~4 hours on RTX 4090",
+    "budget": "~$20",
+}
+
+# =============================================================================
+# Medium Configuration (50M params, context=1024)
+# =============================================================================
+MEDIUM_1024_CONFIG = {
+    # Model architecture
+    "vocab_size": 20000,
     "context_size": 1024,
     "d_model": 512,
     "n_layers": 14,
@@ -85,11 +157,47 @@ MEDIUM_CONFIG = {
 }
 
 # =============================================================================
+# Medium-2048 Configuration (50M params, context=2048)
+# =============================================================================
+MEDIUM_2048_CONFIG = {
+    # Model architecture
+    "vocab_size": 20000,
+    "context_size": 2048,
+    "d_model": 512,
+    "n_layers": 14,
+    "n_heads": 8,
+    "dropout": 0.1,
+
+    # Training (adjusted for 2048 context)
+    "batch_size": 4,              # Reduced due to 2048 context
+    "gradient_accumulation": 32,   # Keep effective batch = 128
+    "learning_rate": 2.5e-4,
+    "weight_decay": 0.1,
+    "warmup_iters": 5000,
+    "max_iters": 100000,
+
+    # Optimization
+    "beta1": 0.9,
+    "beta2": 0.95,
+    "grad_clip": 1.0,
+
+    # Logging
+    "eval_interval": 500,
+    "log_interval": 10,
+    "save_interval": 5000,
+
+    # Estimated
+    "parameters": "~50M",
+    "training_time": "~16 hours on RTX 4090",
+    "budget": "~$80",
+}
+
+# =============================================================================
 # Large Configuration (138M params, context=1024)
 # =============================================================================
-LARGE_CONFIG = {
+LARGE_1024_CONFIG = {
     # Model architecture
-    "vocab_size": 8192,
+    "vocab_size": 20000,
     "context_size": 1024,
     "d_model": 768,
     "n_layers": 16,
@@ -126,18 +234,20 @@ LARGE_CONFIG = {
 # =============================================================================
 
 CONFIGS = {
-    "small": SMALL_CONFIG,
-    "medium": MEDIUM_CONFIG,
-    "large": LARGE_CONFIG,
+    "small-1024": SMALL_1024_CONFIG,
+    "small-2048": SMALL_2048_CONFIG,
+    "small-4096": SMALL_4096_CONFIG,
+    "medium-1024": MEDIUM_1024_CONFIG,
+    "medium-2048": MEDIUM_2048_CONFIG,
+    "large-1024": LARGE_1024_CONFIG,
 }
 
-def get_config(size="medium"):
+def get_config(size="small-2048"):
     """
     Get model configuration by size.
 
     Args:
-        size: Config name - "small", "medium" (default), or "large"
-              All configs use 1024 context.
+        size: Config name - "small-2048" (default), "medium-2048", etc.
 
     Returns:
         Configuration dictionary (copy, safe to modify)
@@ -146,44 +256,45 @@ def get_config(size="medium"):
         ValueError: If config name not found
 
     Example:
-        >>> config = get_config("medium")  # 90M params, 1024 context
+        >>> config = get_config("small-2048")  # 20M params, 2048 context
     """
     if size not in CONFIGS:
         available = ", ".join(CONFIGS.keys())
         raise ValueError(
             f"Unknown config: '{size}'\n"
             f"Available configs: {available}\n"
-            f"  Recommended: medium (90M params, 1024 context)"
+            f"  Recommended: small-2048 (20M params, 2048 context)"
         )
     return CONFIGS[size].copy()
 
 def print_config_comparison():
     """Print comparison table of all configurations."""
     print("=" * 120)
-    print("TCT Workflow Generation - Model Configurations (1024 context)")
+    print("TCT Kubernetes Manifest Generation - Model Configurations")
     print("=" * 120)
     print()
 
     # Table header
-    print(f"{'Config':<10} {'Params':<10} {'Context':<8} {'d_model':<8} {'Layers':<8} {'Heads':<8} {'Time':<20} {'Budget':<10}")
+    print(f"{'Config':<15} {'Params':<10} {'Context':<8} {'d_model':<8} {'Layers':<8} {'Heads':<8} {'Time':<25} {'Budget':<10}")
     print("-" * 120)
 
-    for name in ["small", "medium", "large"]:
+    for name in ["small-1024", "small-2048", "small-4096", "medium-1024", "medium-2048", "large-1024"]:
         cfg = CONFIGS[name]
-        marker = " ⭐" if name == "medium" else ""
-        print(f"{name + marker:<10} {cfg['parameters']:<10} {cfg['context_size']:<8} {cfg['d_model']:<8} "
-              f"{cfg['n_layers']:<8} {cfg['n_heads']:<8} {cfg['training_time']:<20} {cfg['budget']:<10}")
+        marker = " ⭐" if name == "small-2048" else ""
+        print(f"{name + marker:<15} {cfg['parameters']:<10} {cfg['context_size']:<8} {cfg['d_model']:<8} "
+              f"{cfg['n_layers']:<8} {cfg['n_heads']:<8} {cfg['training_time']:<25} {cfg['budget']:<10}")
 
     print()
     print("=" * 120)
     print()
     print("Recommendation:")
-    print("  ⭐ RECOMMENDED: medium (50M, 14 layers, 100k steps) - Best balance")
-    print("  - Use small (20M, 8 layers) for baseline/debugging")
-    print("  - Use large (138M, 16 layers + SwiGLU) for maximum quality")
+    print("  ⭐ RECOMMENDED START: small-2048 (20M, 8 layers, 100k steps) - Best balance for initial training")
+    print("  - Use small-1024 for faster iteration/debugging")
+    print("  - Use medium-2048 (50M, 14 layers) for production quality")
+    print("  - Use large-1024 (138M, 16 layers + SwiGLU) for maximum quality")
     print()
-    print("All configs emphasize depth over width for hierarchical workflow modeling")
-    print("All configs train for 100k steps (~44 window visits each) for optimal learning")
+    print("All configs emphasize depth over width for hierarchical manifest modeling")
+    print("All configs train for 100k steps for optimal learning on 265k manifests")
     print()
 
 if __name__ == "__main__":

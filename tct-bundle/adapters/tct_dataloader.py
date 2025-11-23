@@ -213,10 +213,9 @@ class TCTEpochPrefixFIMDataset(Dataset):
         This creates the complete mapping from flat dataset index → training example parameters.
         For mode="all" with 100k workflows, this generates ~175M index entries.
 
-        Process for each workflow:
-        1. Get non-overlapping window positions (respecting epoch offset)
-        2. For each window, sample prefix lengths based on prefix_mode
-        3. Append (workflow_idx, window_start, prefix_len) tuple to index
+        Complete sequence training: Create all prefixes from position 0 only.
+        For each workflow, generate prefixes: tokens[0:1], tokens[0:2], ...,
+        up to tokens[0:min(workflow_len, context_size)].
 
         The index enables PyTorch DataLoader's required __len__() and __getitem__(idx) API.
         """
@@ -227,55 +226,28 @@ class TCTEpochPrefixFIMDataset(Dataset):
         for wf_idx, tokens in enumerate(self.tokenized_workflows):
             if (wf_idx + 1) % 10000 == 0:
                 print(f"  Progress: {wf_idx+1:,}/{len(self.tokenized_workflows):,} workflows, {len(self.prefix_index):,} examples so far", flush=True)
-            # Get window positions for this workflow
-            window_positions = self._get_window_positions(len(tokens))
 
-            for window_start in window_positions:
-                # Determine max prefix length for this window
-                max_prefix_len = min(self.context_size, len(tokens) - window_start)
+            # Complete sequence training: Always start from position 0
+            window_start = 0
+            max_prefix_len = min(self.context_size, len(tokens))
 
-                # Sample prefix lengths
-                prefix_lengths = self._sample_prefix_lengths(max_prefix_len)
+            # Sample prefix lengths (for prefix_mode="all", this is [1,2,3,...,max_prefix_len])
+            prefix_lengths = self._sample_prefix_lengths(max_prefix_len)
 
-                # Add to index
-                for prefix_len in prefix_lengths:
-                    self.prefix_index.append((wf_idx, window_start, prefix_len))
+            # Add all prefixes to index
+            for prefix_len in prefix_lengths:
+                self.prefix_index.append((wf_idx, window_start, prefix_len))
 
     def _get_window_positions(self, workflow_len):
         """
-        Get non-overlapping window start positions for a workflow.
+        For complete sequence training, always return single window at position 0.
 
-        CRITICAL: In epochs with offset > 0, we MUST include an initial short
-        window [0:offset] to ensure ALL tokens are seen in every epoch.
-        Without this, tokens [0:offset) are never trained on in later epochs,
-        creating systematic data gaps for beginning-of-workflow tokens.
+        We only train on prefixes from the beginning: tokens[0:1], tokens[0:2], ...,
+        up to tokens[0:min(workflow_len, context_size)].
+
+        No sliding windows - every training example must start from token 0.
         """
-        positions = []
-
-        # Handle workflows smaller than context_size
-        if workflow_len < self.context_size:
-            if self.current_offset == 0:
-                positions.append(0)  # Only include in epoch 0
-            return positions
-
-        # CRITICAL FIX: Add initial short window when offset > 0
-        # This window will be [0:offset] and padded to context_size in __getitem__
-        # Ensures all tokens from the beginning of the workflow are trained on
-        if self.current_offset > 0:
-            positions.append(0)
-
-        # Create non-overlapping windows starting from offset
-        pos = self.current_offset
-        while pos + self.context_size <= workflow_len:
-            positions.append(pos)
-            pos += self.context_size
-
-        # CRITICAL FIX: Add final short window if there are remaining tokens
-        # This ensures tokens at the end of the workflow are also trained on
-        if pos < workflow_len:
-            positions.append(pos)
-
-        return positions
+        return [0]  # Always start from beginning, never slide
 
     def _sample_prefix_lengths(self, max_len):
         """Sample which prefix lengths to use for a window."""
@@ -395,56 +367,26 @@ class TCTEpochPrefixFIMDataset(Dataset):
         window_end = min(window_start + prefix_len, len(tokens))
         actual_len = window_end - window_start
 
-        # Geometric sample number of masks
-        num_masks = self._geometric_sample_masks(actual_len)
+        # NO WINDOWING - Extract tokens directly for complete-sequence training
+        # Pure autoregressive: predict tokens[i+1] given tokens[0:i]
+        content_tokens = tokens[window_start:window_end].clone()
 
-        # Sample random mask positions
-        if num_masks > 0:
-            mask_positions = sorted(self.rng.sample(range(actual_len), num_masks))
+        # Pad to context_size + 1 to allow for shifting (need N+1 tokens to create N pairs)
+        if actual_len <= self.context_size:
+            padding_len = self.context_size + 1 - actual_len
+            padding = torch.full((padding_len,), TCT_PAD_TOKEN_ID, dtype=torch.long)
+            content_tokens = torch.cat([content_tokens, padding])
         else:
-            mask_positions = []  # Decoder-only mode
+            # Truncate to context_size + 1 if longer (shouldn't happen with correct prefix_len)
+            content_tokens = content_tokens[:self.context_size + 1]
 
-        # Extract original window for target
-        window = tokens[window_start:window_end]
-
-        # Use TCT API to create FIM window
-        fim_window = tct.extract_window_fim(
-            tokens.tolist(),
-            window_start,
-            window_end,
-            mask_positions
-        )
-
-        # Convert to tensor
-        fim_window = torch.tensor(fim_window, dtype=torch.long)
-
-        # Pad to context_size+1 (1 for window position + context_size for content)
-        expected_len = self.context_size + 1
-        if len(fim_window) < expected_len:
-            padding = torch.full((expected_len - len(fim_window),), TCT_PAD_TOKEN_ID, dtype=torch.long)
-            fim_window = torch.cat([fim_window, padding])
-
-        # Apply modulo to window position to keep in vocab bounds
-        window_position = fim_window[0].item() % TCT_TOTAL_VOCAB_SIZE
-        fim_window[0] = window_position
-
-        # Create target window
-        target_window = window.clone()
-        if actual_len < self.context_size:
-            padding = torch.full((self.context_size - actual_len,), TCT_PAD_TOKEN_ID, dtype=torch.long)
-            target_window = torch.cat([target_window, padding])
-
-        # Prepend window position to target
-        target_with_position = torch.cat([
-            torch.tensor([window_position], dtype=torch.long),
-            target_window
-        ])
-
-        # Create (x, y) pair
-        x = fim_window[:-1].clone()  # Everything except last token
-        y = target_with_position[1:].clone()  # Skip window position
+        # Create (x, y) pair - pure autoregressive, no windowing, no position tokens
+        # Both x and y will have shape [context_size]
+        x = content_tokens[:-1].clone()  # Input: tokens[0:context_size]
+        y = content_tokens[1:].clone()   # Target: tokens[1:context_size+1]
 
         # Mask padding in targets (set to -1 so loss ignores them)
+        # Padding starts at position actual_len (not actual_len-1, since y is already shifted)
         if actual_len < self.context_size:
             y[actual_len:] = -1
 
