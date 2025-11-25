@@ -46,6 +46,7 @@ cache_file = None  # optional cache file path (None => auto-detect)
 warmup_iters = 5000  # LR warmup steps
 grad_clip = 1.0  # gradient clipping
 device_batch_size = 4  # SMOKE TEST: Small batch
+resume_from_step = 0  # resume training from this step (0 = start fresh)
 
 # CLI override
 config_keys = [k for k,v in globals().items() if not k.startswith('_') and isinstance(v, (int, float, bool, str, type(None)))]
@@ -95,6 +96,23 @@ with torch.device("meta"):
 
 model.to_empty(device=device)
 model.init_weights()
+
+# Resume from checkpoint if specified
+if resume_from_step > 0:
+    checkpoint_dir = Path("checkpoints") / model_tag if model_tag else Path("checkpoints") / f"{model_size}_{resume_from_step:06d}"
+    checkpoint_path = checkpoint_dir / f"model_{resume_from_step:06d}.pt"
+    if not checkpoint_path.exists() and model_tag:
+        # Try with model_tag directory
+        checkpoint_path = Path("checkpoints") / model_tag / f"model_{resume_from_step:06d}.pt"
+    if checkpoint_path.exists():
+        print0(f"📂 Resuming from checkpoint: {checkpoint_path}")
+        state_dict = torch.load(checkpoint_path, map_location=device)
+        model.load_state_dict(state_dict)
+        print0(f"✅ Loaded checkpoint from step {resume_from_step}")
+    else:
+        print0(f"❌ Checkpoint not found: {checkpoint_path}")
+        sys.exit(1)
+
 orig_model = model
 model = torch.compile(model, dynamic=False)
 
@@ -215,7 +233,8 @@ smooth_train_loss = 0
 ema_beta = 0.9
 total_training_time = 0
 
-for step in range(num_iterations + 1):
+start_step = resume_from_step if resume_from_step > 0 else 0
+for step in range(start_step, num_iterations + 1):
     last_step = step == num_iterations
 
     # Evaluation
