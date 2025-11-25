@@ -1,0 +1,21 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  annotations:
+    kubernetes.io/ingress.class: nginx
+    meta.helm.sh/release-name: jxboot-helmfile-resources
+  labels:
+    gitops.jenkins-x.io/pipeline: namespaces
+  name: nexus
+  namespace: jx
+spec:
+  rules:
+  - host: nexus-jx.34.132.140.208.nip.io
+    http:
+      paths:
+      - backend:
+          service:
+            name: nexus
+            port:
+              number: 80
+        pathType: ImplementationSpecific

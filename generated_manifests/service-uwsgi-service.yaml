@@ -1,0 +1,15 @@
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    app: uwsgi
+  name: uwsgi-service
+spec:
+  ports:
+  - name: http-port
+    nodePort: 30080
+    port: 8080
+    protocol: TCP
+  selector:
+    app: uwsgi
+  type: NodePort
