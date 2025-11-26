@@ -430,9 +430,9 @@ def run_demo(pause_between: float = 5.0, num_examples: int = 5, result_pause: fl
 ║   Success: {GREEN}{success_count}/{len(demos)} manifests{RESET}                                                        ║
 ║                                                                                   ║
 ║   Features:                                                                       ║
-║   • Side-by-side comparison (original vs generated)                               ║
-║   • From-scratch generation (5-10 token prompt)                                   ║
-║   • Autocomplete mode (25-35% prompt)                                             ║
+║   • Side-by-side comparison (prompt vs generated)                                 ║
+║   • From-scratch generation (1 seed token)                                        ║
+║   • Autocomplete mode (partial manifest prompt)                                   ║
 ║   • Real-time streaming with decode_prefix()                                      ║
 ║                                                                                   ║
 ╚══════════════════════════════════════════════════════════════════════════════════╝{RESET}
