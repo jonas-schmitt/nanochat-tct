@@ -122,7 +122,7 @@ def generate_with_display(
 
     # Decode prompt tokens to show what context the model has (for autocomplete mode)
     prompt_yaml = ""
-    if mode == "autocomplete" and len(prompt_tokens) > 1:
+    if mode == "autocomplete":
         prompt_json, _, _ = tct.decode_prefix(prompt_tokens)
         try:
             prompt_manifest = json.loads(prompt_json)
@@ -382,8 +382,9 @@ def run_demo(pause_between: float = 5.0, num_examples: int = 5, result_pause: fl
                 matching = all_examples
             idx, orig_manifest, full_seq = random.choice(matching)
 
-            # Start from scratch - use only the first token as seed (resource type marker)
-            prompt = full_seq[:1]
+            # Use same seeding as test_generation.py: min(20, len // 4) tokens
+            prompt_len = min(20, len(full_seq) // 4)
+            prompt = full_seq[:prompt_len]
 
             print(f"{CYAN}Demo {demo_num + 1}/{len(demos)}: Generating from scratch...{RESET}")
 
@@ -442,10 +443,10 @@ def run_demo(pause_between: float = 5.0, num_examples: int = 5, result_pause: fl
 ║   Success: {GREEN}{success_count}/{len(demos)} manifests{RESET}                                                        ║
 ║                                                                                   ║
 ║   Features:                                                                       ║
-║   • Side-by-side comparison (prompt vs generated)                                 ║
-║   • From-scratch generation (1 seed token)                                        ║
+║   • From-scratch generation (short seed prompt)                                   ║
 ║   • Autocomplete mode (partial manifest prompt)                                   ║
 ║   • Real-time streaming with decode_prefix()                                      ║
+║   • Retry sampling for robustness                                                 ║
 ║                                                                                   ║
 ╚══════════════════════════════════════════════════════════════════════════════════╝{RESET}
 """)
