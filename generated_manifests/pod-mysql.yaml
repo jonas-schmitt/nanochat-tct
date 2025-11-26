@@ -7,9 +7,9 @@ metadata:
 spec:
   containers:
   - env:
-    - name: MYSQL_MYSQL_ROOT_PASSWORD
-      value: 'yes'
-    image: mysql:5.7.31
+    - name: MYSQL_ROOT_PASSWORD
+      value: petclinic
+    image: mysql
     name: mysql
     ports:
     - containerPort: 3306

@@ -6,10 +6,14 @@ metadata:
   name: storage-pod
 spec:
   containers:
-  - image: gcr.io/google-containers/pause:2
-    name: kubernetes-pause
+  - env:
+    - name: SENTRY_DSN
+      valueFrom:
+        secretKeyRef:
+          key: dsn
+          name: mysecret
+    image: myregistry.storage.local:5000/myprestart
+    name: my-container
     ports:
     - containerPort: 8080
-      hostPort: 8080
-      name: http
       protocol: TCP

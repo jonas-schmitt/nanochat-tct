@@ -25,7 +25,14 @@ spec:
               fieldPath: metadata.name
         - name: OPERATOR_NAME
           value: keda-operator
-        image: REPLACE_IMAGE
+        image: localhost:5000/keda-group/kedac:latest
         imagePullPolicy: Always
         name: keda-operator
+        resources:
+          limits:
+            cpu: 2000m
+            memory: 1Gi
+          requests:
+            cpu: 500m
+            memory: 1Gi
       serviceAccountName: keda

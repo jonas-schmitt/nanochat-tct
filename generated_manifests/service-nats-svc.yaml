@@ -3,13 +3,7 @@ kind: Service
 metadata:
   name: nats-svc
 spec:
-  externalIPs:
-  - 1.1.1
   ports:
-  - name: nats-web
-    port: 80
-    protocol: TCP
-    targetPort: 8080
+  - port: 80
   selector:
-    app: nats
-    version: 2.0.1
+    nats: nats

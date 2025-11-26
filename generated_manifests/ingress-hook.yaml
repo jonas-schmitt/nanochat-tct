@@ -6,16 +6,17 @@ metadata:
     meta.helm.sh/release-name: jxboot-helmfile-resources
   labels:
     gitops.jenkins-x.io/pipeline: namespaces
-  name: nexus
+  name: hook
   namespace: jx
 spec:
   rules:
-  - host: nexus-jx.34.132.140.208.nip.io
+  - host: hook-jx.jenkinsx.jenkinsx.in
     http:
       paths:
       - backend:
           service:
-            name: nexus
+            name: hook
             port:
               number: 80
+        path: /hook
         pathType: ImplementationSpecific

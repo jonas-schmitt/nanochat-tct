@@ -3,15 +3,16 @@ kind: Job
 metadata:
   name: pi
 spec:
-  backoffLimit: 4
   template:
+    metadata:
+      name: pi
     spec:
       containers:
       - command:
         - perl
         - -Mbignum=bpi
         - -wle
-        - print bpi(200)
+        - print bpi(2000)
         image: perl
         name: pi
       restartPolicy: Never

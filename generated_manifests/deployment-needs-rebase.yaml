@@ -22,7 +22,7 @@ spec:
         - --github-endpoint=https://api.github.com
         - --github-token-path=/etc/github/oauth
         - --update-period=6h
-        image: gcr.io/k8s-prow/needs-rebase:v20210915-24c2a7ab31
+        image: gcr.io/k8s-prow/needs-rebase:v20211104-3be61e4923
         imagePullPolicy: Always
         name: needs-rebase
         ports:

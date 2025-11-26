@@ -9,7 +9,7 @@ from pathlib import Path
 from nanochat.gpt import GPT, GPTConfig
 
 # Load the best checkpoint
-checkpoint_path = "checkpoints/k8s_baseline_v1/model_095000.pt"
+checkpoint_path = "checkpoints/k8s_baseline_v1/model_200000.pt"
 print(f"Loading checkpoint: {checkpoint_path}")
 
 # Load model config (small-2048)
