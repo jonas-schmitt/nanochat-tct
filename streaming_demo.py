@@ -89,6 +89,17 @@ def side_by_side(left_title: str, left_content: str, right_title: str, right_con
     return '\n'.join(output)
 
 
+def single_column(title: str, content: str, width: int = 78) -> str:
+    """Format single column display."""
+    lines = content.split('\n')
+    output = []
+    output.append(f"{BOLD}{title}{RESET}")
+    output.append('─' * width)
+    for line in lines:
+        output.append(line[:width])
+    return '\n'.join(output)
+
+
 def generate_with_display(
     model: GPT,
     prompt_tokens: list[int],
@@ -109,17 +120,9 @@ def generate_with_display(
     orig_kind = original_manifest.get('kind', '?')
     orig_name = original_manifest.get('metadata', {}).get('name', '?')
 
-    # Decode prompt tokens to show what context the model has
-    if len(prompt_tokens) <= 1:
-        prompt_yaml = f"""{DIM}
-    ╭─────────────────────────────╮
-    │                             │
-    │    Starting from scratch    │
-    │                             │
-    │      (1 seed token)         │
-    │                             │
-    ╰─────────────────────────────╯{RESET}"""
-    else:
+    # Decode prompt tokens to show what context the model has (for autocomplete mode)
+    prompt_yaml = ""
+    if mode == "autocomplete" and len(prompt_tokens) > 1:
         prompt_json, _, _ = tct.decode_prefix(prompt_tokens)
         try:
             prompt_manifest = json.loads(prompt_json)
@@ -156,25 +159,17 @@ def generate_with_display(
                     result = json.loads(json_str)
                     gen_kind = result.get('kind', '')
                     gen_name = result.get('metadata', {}).get('name', '')
-                    # Show YAML if we have real content, otherwise show animated progress
+                    # Show YAML if we have real content, otherwise show progress
                     if gen_kind or gen_name or len(result) > 1:
                         gen_yaml = format_yaml(result)
                     else:
-                        # Animated waiting indicator
                         dots = "." * ((len(generated) // 10) % 4)
-                        gen_yaml = f"""{DIM}
-    ╭─────────────────────────────╮
-    │                             │
-    │   Generating tokens{dots:<4}    │
-    │                             │
-    │   {len(generated):3d} / ~150 tokens        │
-    │                             │
-    ╰─────────────────────────────╯{RESET}"""
+                        gen_yaml = f"{DIM}Generating{dots}{RESET}"
                 except:
                     gen_kind = ''
                     gen_name = ''
                     result = {}
-                    gen_yaml = f"{DIM}Parsing...{RESET}"
+                    gen_yaml = f"{DIM}Generating...{RESET}"
 
                 elapsed = now - start_time
                 tps = len(generated) / elapsed if elapsed > 0 else 0
@@ -188,47 +183,58 @@ def generate_with_display(
                 status = f"{GREEN}● COMPLETE{RESET}" if is_complete else f"{YELLOW}○ generating...{RESET}"
                 header = "FROM SCRATCH" if mode == "scratch" else "AUTOCOMPLETE"
 
+                # Build content section based on mode
+                if mode == "scratch":
+                    content_section = single_column(
+                        f"{GREEN}GENERATED{RESET} ({gen_kind or '?'}/{gen_name or '?'})",
+                        gen_yaml
+                    )
+                else:
+                    content_section = side_by_side(
+                        f"{BLUE}PROMPT{RESET} ({len(prompt_tokens)} tokens)",
+                        prompt_yaml,
+                        f"{GREEN}GENERATED{RESET} ({gen_kind or '?'}/{gen_name or '?'})",
+                        gen_yaml
+                    )
+
                 display = f"""{CLEAR_SCREEN}
 {BOLD}╔══════════════════════════════════════════════════════════════════════════════════╗
 ║                    KUBERNETES MANIFEST GENERATION - {header:^14}                ║
 ╚══════════════════════════════════════════════════════════════════════════════════╝{RESET}
 
-  {CYAN}Mode:{RESET}     {mode.capitalize()} ({len(prompt_tokens)} prompt tokens)
   {CYAN}Status:{RESET}   {status}
   {CYAN}Progress:{RESET} [{bar}] {len(generated):3d} tokens @ {tps:.0f}/s
 
-{BOLD}┌──────────────────────────────────────────────────────────────────────────────────┐{RESET}
-{side_by_side(
-    f"{BLUE}PROMPT{RESET} ({len(prompt_tokens)} tokens)",
-    prompt_yaml,
-    f"{GREEN}GENERATED{RESET} ({gen_kind or '?'}/{gen_name or '?'})",
-    gen_yaml
-)}
-{BOLD}└──────────────────────────────────────────────────────────────────────────────────┘{RESET}
+{content_section}
 """
                 print(display, end='', flush=True)
                 time.sleep(0.02)
 
                 if is_complete:
-                    # Show final side-by-side comparison
+                    # Show final display
                     gen_yaml = format_yaml(result)
+                    if mode == "scratch":
+                        content_section = single_column(
+                            f"{GREEN}GENERATED{RESET} ({gen_kind}/{gen_name})",
+                            gen_yaml
+                        )
+                    else:
+                        content_section = side_by_side(
+                            f"{BLUE}PROMPT{RESET} ({len(prompt_tokens)} tokens)",
+                            prompt_yaml,
+                            f"{GREEN}GENERATED{RESET} ({gen_kind}/{gen_name})",
+                            gen_yaml
+                        )
+
                     final_display = f"""{CLEAR_SCREEN}
 {BOLD}╔══════════════════════════════════════════════════════════════════════════════════╗
 ║                    KUBERNETES MANIFEST GENERATION - {header:^14}                ║
 ╚══════════════════════════════════════════════════════════════════════════════════╝{RESET}
 
-  {CYAN}Mode:{RESET}     {mode.capitalize()} ({len(prompt_tokens)} prompt tokens)
   {CYAN}Status:{RESET}   {GREEN}● COMPLETE{RESET}
   {CYAN}Progress:{RESET} [{'█' * bar_w}] {len(generated):3d} tokens @ {tps:.0f}/s
 
-{BOLD}┌──────────────────────────────────────────────────────────────────────────────────┐{RESET}
-{side_by_side(
-    f"{BLUE}PROMPT{RESET} ({len(prompt_tokens)} tokens)",
-    prompt_yaml,
-    f"{GREEN}GENERATED{RESET} ({gen_kind}/{gen_name})",
-    gen_yaml
-)}
-{BOLD}└──────────────────────────────────────────────────────────────────────────────────┘{RESET}
+{content_section}
 """
                     print(final_display, end='', flush=True)
                     return generated, result, True
@@ -240,30 +246,36 @@ def generate_with_display(
     json_str, _, is_complete = tct.decode_prefix(generated)
     try:
         result = json.loads(json_str)
-        # Show final comparison even if not flagged complete
         gen_kind = result.get('kind', '?')
         gen_name = result.get('metadata', {}).get('name', '?')
         gen_yaml = format_yaml(result)
         elapsed = time.time() - start_time
         tps = len(generated) / elapsed if elapsed > 0 else 0
         bar_w = 40
+        header = "FROM SCRATCH" if mode == "scratch" else "AUTOCOMPLETE"
+
+        if mode == "scratch":
+            content_section = single_column(
+                f"{GREEN}GENERATED{RESET} ({gen_kind}/{gen_name})",
+                gen_yaml
+            )
+        else:
+            content_section = side_by_side(
+                f"{BLUE}PROMPT{RESET} ({len(prompt_tokens)} tokens)",
+                prompt_yaml,
+                f"{GREEN}GENERATED{RESET} ({gen_kind}/{gen_name})",
+                gen_yaml
+            )
+
         final_display = f"""{CLEAR_SCREEN}
 {BOLD}╔══════════════════════════════════════════════════════════════════════════════════╗
 ║                    KUBERNETES MANIFEST GENERATION - {header:^14}                ║
 ╚══════════════════════════════════════════════════════════════════════════════════╝{RESET}
 
-  {CYAN}Mode:{RESET}     {mode.capitalize()} ({len(prompt_tokens)} prompt tokens)
   {CYAN}Status:{RESET}   {YELLOW}○ max tokens reached{RESET}
   {CYAN}Progress:{RESET} [{'█' * bar_w}] {len(generated):3d} tokens @ {tps:.0f}/s
 
-{BOLD}┌──────────────────────────────────────────────────────────────────────────────────┐{RESET}
-{side_by_side(
-    f"{BLUE}PROMPT{RESET} ({len(prompt_tokens)} tokens)",
-    prompt_yaml,
-    f"{GREEN}GENERATED{RESET} ({gen_kind}/{gen_name})",
-    gen_yaml
-)}
-{BOLD}└──────────────────────────────────────────────────────────────────────────────────┘{RESET}
+{content_section}
 """
         print(final_display, end='', flush=True)
         return generated, result, is_complete
