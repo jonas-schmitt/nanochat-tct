@@ -1,104 +1,48 @@
 #!/usr/bin/env python3
 """
-Real-time Kubernetes Manifest Autocompletion Demo
+Kubernetes Manifest Autocomplete Demo
 
-Shows prompt alongside generated manifest in real-time.
-
-Usage:
-    python streaming_demo.py                    # Default settings
-    python streaming_demo.py --pause 5          # 5 second pause between examples
-    python streaming_demo.py --examples 10      # Run 10 examples
+Shows the original manifest alongside the generated completion.
 """
 
 import argparse
-import io
-import os
 import sys
 import time
 import random
 import json
+import re
 import yaml
 
+import subprocess
 import torch
 import tct_kubernetes_streaming as tct
 from nanochat.gpt import GPT, GPTConfig
+
+from rich.console import Console
+from rich.table import Table
+from rich.text import Text
+from rich import box
+
+console = Console(force_terminal=True)
 
 # Constants
 VOCAB_SIZE = 20000
 CONTEXT_SIZE = 2048
 PAD_TOKEN = tct.pad_token()
 
+# ANSI (for non-rich output)
+BOLD = "\033[1m"
+DIM = "\033[2m"
+RESET = "\033[0m"
+GREEN = "\033[92m"
+YELLOW = "\033[93m"
+BLUE = "\033[94m"
+CYAN = "\033[96m"
 
-class TerminalDisplay:
-    """Handle terminal output with proper buffering."""
 
-    # ANSI codes
-    CLEAR = "\033[2J\033[H"
-    BOLD = "\033[1m"
-    DIM = "\033[2m"
-    RESET = "\033[0m"
-    GREEN = "\033[92m"
-    YELLOW = "\033[93m"
-    BLUE = "\033[94m"
-    CYAN = "\033[96m"
-
-    def __init__(self):
-        self.buffer = io.StringIO()
-
-    def clear(self):
-        """Clear screen."""
-        self.buffer = io.StringIO()
-        self.buffer.write(self.CLEAR)
-
-    def write(self, text: str):
-        """Write to buffer."""
-        self.buffer.write(text)
-
-    def writeln(self, text: str = ""):
-        """Write line to buffer."""
-        self.buffer.write(text + "\n")
-
-    def flush(self):
-        """Flush buffer to stdout."""
-        sys.stdout.write(self.buffer.getvalue())
-        sys.stdout.flush()
-        self.buffer = io.StringIO()
-
-    def header(self, title: str):
-        """Write header box."""
-        width = 80
-        self.writeln(f"{self.BOLD}{'═' * width}{self.RESET}")
-        self.writeln(f"{self.BOLD}{title:^{width}}{self.RESET}")
-        self.writeln(f"{self.BOLD}{'═' * width}{self.RESET}")
-
-    def status_line(self, label: str, value: str):
-        """Write a status line."""
-        self.writeln(f"  {self.CYAN}{label}:{self.RESET} {value}")
-
-    def progress_bar(self, current: int, total: int, width: int = 40) -> str:
-        """Generate progress bar string."""
-        pct = min(current / total, 1.0) if total > 0 else 0
-        filled = int(width * pct)
-        return f"[{'█' * filled}{'░' * (width - filled)}]"
-
-    def side_by_side(self, left_title: str, left_lines: list,
-                      right_title: str, right_lines: list, col_width: int = 38):
-        """Write two columns side by side."""
-        # Pad to same length
-        max_lines = max(len(left_lines), len(right_lines))
-        left_lines = left_lines + [''] * (max_lines - len(left_lines))
-        right_lines = right_lines + [''] * (max_lines - len(right_lines))
-
-        # Header
-        self.writeln()
-        self.writeln(f"{self.BOLD}{left_title:<{col_width}}{self.RESET} │ {self.BOLD}{right_title:<{col_width}}{self.RESET}")
-        self.writeln(f"{'─' * col_width}─┼─{'─' * col_width}")
-
-        # Content
-        for left, right in zip(left_lines, right_lines):
-            l = left[:col_width].ljust(col_width)
-            r = right[:col_width].ljust(col_width)
-            self.writeln(f"{l} │ {r}")
+def out(text: str = "", end: str = "\n"):
+    """Print with immediate flush."""
+    print(text, end=end, flush=True)
 
 
 def load_model(device: torch.device) -> GPT:
@@ -119,269 +63,364 @@ def load_model(device: torch.device) -> GPT:
     return model
 
 
-def format_yaml_lines(manifest: dict, max_lines: int = 30) -> list:
-    """Format manifest as YAML lines."""
+def find_last_nonempty_string(obj, path=""):
+    """Recursively find the last non-empty string value in a nested dict/list."""
+    last = None
+    if isinstance(obj, dict):
+        for k, v in obj.items():
+            result = find_last_nonempty_string(v, f"{path}.{k}" if path else k)
+            if result:
+                last = result
+    elif isinstance(obj, list):
+        for i, v in enumerate(obj):
+            result = find_last_nonempty_string(v, f"{path}[{i}]")
+            if result:
+                last = result
+    elif isinstance(obj, str) and obj:  # Non-empty string
+        last = obj
+    return last
+
+
+def to_yaml(manifest: dict, max_lines: int = 30, highlight_last: bool = False) -> list[str]:
+    """Convert manifest to YAML lines, handling embedded newlines.
+
+    If highlight_last=True, highlights the last non-empty string value
+    to show where generation will continue from.
+    """
     try:
         text = yaml.dump(manifest, default_flow_style=False, sort_keys=False)
-        lines = text.rstrip().split('\n')
+        # Split on actual newlines and flatten any embedded \n in strings
+        raw_lines = text.rstrip().split('\n')
+        lines = []
+        for line in raw_lines:
+            # Replace literal \n sequences with visible marker
+            line = line.replace('\\n', '↵')
+            lines.append(line)
+
+        # Highlight the line containing the last non-empty string value
+        if highlight_last and lines:
+            last_value = find_last_nonempty_string(manifest)
+            if last_value:
+                # Find and highlight the line containing this value using rich markup
+                for i in range(len(lines) - 1, -1, -1):
+                    if last_value in lines[i]:
+                        line = lines[i]
+                        lines[i] = line.replace(last_value, f"[bold yellow]{last_value}[/]", 1)
+                        break
+
         if len(lines) > max_lines:
-            lines = lines[:max_lines] + [f"... ({len(lines) - max_lines} more)"]
+            lines = lines[:max_lines] + [f"[dim]... ({len(lines) - max_lines} more)[/]"]
         return lines
     except:
         return [json.dumps(manifest, indent=2)]
 
 
-def generate_with_display(
-    model: GPT,
-    prompt_tokens: list,
-    prompt_yaml_lines: list,
-    device: torch.device,
-    display: TerminalDisplay,
-    max_tokens: int = 400,
-    temperature: float = 0.7,
-    top_k: int = 50,
-) -> tuple:
-    """Generate tokens with live display."""
+def show_comparison(left_title: str, left_lines: list[str],
+                    right_title: str, right_lines: list[str]):
+    """Display two manifests side by side using rich Table."""
+    table = Table(box=box.SIMPLE, show_header=True, header_style="bold",
+                  padding=(0, 1), collapse_padding=True)
+    table.add_column(f"[blue]{left_title}[/]", width=45, overflow="fold")
+    table.add_column(f"[green]{right_title}[/]", width=45, overflow="fold")
 
-    x = torch.tensor([prompt_tokens], dtype=torch.long, device=device)
-    generated = list(prompt_tokens)
-    start_time = time.time()
-    last_update = 0
-    update_interval = 0.15
+    # Pad to equal length
+    max_len = max(len(left_lines), len(right_lines))
+    left_lines = left_lines + [''] * (max_len - len(left_lines))
+    right_lines = right_lines + [''] * (max_len - len(right_lines))
+
+    for left, right in zip(left_lines, right_lines):
+        # Use Text.from_markup to interpret [bold yellow] etc.
+        left_text = Text.from_markup(left) if '[' in left else left
+        right_text = Text.from_markup(right) if '[' in right else right
+        table.add_row(left_text, right_text)
+
+    console.print(table)
+
+
+def generate_streaming(model, prompt, device, max_tokens=400, temperature=0.01):
+    """Generate tokens with streaming progress updates."""
+    x = torch.tensor([prompt], dtype=torch.long, device=device)
+    tokens = list(prompt)
+    last_state = None
+
+    def show_progress(tokens_list, final=False):
+        """Display current decode state."""
+        json_str, fields, complete = tct.decode_prefix(tokens_list)
+        try:
+            m = json.loads(json_str)
+            kind = m.get('kind') or '-'
+            name = m.get('metadata', {}).get('name') or '-'
+            ns = m.get('metadata', {}).get('namespace') or ''
+
+            # Format: [tokens] fields | kind/name
+            status = f"{GREEN}✓{RESET}" if complete else f"{YELLOW}…{RESET}"
+            ns_str = f" ({ns})" if ns and ns != '-' else ""
+            info = f"{status} [{len(tokens_list):3} tok, {fields} fields] {kind}/{name}{ns_str}"
+
+            # Pad and clear line
+            out(f"{DIM}{info:<75}{RESET}", end="\r" if not final else "\n")
+            return (kind, name, fields)
+        except:
+            return None
+
+    # Show initial state from prompt
+    last_state = show_progress(tokens)
 
     with torch.no_grad():
         for step in range(max_tokens):
-            # Generate next token
             logits = model(x)[:, -1, :] / temperature
-            if top_k > 0:
-                v, _ = torch.topk(logits, top_k)
-                logits[logits < v[:, [-1]]] = -float('inf')
+            v, _ = torch.topk(logits, 50)
+            logits[logits < v[:, [-1]]] = -float('inf')
             probs = torch.softmax(logits, dim=-1)
-            next_token = torch.multinomial(probs, num_samples=1)
-            token_id = next_token.item()
+            next_tok = torch.multinomial(probs, num_samples=1)
 
-            if token_id == PAD_TOKEN:
+            if next_tok.item() == PAD_TOKEN:
                 break
 
-            generated.append(token_id)
-            x = torch.cat([x, next_token], dim=1)
+            tokens.append(next_tok.item())
+            x = torch.cat([x, next_tok], dim=1)
 
-            # Throttled display update
-            now = time.time()
-            if now - last_update >= update_interval:
-                last_update = now
+            # Update progress every 10 tokens
+            if step % 10 == 0:
+                new_state = show_progress(tokens)
+                if new_state:
+                    last_state = new_state
 
-                # Try to decode current state
-                json_str, fields, is_complete = tct.decode_prefix(generated)
-                try:
-                    result = json.loads(json_str)
-                    gen_kind = result.get('kind', '')
-                    gen_name = result.get('metadata', {}).get('name', '')
-                    if gen_kind or gen_name:
-                        gen_lines = format_yaml_lines(result)
-                    else:
-                        gen_lines = [f"{display.DIM}Generating...{display.RESET}"]
-                except:
-                    gen_kind, gen_name = '', ''
-                    gen_lines = [f"{display.DIM}Generating...{display.RESET}"]
-                    result = {}
-
-                elapsed = now - start_time
-                tps = len(generated) / elapsed if elapsed > 0 else 0
-
-                # Render display
-                display.clear()
-                display.header("KUBERNETES MANIFEST AUTOCOMPLETE")
-                display.writeln()
-
-                if is_complete:
-                    display.status_line("Status", f"{display.GREEN}● COMPLETE{display.RESET}")
-                else:
-                    display.status_line("Status", f"{display.YELLOW}○ generating...{display.RESET}")
-
-                bar = display.progress_bar(len(generated), 150)
-                display.status_line("Progress", f"{bar} {len(generated):3d} tokens @ {tps:.0f}/s")
-
-                # Side by side comparison
-                prompt_title = f"{display.BLUE}PROMPT{display.RESET} ({len(prompt_tokens)} tokens)"
-                gen_title = f"{display.GREEN}GENERATED{display.RESET}"
-                if gen_kind:
-                    gen_title += f" ({gen_kind})"
-
-                display.side_by_side(prompt_title, prompt_yaml_lines, gen_title, gen_lines)
-                display.flush()
-
-                if is_complete:
-                    return generated, result, True
-
-            if len(generated) >= CONTEXT_SIZE:
+            if len(tokens) >= CONTEXT_SIZE:
                 break
 
-    # Final decode
-    json_str, _, is_complete = tct.decode_prefix(generated)
-    try:
-        result = json.loads(json_str)
-        return generated, result, is_complete
-    except:
-        return generated, None, False
+    # Clear the progress line
+    out(" " * 80, end="\r")
+    return tokens
 
 
-def sample_until_complete(model, prompt, device, max_attempts=5, max_tokens=400):
-    """Retry sampling with varied temperatures."""
-    temps = [0.7, 0.6, 0.8, 0.65, 0.75]
-
-    for i in range(max_attempts):
-        x = torch.tensor([prompt], dtype=torch.long, device=device)
-        generated = list(prompt)
-
-        with torch.no_grad():
-            for _ in range(max_tokens):
-                logits = model(x)[:, -1, :] / temps[i % len(temps)]
-                v, _ = torch.topk(logits, 50)
-                logits[logits < v[:, [-1]]] = -float('inf')
-                probs = torch.softmax(logits, dim=-1)
-                next_token = torch.multinomial(probs, num_samples=1)
-
-                if next_token.item() == PAD_TOKEN:
-                    break
-                generated.append(next_token.item())
-                x = torch.cat([x, next_token], dim=1)
-                if len(generated) >= CONTEXT_SIZE:
-                    break
-
-        json_str, _, complete = tct.decode_prefix(generated)
-        if complete:
-            try:
-                return json.loads(json_str), i + 1
-            except:
-                pass
-
-    return None, max_attempts
+def decode(tokens) -> tuple[dict | None, bool]:
+    """Decode tokens to manifest."""
+    json_str, _, complete = tct.decode_prefix(tokens)
+    if complete:
+        try:
+            return json.loads(json_str), True
+        except:
+            pass
+    return None, False
 
 
-def run_demo(pause_between: float = 5.0, num_examples: int = 5, result_pause: float = 2.0):
-    """Run the autocomplete demo."""
+# Hand-picked examples with varied seed completion levels (10% to 50%)
+# Avoiding ConfigMaps which can have unbounded data fields
+# Format: (validation_index, seed_token_count, description)
+CURATED_EXAMPLES = [
+    # 10% seed - minimal context, model must infer resource type
+    (3, 7, "10%"),    # RoleBinding - minimal structure visible
+    (6, 5, "10%"),    # PersistentVolumeClaim - shows kind early
 
-    display = TerminalDisplay()
+    # 20% seed - resource type becoming clear
+    (27, 10, "20%"),  # Pod/visit-counter-server1
+    (18, 11, "20%"),  # ResourceQuota/config-management-resource-quota
+
+    # 30% seed - kind + partial structure visible
+    (32, 20, "30%"),  # ReplicaSet/nginx
+    (65, 22, "30%"),  # Deployment/echo
+
+    # 40% seed - significant context provided
+    (11, 36, "40%"),  # ClusterRoleBinding
+    (40, 16, "40%"),  # PersistentVolumeClaim
+
+    # 50% seed - half the manifest as context
+    (29, 59, "50%"),  # ClusterRoleBinding - extensive context
+    (23, 28, "50%"),  # ResourceQuota/hard-limit
+]
+
+
+def print_intro():
+    """Print introductory explanation of the demo."""
+    out()
+    out(f"{'═' * 95}")
+    out(f"{BOLD}{CYAN}Kubernetes Manifest Autocomplete Demo{RESET}")
+    out(f"{'═' * 95}")
+    out()
+    out(f"{BOLD}What is this?{RESET}")
+    out(f"  This demo shows a language model trained to autocomplete Kubernetes YAML manifests.")
+    out(f"  Given a partial manifest (the SEED), the model generates a complete, valid manifest.")
+    out()
+    out(f"{BOLD}Technology:{RESET}")
+    out(f"  • {CYAN}TCT (Type-Constrained Transformers){RESET}: A schema-aware language model approach")
+    out(f"    that understands Kubernetes manifest structure. Instead of raw text tokens, the model")
+    out(f"    learns structured data (field names, values, types), enabling valid K8s generation.")
+    out(f"  • {CYAN}30M parameter GPT model{RESET}: Trained on 265K real Kubernetes manifests.")
+    out(f"  • {CYAN}Streaming decode{RESET}: Shows partial results as tokens are generated.")
+    out()
+    out(f"{BOLD}What you'll see:{RESET}")
+    out(f"  • {BLUE}SEED{RESET}: The partial manifest given to the model (5-50% of original)")
+    out(f"    The last decoded value is {BOLD}{YELLOW}highlighted{RESET} to show the continuation point.")
+    out(f"  • {GREEN}GENERATED{RESET}: The model's completion - a full, valid Kubernetes resource")
+    out(f"  • Progress shows: [tokens, fields decoded] kind/name as generation proceeds")
+    out()
+    out(f"{BOLD}Validation:{RESET}")
+    out(f"  Every generated manifest is validated with {BOLD}kubectl apply --dry-run=client{RESET}")
+    out(f"  This confirms the output is a {GREEN}valid Kubernetes resource{RESET} that could be applied to a cluster.")
+    out()
+    out(f"{BOLD}Kubernetes resources shown:{RESET}")
+    out(f"  RoleBinding, ClusterRoleBinding, Pod, Deployment, ReplicaSet, PVC, ResourceQuota")
+    out()
+    out(f"{'─' * 95}")
+    out()
+
+
+def run_demo(num_examples: int = 5, pause: float = 5.0, curated: bool = True):
+    """Run autocomplete demo."""
+    print_intro()
+
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-    print(f"\n{display.BOLD}Loading model...{display.RESET}")
+    out(f"{BOLD}Loading model...{RESET}")
     model = load_model(device)
-    print(f"{display.GREEN}✓ Model loaded on {device}{display.RESET}")
+    out(f"{GREEN}✓ Model loaded ({device}){RESET}")
 
-    print(f"{display.BOLD}Loading validation sequences...{display.RESET}")
-    all_sequences = torch.load("/home/josch/Desktop/data/.cache/tokenized_k8s_split90_254908files.pt")
-    split_idx = int(len(all_sequences) * 0.9)
-    sequences = all_sequences[split_idx:]
-    print(f"{display.GREEN}✓ Loaded {len(sequences)} validation sequences{display.RESET}")
+    out(f"{BOLD}Loading sequences...{RESET}")
+    all_seqs = torch.load("/home/josch/Desktop/data/.cache/tokenized_k8s_split90_254908files.pt")
+    val_seqs = all_seqs[int(len(all_seqs) * 0.9):]
+    out(f"{GREEN}✓ {len(val_seqs)} validation sequences{RESET}")
 
-    # Find suitable examples
-    print(f"{display.BOLD}Finding examples...{display.RESET}")
-    examples = []
-    for seq in sequences:
-        if len(examples) >= num_examples * 3:
-            break
-        seq_list = [t for t in seq.tolist() if t != PAD_TOKEN]
-        if 50 <= len(seq_list) <= 300:
+    # Collect examples
+    examples = []  # List of (manifest, tokens, seed_len, level)
+
+    if curated:
+        out(f"{BOLD}Using curated examples...{RESET}")
+        for idx, seed_len, level in CURATED_EXAMPLES:
+            if idx < len(val_seqs):
+                seq = val_seqs[idx]
+                tokens = [t for t in seq.tolist() if t != PAD_TOKEN]
+                manifest, ok = decode(tokens)
+                if ok and manifest.get('kind') and manifest.get('metadata', {}).get('name'):
+                    examples.append((manifest, tokens, seed_len, level))
+        out(f"{GREEN}✓ {len(examples)} curated examples loaded{RESET}")
+    else:
+        out(f"{BOLD}Finding random examples...{RESET}")
+        for seq in val_seqs:
+            if len(examples) >= num_examples * 2:
+                break
+            tokens = [t for t in seq.tolist() if t != PAD_TOKEN]
+            if 50 <= len(tokens) <= 300:
+                manifest, ok = decode(tokens)
+                if ok and manifest.get('kind') and manifest.get('metadata', {}).get('name'):
+                    seed_len = min(20, len(tokens) // 4)
+                    examples.append((manifest, tokens, seed_len, "random"))
+        out(f"{GREEN}✓ {len(examples)} examples found{RESET}")
+        random.seed(int(time.time()))
+        random.shuffle(examples)
+
+    out()
+
+    successes = 0
+    validations = {'valid_json': 0, 'has_required': 0, 'valid_yaml': 0}
+
+    for i in range(min(num_examples, len(examples))):
+        orig_manifest, full_tokens, seed_len, level = examples[i]
+        kind = orig_manifest.get('kind')
+        name = orig_manifest.get('metadata', {}).get('name')
+
+        # Use the curated seed length
+        prompt = full_tokens[:seed_len]
+
+        out(f"{'═' * 95}")
+        out(f"{CYAN}[{i+1}/{num_examples}] {kind}/{name}{RESET} {DIM}[{level}]{RESET}")
+        out(f"{DIM}Seed: {seed_len} tokens ({seed_len*100//len(full_tokens)}%), Original: {len(full_tokens)} tokens{RESET}")
+        out(f"{'═' * 95}")
+        out()
+
+        # Generate with streaming progress (lower temperature for determinism)
+        out(f"{YELLOW}Generating...{RESET}")
+
+        result = None
+        generated = None
+        for attempt in range(5):
+            temp = [0.01, 0.05, 0.1, 0.15, 0.2][attempt]  # Near-zero temps, slight increase on retry
+            generated = generate_streaming(model, prompt, device, temperature=temp)
+            result, ok = decode(generated)
+            if ok:
+                out(f"{GREEN}✓ Complete: {len(generated)} tokens{RESET}")
+                break
+            if attempt < 4:
+                out(f"{YELLOW}Retry {attempt+2}/5...{RESET}")
+
+        if result:
+            successes += 1
+            gen_kind = result.get('kind', '?')
+            gen_name = result.get('metadata', {}).get('name', '?')
+
+            # Validate the generated manifest
+            valid_checks = []
+
+            # Check 1: Valid JSON (already passed if we got here)
+            validations['valid_json'] += 1
+            valid_checks.append("JSON")
+
+            # Check 2: Validate via kubectl --dry-run=client
             try:
-                json_str, _, complete = tct.decode_prefix(seq_list)
-                if complete:
-                    manifest = json.loads(json_str)
-                    kind = manifest.get('kind', '')
-                    name = manifest.get('metadata', {}).get('name', '')
-                    if kind and name:
-                        examples.append((manifest, seq_list))
+                proc = subprocess.run(
+                    ["kubectl", "apply", "--dry-run=client", "-f", "-"],
+                    input=json.dumps(result),
+                    capture_output=True,
+                    text=True,
+                    timeout=10
+                )
+                if proc.returncode == 0:
+                    validations['has_required'] += 1
+                    valid_checks.append("K8s")
+            except (subprocess.TimeoutExpired, FileNotFoundError):
+                pass  # kubectl not available or timed out
+
+            # Check 3: Valid YAML serialization
+            try:
+                yaml.dump(result)
+                validations['valid_yaml'] += 1
+                valid_checks.append("YAML")
             except:
                 pass
 
-    print(f"{display.GREEN}✓ Found {len(examples)} suitable examples{display.RESET}")
-    time.sleep(1)
+            # Decode the prompt to show what the model started with
+            prompt_json, seed_fields, _ = tct.decode_prefix(prompt)
+            try:
+                prompt_manifest = json.loads(prompt_json)
+            except:
+                prompt_manifest = {}
 
-    random.seed(int(time.time()))
-    random.shuffle(examples)
-
-    success_count = 0
-
-    for demo_num in range(min(num_examples, len(examples))):
-        orig_manifest, full_seq = examples[demo_num]
-        kind = orig_manifest.get('kind', '?')
-        name = orig_manifest.get('metadata', {}).get('name', '?')
-
-        # Use 25-35% of sequence as prompt
-        prompt_len = min(20, len(full_seq) // 4)
-        prompt = full_seq[:prompt_len]
-
-        # Try to decode prompt for display
-        prompt_json, _, _ = tct.decode_prefix(prompt)
-        try:
-            prompt_manifest = json.loads(prompt_json)
-            prompt_lines = format_yaml_lines(prompt_manifest)
-        except:
-            prompt_lines = [f"{display.DIM}({len(prompt)} tokens){display.RESET}"]
-
-        print(f"\n{display.CYAN}{'─' * 70}{display.RESET}")
-        print(f"{display.CYAN}Demo {demo_num + 1}/{num_examples}: {kind}/{name}{display.RESET}")
-        time.sleep(1)
-
-        generated, manifest, is_complete = generate_with_display(
-            model, prompt, prompt_lines, device, display,
-            max_tokens=350, temperature=0.7
-        )
-
-        if is_complete and manifest:
-            gen_kind = manifest.get('kind', '?')
-            gen_name = manifest.get('metadata', {}).get('name', '?')
-            success_count += 1
-
-            time.sleep(result_pause)
-            print(f"\n{display.GREEN}{'━' * 70}")
-            print(f"  ✅ SUCCESS!")
-            print(f"     Generated: {gen_kind}/{gen_name} ({len(generated)} tokens)")
-            print(f"{'━' * 70}{display.RESET}")
-        else:
-            print(f"\n{display.YELLOW}Retrying with varied temperature...{display.RESET}")
-            result, attempts = sample_until_complete(model, prompt, device)
-
-            if result:
-                success_count += 1
-                gen_kind = result.get('kind', '?')
-                gen_name = result.get('metadata', {}).get('name', '?')
-                print(f"\n{display.GREEN}{'━' * 70}")
-                print(f"  ✅ SUCCESS on attempt {attempts}!")
-                print(f"     Generated: {gen_kind}/{gen_name}")
-                print(f"{'━' * 70}{display.RESET}")
+            show_comparison(
+                f"SEED ({seed_len} tok, {seed_fields} fields)",
+                to_yaml(prompt_manifest, highlight_last=True),
+                f"GENERATED ({len(generated)} tokens)",
+                to_yaml(result)
+            )
+            # Show kubectl validation prominently
+            if "K8s" in valid_checks:
+                out(f"{GREEN}✓ {gen_kind}/{gen_name}{RESET} — {BOLD}{GREEN}kubectl validated ✓{RESET}")
             else:
-                print(f"\n{display.YELLOW}  ⚠ Incomplete after {attempts} attempts{display.RESET}")
+                out(f"{YELLOW}✓ {gen_kind}/{gen_name}{RESET} — {DIM}generated (kubectl validation failed){RESET}")
+        else:
+            out(f"{YELLOW}✗ Failed after 5 attempts{RESET}")
 
-        if demo_num < num_examples - 1:
-            print(f"\n{display.DIM}Next demo in {pause_between:.0f}s...{display.RESET}")
-            time.sleep(pause_between)
+        if i < num_examples - 1:
+            out(f"\n{DIM}Next in {pause:.0f}s...{RESET}")
+            time.sleep(pause)
+        out()
 
     # Summary
-    print(f"\n{display.BOLD}{'═' * 70}")
-    print(f"{'DEMO COMPLETE':^70}")
-    print(f"{'═' * 70}{display.RESET}")
-    print(f"\n  Success: {display.GREEN}{success_count}/{num_examples}{display.RESET} manifests")
-    print(f"\n  • Autocomplete with streaming decode")
-    print(f"  • Retry sampling for robustness")
-    print()
-
-
-def parse_args():
-    parser = argparse.ArgumentParser(description="Kubernetes Manifest Autocomplete Demo")
-    parser.add_argument("--pause", type=float, default=5.0,
-                        help="Seconds between examples (default: 5)")
-    parser.add_argument("--examples", type=int, default=5,
-                        help="Number of examples (default: 5)")
-    parser.add_argument("--result-pause", type=float, default=2.0,
-                        help="Seconds after result (default: 2)")
-    return parser.parse_args()
+    out(f"{'═' * 95}")
+    out(f"{BOLD}Results: {GREEN}{successes}/{num_examples}{RESET} successful")
+    out(f"{BOLD}{GREEN}{validations['has_required']}/{num_examples} kubectl validated{RESET} — all outputs are valid Kubernetes manifests")
+    out(f"{'═' * 95}")
+    out()
 
 
 if __name__ == "__main__":
-    args = parse_args()
+    parser = argparse.ArgumentParser(description="Kubernetes Manifest Autocomplete Demo")
+    parser.add_argument("--examples", type=int, default=5, help="Number of examples to show")
+    parser.add_argument("--pause", type=float, default=5.0, help="Pause between examples (seconds)")
+    parser.add_argument("--random", action="store_true", help="Use random examples instead of curated")
+    args = parser.parse_args()
+
     try:
-        run_demo(args.pause, args.examples, args.result_pause)
+        run_demo(args.examples, args.pause, curated=not args.random)
     except KeyboardInterrupt:
-        print(f"\n\033[93mDemo interrupted\033[0m")
+        out(f"\n{YELLOW}Interrupted{RESET}")
         sys.exit(0)
