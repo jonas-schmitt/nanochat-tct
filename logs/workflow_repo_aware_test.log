@@ -1,0 +1,113 @@
+
+                                                       █████                █████
+                                                      ░░███                ░░███
+     ████████    ██████   ████████    ██████   ██████  ░███████    ██████  ███████
+    ░░███░░███  ░░░░░███ ░░███░░███  ███░░███ ███░░███ ░███░░███  ░░░░░███░░░███░
+     ░███ ░███   ███████  ░███ ░███ ░███ ░███░███ ░░░  ░███ ░███   ███████  ░███
+     ░███ ░███  ███░░███  ░███ ░███ ░███ ░███░███  ███ ░███ ░███  ███░░███  ░███ ███
+     ████ █████░░████████ ████ █████░░██████ ░░██████  ████ █████░░███████  ░░█████
+    ░░░░ ░░░░░  ░░░░░░░░ ░░░░ ░░░░░  ░░░░░░   ░░░░░░  ░░░░ ░░░░░  ░░░░░░░░   ░░░░░
+    
+Overriding: model_size = small-4096
+Overriding: data_dir = /home/josch/Desktop/data/workflows_test
+Overriding: num_iterations = 20
+Overriding: eval_every = 10
+Overriding: model_tag = repo_aware_test
+Autodetected device type: cuda
+/home/josch/git/nanochat-tct/.venv/lib/python3.12/site-packages/torch/__init__.py:1617: UserWarning: Please use the new API settings to control TF32 behavior, such as torch.backends.cudnn.conv.fp32_precision = 'tf32' or torch.backends.cuda.matmul.fp32_precision = 'ieee'. Old settings, e.g, torch.backends.cuda.matmul.allow_tf32 = True, torch.backends.cudnn.allow_tf32 = True, allowTF32CuDNN() and allowTF32CuBLAS() will be deprecated after Pytorch 2.9. Please see https://pytorch.org/docs/main/notes/cuda.html#tensorfloat-32-tf32-on-ampere-and-later-devices (Triggered internally at /pytorch/aten/src/ATen/Context.cpp:80.)
+  _C._set_float32_matmul_precision(precision)
+2025-11-09 18:20:14,442 - nanochat.common - [32m[1mINFO[0m - Distributed world size: 1
+Model: small-4096
+Vocab size: 8192
+Context size: 4096
+Batch size: 8
+Gradient accumulation: 16
+Effective batch size: 128
+Learning rate: 0.0003
+Max workflows per repo: 10
+
+Number of parameters: 20,447,232
+
+Initializing repo-aware dataloaders...
+Found 1,000 workflow files in /home/josch/Desktop/data/workflows_test
+Grouping 1000 workflows by repository...
+Found 954 unique repositories
+Average workflows per repo: 1.05
+Loading tokenized workflows from cache: /home/josch/Desktop/data/workflows_test/.cache/tokenized_train_split90_1000files.pt
+✅ Loaded 1000 tokenized workflows
+
+Creating repo-aware examples for train split...
+
+TRAIN split: 858 repo examples
+Average workflows per example: 2782.13
+Average useful tokens: 1315 (32.1%)
+Average padding tokens: 2781 (67.9%)
+
+First batch shape: x=torch.Size([8, 4096]), y=torch.Size([8, 4096])
+First batch dtype: x=torch.int32, y=torch.int64
+
+================================================================================
+STARTING REPO-AWARE TRAINING
+================================================================================
+
+Found 1,000 workflow files in /home/josch/Desktop/data/workflows_test
+Grouping 1000 workflows by repository...
+Found 954 unique repositories
+Average workflows per repo: 1.05
+Loading tokenized workflows from cache: /home/josch/Desktop/data/workflows_test/.cache/tokenized_val_split90_1000files.pt
+✅ Loaded 1000 tokenized workflows
+
+Creating repo-aware examples for val split...
+
+VAL split: 96 repo examples
+Average workflows per example: 2782.85
+Average useful tokens: 1314 (32.1%)
+Average padding tokens: 2782 (67.9%)
+
+Step 00000 | Val loss: 9.0109 | Val ppl: 8192.00
+  ✨ New best validation loss!
+W1109 18:20:20.588000 70717 .venv/lib/python3.12/site-packages/torch/_inductor/utils.py:1558] [0/1] Not enough SMs to use max_autotune_gemm mode
+step 00000/00020 (0.0%) | loss: 9.0109 | ppl: 8192.0 | lr: 6.00e-08 | dt: 14361ms | tok/s: 36,506 | time: 0.0m
+Found 1,000 workflow files in /home/josch/Desktop/data/workflows_test
+Grouping 1000 workflows by repository...
+Found 954 unique repositories
+Average workflows per repo: 1.05
+Loading tokenized workflows from cache: /home/josch/Desktop/data/workflows_test/.cache/tokenized_val_split90_1000files.pt
+✅ Loaded 1000 tokenized workflows
+
+Creating repo-aware examples for val split...
+
+VAL split: 96 repo examples
+Average workflows per example: 2782.85
+Average useful tokens: 1314 (32.1%)
+Average padding tokens: 2782 (67.9%)
+
+Step 00010 | Val loss: 9.0104 | Val ppl: 8187.75
+  ✨ New best validation loss!
+step 00010/00020 (50.0%) | loss: 9.0107 | ppl: 8190.0 | lr: 6.60e-07 | dt: 3476ms | tok/s: 150,833 | time: 0.0m
+Found 1,000 workflow files in /home/josch/Desktop/data/workflows_test
+Grouping 1000 workflows by repository...
+Found 954 unique repositories
+Average workflows per repo: 1.05
+Loading tokenized workflows from cache: /home/josch/Desktop/data/workflows_test/.cache/tokenized_val_split90_1000files.pt
+✅ Loaded 1000 tokenized workflows
+
+Creating repo-aware examples for val split...
+
+VAL split: 96 repo examples
+Average workflows per example: 2782.85
+Average useful tokens: 1314 (32.1%)
+Average padding tokens: 2782 (67.9%)
+
+Step 00020 | Val loss: 9.0086 | Val ppl: 8173.06
+  ✨ New best validation loss!
+✅ Checkpoint saved: checkpoints/repo_aware_test/model_000020.pt
+
+================================================================================
+TRAINING COMPLETE
+================================================================================
+Peak memory: 4425MiB
+Total time: 0.5m (0.01h)
+Min val loss: 9.0086
+
+[W1109 18:21:54.166547585 AllocatorConfig.cpp:28] Warning: PYTORCH_CUDA_ALLOC_CONF is deprecated, use PYTORCH_ALLOC_CONF instead (function operator())
