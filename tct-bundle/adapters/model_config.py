@@ -193,6 +193,42 @@ MEDIUM_2048_CONFIG = {
 }
 
 # =============================================================================
+# Medium-4096 Configuration (87M params, context=4096)
+# =============================================================================
+MEDIUM_4096_CONFIG = {
+    # Model architecture
+    "vocab_size": 20000,
+    "context_size": 4096,       # Full manifest coverage
+    "d_model": 576,             # Wider for richer embeddings (72 dim per head)
+    "n_layers": 16,             # Deep for hierarchical structure
+    "n_heads": 8,
+    "dropout": 0.1,
+
+    # Training (adjusted for 4096 context + 87M model)
+    "batch_size": 4,              # Reduced due to 4096 context + larger model
+    "gradient_accumulation": 32,  # Keep effective batch = 128
+    "learning_rate": 2e-4,        # Slightly lower for larger model
+    "weight_decay": 0.1,
+    "warmup_iters": 5000,
+    "max_iters": 100000,
+
+    # Optimization
+    "beta1": 0.9,
+    "beta2": 0.95,
+    "grad_clip": 1.0,
+
+    # Logging
+    "eval_interval": 500,
+    "log_interval": 10,
+    "save_interval": 5000,
+
+    # Estimated
+    "parameters": "~87M",
+    "training_time": "~28 hours on RTX 4090",
+    "budget": "~$140",
+}
+
+# =============================================================================
 # Large Configuration (138M params, context=1024)
 # =============================================================================
 LARGE_1024_CONFIG = {
@@ -239,6 +275,7 @@ CONFIGS = {
     "small-4096": SMALL_4096_CONFIG,
     "medium-1024": MEDIUM_1024_CONFIG,
     "medium-2048": MEDIUM_2048_CONFIG,
+    "medium-4096": MEDIUM_4096_CONFIG,
     "large-1024": LARGE_1024_CONFIG,
 }
 
@@ -278,7 +315,7 @@ def print_config_comparison():
     print(f"{'Config':<15} {'Params':<10} {'Context':<8} {'d_model':<8} {'Layers':<8} {'Heads':<8} {'Time':<25} {'Budget':<10}")
     print("-" * 120)
 
-    for name in ["small-1024", "small-2048", "small-4096", "medium-1024", "medium-2048", "large-1024"]:
+    for name in ["small-1024", "small-2048", "small-4096", "medium-1024", "medium-2048", "medium-4096", "large-1024"]:
         cfg = CONFIGS[name]
         marker = " ⭐" if name == "small-2048" else ""
         print(f"{name + marker:<15} {cfg['parameters']:<10} {cfg['context_size']:<8} {cfg['d_model']:<8} "
