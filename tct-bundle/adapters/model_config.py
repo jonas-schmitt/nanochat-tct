@@ -4,8 +4,8 @@ Model Configuration for Kubernetes Manifest Generation with TCT
 Three preset configurations optimized for Kubernetes manifest generation
 with 2048 context (balanced coverage/speed):
 
-- Small:  20M params, 8 layers, ~2 days training (100k steps), $10 budget  ⭐ RECOMMENDED START
-- Medium: 50M params, 14 layers, ~16h training (100k steps), $80 budget
+- Small:  33M params, 8 layers, ~2 days training (100k steps), $10 budget  ⭐ RECOMMENDED START
+- Medium: 60M params, 14 layers, ~16h training (100k steps), $80 budget
 - Large:  138M params, 16 layers + SwiGLU, ~30h training (100k steps), $175 budget
 
 All configs emphasize depth over width for hierarchical manifest modeling.
@@ -13,7 +13,7 @@ All configs train for 100k steps for optimal learning on 265k manifests.
 """
 
 # =============================================================================
-# Small Configuration (20M params, context=2048) - RECOMMENDED START ⭐
+# Small Configuration (33M params, context=2048) - RECOMMENDED START ⭐
 # =============================================================================
 SMALL_2048_CONFIG = {
     # Model architecture
@@ -43,13 +43,13 @@ SMALL_2048_CONFIG = {
     "save_interval": 5000,
 
     # Estimated
-    "parameters": "~20M",
+    "parameters": "~33M",
     "training_time": "~2 days on RTX 4070 Laptop",
     "budget": "~$10",
 }
 
 # =============================================================================
-# Small-1024 Configuration (20M params, context=1024) - Fast iteration
+# Small-1024 Configuration (33M params, context=1024) - Fast iteration
 # =============================================================================
 SMALL_1024_CONFIG = {
     # Model architecture
@@ -79,13 +79,13 @@ SMALL_1024_CONFIG = {
     "save_interval": 5000,
 
     # Estimated
-    "parameters": "~20M",
+    "parameters": "~33M",
     "training_time": "~3 hours on RTX 4090",
     "budget": "~$15",
 }
 
 # =============================================================================
-# Small-4096 Configuration (20M params, context=4096) - Full coverage
+# Small-4096 Configuration (33M params, context=4096) - Full coverage
 # =============================================================================
 SMALL_4096_CONFIG = {
     # Model architecture
@@ -115,13 +115,13 @@ SMALL_4096_CONFIG = {
     "save_interval": 5000,
 
     # Estimated
-    "parameters": "~20M",
+    "parameters": "~33M",
     "training_time": "~4 hours on RTX 4090",
     "budget": "~$20",
 }
 
 # =============================================================================
-# Medium Configuration (50M params, context=1024)
+# Medium Configuration (60M params, context=1024)
 # =============================================================================
 MEDIUM_1024_CONFIG = {
     # Model architecture
@@ -151,13 +151,13 @@ MEDIUM_1024_CONFIG = {
     "save_interval": 5000,
 
     # Estimated
-    "parameters": "~50M",
+    "parameters": "~60M",
     "training_time": "~15 hours on RTX 4090",
     "budget": "~$75",
 }
 
 # =============================================================================
-# Medium-2048 Configuration (50M params, context=2048)
+# Medium-2048 Configuration (60M params, context=2048)
 # =============================================================================
 MEDIUM_2048_CONFIG = {
     # Model architecture
@@ -187,7 +187,7 @@ MEDIUM_2048_CONFIG = {
     "save_interval": 5000,
 
     # Estimated
-    "parameters": "~50M",
+    "parameters": "~60M",
     "training_time": "~16 hours on RTX 4090",
     "budget": "~$80",
 }
@@ -293,14 +293,14 @@ def get_config(size="small-2048"):
         ValueError: If config name not found
 
     Example:
-        >>> config = get_config("small-2048")  # 20M params, 2048 context
+        >>> config = get_config("small-2048")  # 33M params, 2048 context
     """
     if size not in CONFIGS:
         available = ", ".join(CONFIGS.keys())
         raise ValueError(
             f"Unknown config: '{size}'\n"
             f"Available configs: {available}\n"
-            f"  Recommended: small-2048 (20M params, 2048 context)"
+            f"  Recommended: small-2048 (33M params, 2048 context)"
         )
     return CONFIGS[size].copy()
 
@@ -325,9 +325,9 @@ def print_config_comparison():
     print("=" * 120)
     print()
     print("Recommendation:")
-    print("  ⭐ RECOMMENDED START: small-2048 (20M, 8 layers, 100k steps) - Best balance for initial training")
+    print("  ⭐ RECOMMENDED START: small-2048 (33M, 8 layers, 100k steps) - Best balance for initial training")
     print("  - Use small-1024 for faster iteration/debugging")
-    print("  - Use medium-2048 (50M, 14 layers) for production quality")
+    print("  - Use medium-2048 (60M, 14 layers) for production quality")
     print("  - Use large-1024 (138M, 16 layers + SwiGLU) for maximum quality")
     print()
     print("All configs emphasize depth over width for hierarchical manifest modeling")
