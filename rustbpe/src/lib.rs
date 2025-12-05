@@ -345,13 +345,20 @@ impl Tokenizer {
             total_sequences += buf.len() as u64;
 
             let pattern = self.compiled_pattern.clone();
+            let no_split = self.pattern.is_empty();
             let local: AHashMap<CompactString, i32> = py.allow_threads(|| {
                 buf.par_iter()
                     .map(|s| {
                         let mut m: AHashMap<CompactString, i32> = AHashMap::new();
-                        for mat in pattern.find_iter(s) {
-                            let piece = mat.expect("regex match failed").as_str();
-                            *m.entry(CompactString::from(piece)).or_default() += 1;
+                        if no_split {
+                            // Pure byte-level BPE: treat entire string as one chunk
+                            *m.entry(CompactString::from(s.as_str())).or_default() += 1;
+                        } else {
+                            // GPT-4 style: split with regex first
+                            for mat in pattern.find_iter(s) {
+                                let piece = mat.expect("regex match failed").as_str();
+                                *m.entry(CompactString::from(piece)).or_default() += 1;
+                            }
                         }
                         m
                     })
@@ -429,10 +436,17 @@ impl Tokenizer {
     pub fn encode(&self, text: &str) -> Vec<u32> {
         let mut all_ids = Vec::new();
 
-        // Split text using the regex pattern
-        for m in self.compiled_pattern.find_iter(text) {
-            let chunk = m.expect("regex match failed").as_str();
+        // Get chunks: either split by regex or treat entire text as one chunk
+        let chunks: Vec<&str> = if self.pattern.is_empty() {
+            vec![text]
+        } else {
+            self.compiled_pattern
+                .find_iter(text)
+                .map(|m| m.expect("regex match failed").as_str())
+                .collect()
+        };
 
+        for chunk in chunks {
             // Convert chunk to bytes then to u32 IDs
             let mut ids: Vec<u32> = chunk.bytes().map(|b| b as u32).collect();
 
