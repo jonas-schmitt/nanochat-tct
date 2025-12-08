@@ -1,15 +1,17 @@
 #!/usr/bin/env python3
 """
-Kubernetes Manifest TCT Training Script
+Kubernetes Manifest BPE Training Script
 
-Train TCT kubernetes manifest generation model using standard teacher forcing.
-Trains on 265k kubernetes manifests with context size 2048 (recommended).
+Train BPE-based kubernetes manifest generation model using standard teacher forcing.
+Trains on 246k kubernetes manifests with context size 2048 (recommended).
+
+This is the baseline comparison for TCT - uses pure byte-level BPE tokenization.
 
 Usage:
-    python -m scripts.tct_train_simple --model_size=small-2048
+    python -m scripts.bpe_train_simple --model_size=small-2048
 
 For distributed training:
-    torchrun --nproc_per_node=8 -m scripts.tct_train_simple --model_size=small-2048
+    torchrun --nproc_per_node=8 -m scripts.bpe_train_simple --model_size=small-2048
 """
 
 import os
@@ -29,7 +31,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent / "tct-bundle" / "adapters")
 from nanochat.gpt import GPT, GPTConfig
 from nanochat.common import compute_init, compute_cleanup, print0, print_banner, autodetect_device_type
 from model_config import get_config
-from tct_k8s_dataloader import tct_k8s_data_loader
+from bpe_k8s_dataloader import bpe_k8s_data_loader
 
 print_banner()
 
@@ -37,16 +39,14 @@ print_banner()
 # User settings
 device_type = ""  # cuda|cpu|mps (empty => autodetect)
 model_size = "small-2048"  # small-1024, small-2048, small-4096, medium-2048, etc.
-data_dir = "/home/josch/Desktop/data-test"  # Test with 10k subset
-train_split = 0.9  # train/val split
-num_iterations = 10  # SMOKE TEST: Just 10 iterations
-eval_every = 5  # eval interval
+data_dir = None  # None => ~/Desktop/data (contains k8s-bpe-encoded/)
+num_iterations = 100000  # Training iterations
+eval_every = 500  # eval interval
 save_every = 5000  # checkpoint interval
 model_tag = ""  # optional tag for checkpoint directory
-cache_file = None  # optional cache file path (None => auto-detect)
 warmup_iters = 5000  # LR warmup steps
 grad_clip = 1.0  # gradient clipping
-device_batch_size = 4  # SMOKE TEST: Small batch
+device_batch_size = None  # None => use config default
 resume_from_step = 0  # resume training from this step (0 = start fresh)
 
 # CLI override
@@ -100,11 +100,11 @@ model.init_weights()
 
 # Resume from checkpoint if specified
 if resume_from_step > 0:
-    checkpoint_dir = Path("checkpoints") / model_tag if model_tag else Path("checkpoints") / f"{model_size}_{resume_from_step:06d}"
+    checkpoint_dir = Path("checkpoints-bpe") / model_tag if model_tag else Path("checkpoints-bpe") / f"bpe_{model_size}"
     checkpoint_path = checkpoint_dir / f"model_{resume_from_step:06d}.pt"
     if not checkpoint_path.exists() and model_tag:
         # Try with model_tag directory
-        checkpoint_path = Path("checkpoints") / model_tag / f"model_{resume_from_step:06d}.pt"
+        checkpoint_path = Path("checkpoints-bpe") / model_tag / f"model_{resume_from_step:06d}.pt"
     if checkpoint_path.exists():
         print0(f"📂 Resuming from checkpoint: {checkpoint_path}")
         state_dict = torch.load(checkpoint_path, map_location=device)
@@ -134,27 +134,23 @@ optimizer = torch.optim.AdamW(
 
 # Initialize dataloaders
 print0("\nInitializing dataloaders...")
-train_loader = tct_k8s_data_loader(
+train_loader = bpe_k8s_data_loader(
     B=B,
     T=T,
     split="train",
     data_dir=data_dir,
-    train_split=train_split,
     device=device,
-    cache_file=cache_file,
     shuffle=True,
 )
 
 # Validation loader builder (created on-demand)
 def build_val_loader():
-    return tct_k8s_data_loader(
+    return bpe_k8s_data_loader(
         B=B,
         T=T,
         split="val",
         data_dir=data_dir,
-        train_split=train_split,
         device=device,
-        cache_file=cache_file,
         shuffle=False,
     )
 
@@ -176,13 +172,13 @@ def get_lr(step):
     # Constant LR after warmup
     return learning_rate
 
-# Checkpoint saving
+# Checkpoint saving (separate directory for BPE model)
 def save_checkpoint(step, val_loss):
     if not master_process:
         return
 
-    output_dirname = model_tag if model_tag else f"{model_size}_{step:06d}"
-    checkpoint_dir = Path("checkpoints") / output_dirname
+    output_dirname = model_tag if model_tag else f"bpe_{model_size}"
+    checkpoint_dir = Path("checkpoints-bpe") / output_dirname
     checkpoint_dir.mkdir(parents=True, exist_ok=True)
 
     checkpoint_path = checkpoint_dir / f"model_{step:06d}.pt"

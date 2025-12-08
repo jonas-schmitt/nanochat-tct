@@ -161,10 +161,24 @@ impl Tokenizer {
     /// Core incremental BPE training given unique words and their counts.
     /// `words`: one entry per unique chunk (Vec<u32> of token-ids/bytes).
     /// `counts`: same length as `words`, count per chunk.
-    fn train_core_incremental(&mut self, mut words: Vec<Word>, counts: Vec<i32>, vocab_size: u32) {
+    /// `target_avg_length`: optional stopping criterion - stop when avg sequence length <= target
+    /// `check_interval`: how often to check the stopping criterion (in merges)
+    /// `num_documents`: total number of documents (for avg length calculation)
+    fn train_core_incremental(
+        &mut self,
+        mut words: Vec<Word>,
+        counts: Vec<i32>,
+        vocab_size: u32,
+        target_avg_length: Option<f64>,
+        check_interval: u32,
+        num_documents: u64,
+    ) {
         assert!(vocab_size >= 256, "vocab_size must be at least 256");
         let num_merges = vocab_size - 256;
         log::info!("Starting BPE training: {} merges to compute", num_merges);
+        if let Some(target) = target_avg_length {
+            log::info!("Stopping criterion: avg length <= {:.1} (checking every {} merges)", target, check_interval);
+        }
         self.merges.clear();
 
         // ---- Initial pair_counts and where_to_update (parallel) ----
@@ -185,21 +199,45 @@ impl Tokenizer {
             }
         }
 
+        // Helper to compute current average sequence length
+        let compute_avg_length = |words: &[Word], counts: &[i32], num_docs: u64| -> f64 {
+            let total_tokens: i64 = words.iter().zip(counts.iter())
+                .map(|(w, &c)| w.ids.len() as i64 * c as i64)
+                .sum();
+            total_tokens as f64 / num_docs as f64
+        };
+
+        // Log initial average length
+        let initial_avg = compute_avg_length(&words, &counts, num_documents);
+        log::info!("Initial average sequence length: {:.2}", initial_avg);
+
         // ---- Merge loop ----
         log::info!("Starting merge loop");
         let mut merges_done = 0u32;
         let mut last_log_percent = 0u32;
 
+        // Track pending pos sets for pairs that need lazy refresh merging
+        let mut pending_pos: AHashMap<Pair, AHashSet<usize>> = AHashMap::new();
+
         while merges_done < num_merges {
             let Some(mut top) = heap.pop() else { break; };
+
+            // Merge any pending pos sets for this pair
+            if let Some(extra_pos) = pending_pos.remove(&top.pair) {
+                top.pos.extend(extra_pos);
+            }
 
             // Lazy refresh
             let current = *pair_counts.get(&top.pair).unwrap_or(&0);
             if top.count != current as u64 {
-                top.count = current as u64;
-                if top.count > 0 {
-                    heap.push(top);
-                }
+                // Store current pos for later merging
+                pending_pos.entry(top.pair).or_default().extend(top.pos);
+                // Re-push with updated count but empty pos (will be merged from pending_pos)
+                heap.push(MergeJob {
+                    pair: top.pair,
+                    count: current as u64,
+                    pos: AHashSet::new(),
+                });
                 continue;
             }
             if top.count == 0 {
@@ -241,6 +279,22 @@ impl Tokenizer {
 
             merges_done += 1;
 
+            // Check stopping criterion every check_interval merges
+            if let Some(target) = target_avg_length {
+                if merges_done % check_interval == 0 {
+                    let current_avg = compute_avg_length(&words, &counts, num_documents);
+                    let current_vocab = 256 + merges_done;
+                    log::info!(
+                        "Vocab: {} -> Avg length: {:.2} (target: {:.1})",
+                        current_vocab, current_avg, target
+                    );
+                    if current_avg <= target {
+                        log::info!("Target reached! Stopping early at vocab_size={}", current_vocab);
+                        break;
+                    }
+                }
+            }
+
             // Log progress every 1%
             let current_percent = (merges_done * 100) / num_merges;
             if current_percent > last_log_percent {
@@ -252,7 +306,8 @@ impl Tokenizer {
             }
         }
 
-        log::info!("Finished training: {} merges completed", merges_done);
+        let final_avg = compute_avg_length(&words, &counts, num_documents);
+        log::info!("Finished training: {} merges completed, final avg length: {:.2}", merges_done, final_avg);
     }
 }
 
@@ -272,8 +327,12 @@ impl Tokenizer {
     /// Train from a streaming iterator (parallel ingestion).
     /// We refill a Rust Vec<String> buffer under the GIL, then release the GIL
     /// to do the heavy splitting and counting **in parallel** with rayon.
-    #[pyo3(signature = (iterator, vocab_size, buffer_size=8192, pattern=None))]
-    #[pyo3(text_signature = "(self, iterator, vocab_size, buffer_size=8192, pattern=None)")]
+    ///
+    /// Optional stopping criterion:
+    /// - `target_avg_length`: stop training when avg sequence length <= this value
+    /// - `check_interval`: how often to check the stopping criterion (in vocab size units, e.g., 5000)
+    #[pyo3(signature = (iterator, vocab_size, buffer_size=8192, pattern=None, target_avg_length=None, check_interval=5000))]
+    #[pyo3(text_signature = "(self, iterator, vocab_size, buffer_size=8192, pattern=None, target_avg_length=None, check_interval=5000)")]
     pub fn train_from_iterator(
         &mut self,
         py: pyo3::Python<'_>,
@@ -281,6 +340,8 @@ impl Tokenizer {
         vocab_size: u32,
         buffer_size: usize,
         pattern: Option<String>,
+        target_avg_length: Option<f64>,
+        check_interval: u32,
     ) -> PyResult<()> {
         // Use provided pattern or default to GPT-4 pattern
         let pattern_str = pattern.unwrap_or_else(|| GPT4_PATTERN.to_string());
@@ -392,13 +453,25 @@ impl Tokenizer {
             cvec.push(c);
         }
 
-        self.train_core_incremental(words, cvec, vocab_size);
+        self.train_core_incremental(
+            words,
+            cvec,
+            vocab_size,
+            target_avg_length,
+            check_interval,
+            total_sequences,
+        );
         Ok(())
     }
 
     /// Return the regex pattern
     pub fn get_pattern(&self) -> String {
         self.pattern.clone()
+    }
+
+    /// Return the current vocabulary size (256 base bytes + number of merges)
+    pub fn vocab_size(&self) -> u32 {
+        256 + self.merges.len() as u32
     }
 
     /// Return the mergeable ranks (token bytes -> token id / rank)

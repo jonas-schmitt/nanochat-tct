@@ -16,11 +16,11 @@ All configs train for 100k steps for optimal learning on 265k manifests.
 # Small Configuration (33M params, context=2048) - RECOMMENDED START ⭐
 # =============================================================================
 SMALL_2048_CONFIG = {
-    # Model architecture
+    # Model architecture (matches k8s_33M_200k training run)
     "vocab_size": 20000,        # Kubernetes vocab size
     "context_size": 2048,       # 2× context (covers ~70% of manifests entirely)
     "d_model": 384,
-    "n_layers": 8,
+    "n_layers": 10,             # 10 layers (from k8s_33M_200k training)
     "n_heads": 6,
     "dropout": 0.1,
 
@@ -266,6 +266,83 @@ LARGE_1024_CONFIG = {
 }
 
 # =============================================================================
+# BPE Configuration (5.2k vocab, matched params to TCT small-2048)
+# =============================================================================
+# BPE achieves similar compression with 5.2k vocab, allowing more transformer
+# capacity at the same parameter count as TCT with 20k vocab.
+BPE_SMALL_2048_CONFIG = {
+    # Model architecture - optimized for BPE's smaller vocab
+    "vocab_size": 5256,          # BPE vocab (vs TCT's 20k)
+    "context_size": 2048,
+    "d_model": 450,              # Wider than TCT (450 vs 384)
+    "n_layers": 10,              # Deeper than TCT (10 vs 8)
+    "n_heads": 6,                # 450/6 = 75 dim per head
+    "dropout": 0.1,
+
+    # Training
+    "batch_size": 16,
+    "gradient_accumulation": 8,
+    "learning_rate": 3e-4,
+    "weight_decay": 0.1,
+    "warmup_iters": 5000,
+    "max_iters": 100000,
+
+    # Optimization
+    "beta1": 0.9,
+    "beta2": 0.95,
+    "grad_clip": 1.0,
+
+    # Logging
+    "eval_interval": 500,
+    "log_interval": 10,
+    "save_interval": 5000,
+
+    # Estimated
+    "parameters": "~29M",        # Matched to TCT small-2048
+    "training_time": "~2 days on RTX 4070 Laptop",
+    "budget": "~$10",
+    "tokenizer": "bpe-k8s-matched",
+}
+
+# =============================================================================
+# BPE-169 Small Configuration (41.8k vocab, ~33M params)
+# =============================================================================
+# Same ~33M params as TCT, same training parameters for same training speed.
+BPE_169_SMALL_2048_CONFIG = {
+    # Model architecture - EXACT SAME as TCT (except vocab)
+    "vocab_size": 41756,         # BPE-169 vocab (2x TCT's 20k)
+    "context_size": 2048,
+    "d_model": 384,              # Same as TCT
+    "n_layers": 10,              # Same as TCT (from k8s_33M_200k config.json)
+    "n_heads": 6,                # Same as TCT (384/6 = 64 dim per head)
+    "dropout": 0.1,
+
+    # Training - match TCT training parameters exactly
+    "batch_size": 4,              # Same as TCT
+    "gradient_accumulation": 8,   # Same as TCT -> effective batch = 32
+    "learning_rate": 3e-4,
+    "weight_decay": 0.1,
+    "warmup_iters": 5000,
+    "max_iters": 100000,
+
+    # Optimization
+    "beta1": 0.9,
+    "beta2": 0.95,
+    "grad_clip": 1.0,
+
+    # Logging
+    "eval_interval": 500,
+    "log_interval": 10,
+    "save_interval": 5000,
+
+    # Estimated
+    "parameters": "~33M",
+    "training_time": "~2 days on RTX 4070 Laptop",
+    "budget": "~$10",
+    "tokenizer": "bpe-k8s-169",
+}
+
+# =============================================================================
 # Configuration Selection Helper
 # =============================================================================
 
@@ -277,6 +354,8 @@ CONFIGS = {
     "medium-2048": MEDIUM_2048_CONFIG,
     "medium-4096": MEDIUM_4096_CONFIG,
     "large-1024": LARGE_1024_CONFIG,
+    "bpe-small-2048": BPE_SMALL_2048_CONFIG,
+    "bpe-169-small-2048": BPE_169_SMALL_2048_CONFIG,
 }
 
 def get_config(size="small-2048"):

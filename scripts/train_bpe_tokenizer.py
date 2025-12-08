@@ -7,13 +7,12 @@ comparison with TCT's schema-aware tokenization.
 """
 
 import argparse
+import json
 import os
-import pickle
 import sys
 from pathlib import Path
 
 import rustbpe
-import tiktoken
 
 
 def yaml_iterator(directory: str, limit: int | None = None):
@@ -82,34 +81,34 @@ def main():
         pattern="",  # Empty pattern = no regex splitting = pure byte BPE
     )
 
-    # Create tiktoken encoding for efficient inference
-    pattern = tokenizer.get_pattern()  # Will be empty
-    mergeable_ranks_list = tokenizer.get_mergeable_ranks()
-    mergeable_ranks = {bytes(k): v for k, v in mergeable_ranks_list}
-
-    enc = tiktoken.Encoding(
-        name="bpe-k8s",
-        pat_str=pattern if pattern else r"[\s\S]",  # Match any char if no pattern
-        mergeable_ranks=mergeable_ranks,
-        special_tokens={},
-    )
-
-    # Save tokenizer
+    # Save tokenizer - save mergeable_ranks as JSON
     os.makedirs(args.output_dir, exist_ok=True)
-    pickle_path = os.path.join(args.output_dir, "tokenizer.pkl")
-    with open(pickle_path, "wb") as f:
-        pickle.dump(enc, f)
-    print(f"\nSaved tokenizer to {pickle_path}")
-    print(f"  Vocab size: {enc.n_vocab}")
+
+    ranks = tokenizer.get_mergeable_ranks()
+    ranks_serializable = [[list(token), rank] for token, rank in ranks]
+
+    with open(os.path.join(args.output_dir, "mergeable_ranks.json"), "w") as f:
+        json.dump(ranks_serializable, f)
+
+    print(f"\nSaved tokenizer to {args.output_dir}")
+    print(f"  Vocab size: {args.vocab_size}")
+
+    # Save metadata
+    with open(os.path.join(args.output_dir, "metadata.json"), "w") as f:
+        json.dump({
+            "vocab_size": args.vocab_size,
+            "data_dir": args.data_dir,
+            "num_files": len(yaml_files),
+            "type": "rustbpe_pure_byte",
+        }, f, indent=2)
 
     # Test encoding
     sample = "apiVersion: v1\nkind: Pod\nmetadata:\n  name: test\n"
-    tokens = enc.encode(sample)
-    decoded = enc.decode(tokens)
+    tokens = tokenizer.encode(sample)
     print(f"\nTest encoding:")
-    print(f"  Input: {repr(sample[:50])}")
+    print(f"  Input bytes: {len(sample.encode())}")
     print(f"  Tokens: {len(tokens)}")
-    print(f"  Decoded: {repr(decoded[:50])}")
+    print(f"  Compression: {len(sample.encode())/len(tokens):.2f}x")
 
     return 0
 

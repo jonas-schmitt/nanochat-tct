@@ -1,16 +1,15 @@
 """
-Kubernetes Manifest DataLoader for TCT
+Kubernetes Manifest DataLoader for BPE
 
-Each manifest is a separate, independent training example with no cross-manifest context.
-Manifests are padded/truncated to context_size, ensuring true manifest isolation.
+Same structure as TCT dataloader but for BPE-encoded manifests.
+Each manifest is a separate, independent training example.
 
 Key Features:
 - Each batch contains B independent manifests (no concatenation)
 - Each manifest starts at position 0 (no prior manifest context)
-- Inputs padded with PAD_TOKEN_ID
+- Inputs padded with PAD_TOKEN_ID (19999)
 - Targets padded with -1 (ignored in loss via ignore_index)
 - Compatible with nanochat's training loop
-- Supports pre-encoded JSONL format (k8s-encoded/) with train/validate splits
 """
 
 import json
@@ -19,21 +18,33 @@ from pathlib import Path
 import torch
 from torch.utils.data import Dataset, DataLoader
 
-# Import TCT kubernetes constants
-from tct_k8s_constants import TCT_K8S_PAD_TOKEN_ID, TCT_K8S_TOTAL_VOCAB_SIZE
+# Default values - will be overridden by metadata.json if available
+BPE_PAD_TOKEN_ID = 41755  # vocab_size - 1 for BPE-169
+BPE_VOCAB_SIZE = 41756     # BPE-169 vocab size (from training with target 169)
 
 
-class TCTKubernetesDataset(Dataset):
+def get_bpe_vocab_info(data_dir):
+    """Load vocab info from metadata.json if available."""
+    metadata_file = data_dir / "metadata.json"
+    if metadata_file.exists():
+        with open(metadata_file) as f:
+            metadata = json.load(f)
+        vocab_size = metadata.get("vocab_size", BPE_VOCAB_SIZE)
+        pad_token = vocab_size - 1  # Last token is pad
+        return vocab_size, pad_token
+    return BPE_VOCAB_SIZE, BPE_PAD_TOKEN_ID
+
+
+class BPEKubernetesDataset(Dataset):
     """
     Dataset where each Kubernetes manifest is an independent training example.
 
-    Loads pre-encoded JSONL files from k8s-encoded/ directory.
-    No streaming, no concatenation - pure manifest isolation.
+    Loads pre-encoded JSONL files from k8s-bpe-encoded/ directory.
     """
 
     def __init__(self, jsonl_file, context_size, max_len=None):
         """
-        Initialize Kubernetes manifest dataset from pre-encoded JSONL.
+        Initialize Kubernetes manifest dataset from BPE-encoded JSONL.
 
         Args:
             jsonl_file: Path to JSONL file (train.jsonl or validate.jsonl)
@@ -44,7 +55,7 @@ class TCTKubernetesDataset(Dataset):
         self.max_len = max_len  # None = no filtering, load all sequences
 
         # Load pre-encoded sequences from JSONL
-        print(f"Loading pre-encoded sequences from: {jsonl_file}")
+        print(f"Loading BPE-encoded sequences from: {jsonl_file}")
         self.manifests = self._load_jsonl(jsonl_file)
 
         # Statistics
@@ -100,39 +111,34 @@ class TCTKubernetesDataset(Dataset):
             tokens = tokens[:self.context_size]
 
         # For teacher forcing, we need context_size + 1 total tokens
-        # (to create context_size input/target pairs)
         if len(tokens) < self.context_size + 1:
-            # Pad to context_size + 1
-            # Inputs will use 19999, targets will use -1
             needed = self.context_size + 1 - len(tokens)
-            # For now, pad with 19999 (we'll handle targets separately)
-            tokens = torch.cat([tokens, torch.full((needed,), TCT_K8S_PAD_TOKEN_ID, dtype=torch.long)])
+            tokens = torch.cat([tokens, torch.full((needed,), BPE_PAD_TOKEN_ID, dtype=torch.long)])
 
         # Teacher forcing: shift by 1
-        inputs = tokens[:-1].clone()  # First context_size tokens
-        targets = tokens[1:].clone()  # Last context_size tokens
+        inputs = tokens[:-1].clone()
+        targets = tokens[1:].clone()
 
         # Replace padding in targets with -1 (ignored in loss)
-        # Padding occurs where inputs are 19999
-        mask = inputs == TCT_K8S_PAD_TOKEN_ID
+        mask = inputs == BPE_PAD_TOKEN_ID
         targets[mask] = -1
 
-        # Convert to int32 for inputs (model expects this)
+        # Convert to int32 for inputs
         inputs = inputs.to(dtype=torch.int32)
 
         return inputs, targets
 
 
-def tct_k8s_data_loader(B, T, split="train", data_dir=None, max_len=None,
+def bpe_k8s_data_loader(B, T, split="train", data_dir=None, max_len=None,
                         device="cuda", shuffle=True, num_workers=0):
     """
-    Create DataLoader for independent Kubernetes manifest training.
+    Create DataLoader for BPE-encoded Kubernetes manifests.
 
     Args:
         B: Batch size
         T: Sequence length (context size)
         split: "train" or "val"
-        data_dir: Directory containing k8s-encoded/ with train.jsonl and validate.jsonl
+        data_dir: Directory containing k8s-bpe-encoded/ with train.jsonl and validate.jsonl
         max_len: Maximum sequence length to keep (default: T * 2)
         device: Device for tensors ("cuda" or "cpu")
         shuffle: Shuffle manifests each epoch (default: True for train)
@@ -146,10 +152,12 @@ def tct_k8s_data_loader(B, T, split="train", data_dir=None, max_len=None,
     else:
         data_dir = Path(data_dir)
 
-    # Find the k8s-encoded directory
-    encoded_dir = data_dir / "k8s-encoded"
+    # Find the BPE-encoded directory (try 169 first, then fallback)
+    encoded_dir = data_dir / "k8s-bpe-169-encoded"
     if not encoded_dir.exists():
-        raise ValueError(f"k8s-encoded directory not found in {data_dir}")
+        encoded_dir = data_dir / "k8s-bpe-encoded"
+    if not encoded_dir.exists():
+        raise ValueError(f"BPE-encoded directory not found in {data_dir} (tried k8s-bpe-169-encoded and k8s-bpe-encoded)")
 
     # Select the right JSONL file based on split
     if split == "train":
@@ -165,11 +173,11 @@ def tct_k8s_data_loader(B, T, split="train", data_dir=None, max_len=None,
     if metadata_file.exists():
         with open(metadata_file) as f:
             metadata = json.load(f)
-        print(f"Dataset: {metadata.get('encoded_files', '?')} encoded manifests")
+        print(f"Dataset: {metadata.get('total_files', '?')} BPE-encoded manifests")
         print(f"Split: {split} ({metadata.get('train_count' if split == 'train' else 'validate_count', '?')} sequences)")
 
     # Create dataset
-    dataset = TCTKubernetesDataset(
+    dataset = BPEKubernetesDataset(
         jsonl_file,
         context_size=T,
         max_len=max_len,
