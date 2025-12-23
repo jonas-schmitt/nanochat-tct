@@ -109,22 +109,22 @@ Each directory contains:
 | Size | d_model | Layers | Heads | Head Dim | Transformer Params |
 |------|---------|--------|-------|----------|-------------------|
 | **Small** | 512 | 10 | 8 | 64 | ~31M |
-| **Medium** | 768 | 14 | 12 | 64 | ~99M |
-| **Large** | 1024 | 25 | 16 | 64 | ~315M |
+| **Medium** | 768 | 13 | 12 | 64 | ~92M |
+| **Large** | 1024 | 24 | 16 | 64 | ~302M |
 
-**Total parameters by schema** (kubernetes is reference, targets ≥50M/≥125M/≥350M):
+**Total parameters by schema** (kubernetes is reference, targets ~50M/~125M/~350M):
 
 | Schema | Size | TCT-BPE Params | UTF8-BPE Params | Target |
 |--------|------|----------------|-----------------|--------|
-| **kubernetes** | Small | 51.9M | 55.9M | ≥50M ✓ |
-| **kubernetes** | Medium | 129.8M | 135.8M | ≥125M ✓ |
-| **kubernetes** | Large | 355.5M | 363.5M | ≥350M ✓ |
+| **kubernetes** | Small | 51.9M | 55.9M | ~50M |
+| **kubernetes** | Medium | 122.7M | 128.7M | ~125M |
+| **kubernetes** | Large | 342.9M | 350.9M | ~350M |
 | eslintrc | Small | 41.7M | 50.2M | - |
-| eslintrc | Medium | 114.5M | 127.3M | - |
-| eslintrc | Large | 335.1M | 352.1M | - |
+| eslintrc | Medium | 107.4M | 120.2M | - |
+| eslintrc | Large | 322.5M | 339.5M | - |
 | tsconfig | Small | 41.7M | 48.0M | - |
-| tsconfig | Medium | 114.5M | 124.0M | - |
-| tsconfig | Large | 335.1M | 347.7M | - |
+| tsconfig | Medium | 107.4M | 116.9M | - |
+| tsconfig | Large | 322.5M | 335.2M | - |
 
 **Vocab sizes by schema and tokenizer**:
 
