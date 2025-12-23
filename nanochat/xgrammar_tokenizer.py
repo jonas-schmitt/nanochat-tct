@@ -1,22 +1,29 @@
 """
-XGrammar TokenizerInfo builder for UTF8-BPE tokenizers.
+UTF8-BPE tokenizer utilities for nanochat.
 
-Builds XGrammar-compatible TokenizerInfo from BPE merge tables,
-enabling constrained generation with JSON schemas.
+Provides:
+1. UTF8BPEDecoder: Standalone decoder that works WITHOUT xgrammar
+2. build_xgrammar_tokenizer_info: XGrammar integration (requires xgrammar)
+3. compile_json_schema_grammar: Schema-constrained generation (requires xgrammar)
 
-Usage:
-    from nanochat.xgrammar_tokenizer import build_xgrammar_tokenizer_info
-    import xgrammar
+Usage (decoding only - no xgrammar required):
+    from nanochat.xgrammar_tokenizer import UTF8BPEDecoder
+
+    decoder = UTF8BPEDecoder("bpe-merges/kubernetes-utf8-bpe-matched.json")
+    text = decoder.decode([123, 456, 789])  # Decode token IDs to string
+    vocab_size = decoder.vocab_size()
+
+Usage (constrained generation - requires xgrammar):
+    from nanochat.xgrammar_tokenizer import (
+        build_xgrammar_tokenizer_info,
+        compile_json_schema_grammar,
+    )
 
     tokenizer_info = build_xgrammar_tokenizer_info(
         merge_table_path="bpe-merges/kubernetes-utf8-bpe-matched.json"
     )
-
-    # Compile grammar for constrained generation
     schema = {"type": "object", "properties": {...}}
-    grammar = xgrammar.Grammar.from_json_schema(schema)
-    compiler = xgrammar.GrammarCompiler(tokenizer_info)
-    compiled = compiler.compile_grammar(grammar)
+    compiled = compile_json_schema_grammar(tokenizer_info, schema)
 """
 
 import json
@@ -87,6 +94,85 @@ def build_vocabulary_from_merges(merge_table_path: Union[str, Path]) -> tuple:
     encoded_vocab.append(b"</s>")
 
     return encoded_vocab, eos_token_id, len(encoded_vocab)
+
+
+class UTF8BPEDecoder:
+    """UTF8-BPE decoder that works without xgrammar.
+
+    Provides decode functionality for UTF8-BPE models using the merge table.
+    Compatible with both constrained (XGrammar) and unconstrained generation.
+
+    Usage:
+        decoder = UTF8BPEDecoder("bpe-merges/kubernetes-utf8-bpe-matched.json")
+        text = decoder.decode([123, 456, 789])  # Decode token IDs to string
+        vocab_size = decoder.vocab_size()
+    """
+
+    def __init__(self, merge_table_path: Union[str, Path]):
+        """Initialize decoder from BPE merge table.
+
+        Args:
+            merge_table_path: Path to merge table JSON file
+        """
+        self.merge_table_path = Path(merge_table_path)
+
+        with open(merge_table_path) as f:
+            merge_data = json.load(f)
+
+        self.base_vocab_size = merge_data.get("base_vocab_size", 256)
+        merges = merge_data.get("merges", [])
+
+        # Build decode table: {new_token_id: (left_id, right_id)}
+        self._decode_table = {}
+        for merge in merges:
+            new_token = merge["new_token"]
+            left, right = merge["pair"]
+            self._decode_table[new_token] = (left, right)
+
+        # Total vocabulary size (base + merges + EOS)
+        self._vocab_size = self.base_vocab_size + len(merges) + 1
+        self._eos_token_id = self.base_vocab_size + len(merges)
+
+    def vocab_size(self) -> int:
+        """Return vocabulary size (for compatibility with tokenizer modules)."""
+        return self._vocab_size
+
+    def eos_token_id(self) -> int:
+        """Return EOS token ID."""
+        return self._eos_token_id
+
+    def _token_to_bytes(self, token_id: int) -> bytes:
+        """Recursively decode a token ID to its byte sequence."""
+        if token_id < self.base_vocab_size:
+            return bytes([token_id])
+        elif token_id in self._decode_table:
+            left, right = self._decode_table[token_id]
+            return self._token_to_bytes(left) + self._token_to_bytes(right)
+        elif token_id == self._eos_token_id:
+            return b""  # EOS produces empty bytes
+        else:
+            # Unknown token
+            return b""
+
+    def decode(self, tokens: List[int]) -> str:
+        """Decode token IDs to string.
+
+        Args:
+            tokens: List of token IDs
+
+        Returns:
+            Decoded string (UTF-8)
+        """
+        byte_sequence = b""
+        for token_id in tokens:
+            byte_sequence += self._token_to_bytes(token_id)
+
+        # Decode UTF-8 with error handling
+        try:
+            return byte_sequence.decode("utf-8")
+        except UnicodeDecodeError:
+            # Try to decode as much as possible
+            return byte_sequence.decode("utf-8", errors="replace")
 
 
 def build_xgrammar_tokenizer_info(

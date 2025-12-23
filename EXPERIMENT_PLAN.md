@@ -408,6 +408,77 @@ Beyond syntactic validity, measure whether outputs are **semantically meaningful
 
 ---
 
+## Evaluation Script
+
+### Usage
+
+The `scripts/eval_generation.py` script provides comprehensive evaluation for the three-way comparison:
+
+```bash
+# Validation set evaluation (loss, perplexity, bits-per-byte)
+python -m scripts.eval_generation \
+    --schema kubernetes \
+    --tct_checkpoint checkpoints/k8s_tct_small/ \
+    --utf8_checkpoint checkpoints/k8s_utf8_small/ \
+    --eval_validation
+
+# Generation evaluation with XGrammar-constrained decoding
+python -m scripts.eval_generation \
+    --schema kubernetes \
+    --tct_checkpoint checkpoints/k8s_tct_small/ \
+    --utf8_checkpoint checkpoints/k8s_utf8_small/ \
+    --eval_generation \
+    --xgrammar \
+    --num_samples 100
+
+# Both evaluations with output file
+python -m scripts.eval_generation \
+    --schema kubernetes \
+    --tct_checkpoint checkpoints/k8s_tct_small/ \
+    --utf8_checkpoint checkpoints/k8s_utf8_small/ \
+    --eval_validation \
+    --eval_generation \
+    --xgrammar \
+    --output results.json \
+    --save_samples samples/
+```
+
+### Validation Set Metrics
+
+| Metric | Formula | Purpose |
+|--------|---------|---------|
+| **Validation Loss** | Cross-entropy on validate.jsonl | Primary quality measure |
+| **Perplexity** | exp(validation_loss) | Interpretable quality |
+| **Bits-per-byte** | (loss × tokens) / (bytes × ln(2)) | Fair cross-tokenizer comparison |
+| **Token Accuracy** | % correct next-token predictions | Fine-grained quality |
+| **Top-5 Accuracy** | % correct in top-5 predictions | Model confidence measure |
+
+### Generation Metrics
+
+| Metric | Description | Purpose |
+|--------|-------------|---------|
+| **JSON Validity %** | % outputs that parse as valid JSON | Syntactic correctness |
+| **Schema Validity %** | % outputs that match JSON schema | Schema conformance |
+| **Field Coverage %** | % with required fields (apiVersion, kind, metadata) | Structural completeness |
+| **Tokens/sec** | Generation throughput | Inference speed |
+| **Unique %** | % distinct outputs (SHA256 hash) | Output diversity |
+| **Mean/Min/Max Tokens** | Output length statistics | Generation behavior |
+
+### Statistical Rigor
+
+- **Bootstrap CIs**: 95% confidence intervals for all rates
+- **Reproducibility**: Fixed seeds (default: 42) for fair comparison
+- **Data consistency**: TCT and UTF8 models evaluate on same underlying samples
+
+### Tokenizer Consistency
+
+For UTF8-BPE evaluation, both constrained and unconstrained generation use `UTF8BPEDecoder` from the merge table (`bpe-merges/kubernetes-utf8-bpe-matched.json`). This ensures:
+1. Consistent tokenization between constrained and unconstrained modes
+2. No dependency on external tokenizer modules for evaluation
+3. Fair comparison using the same decoding logic
+
+---
+
 ## Summary: Minimum Viable Experiments for ICML
 
 ### Must-Have (Core Claims)
