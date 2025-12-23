@@ -208,7 +208,7 @@ Both tokenizers achieve nearly identical compression, so any performance differe
 
 #### 2. UTF8-BPE + Constrained Decoding (Secondary Baseline)
 - Same compression-matched UTF8-BPE model as baseline 1
-- At inference: apply grammar-constrained sampling (Outlines library)
+- At inference: apply grammar-constrained sampling (XGrammar library)
 - Shows: TCT advantage is from **learning**, not just validity guarantees
 
 **Comparison matrix:**
@@ -217,19 +217,18 @@ Both tokenizers achieve nearly identical compression, so any performance differe
 |--------|----------|-----------|----------|-------------------|
 | **TCT-BPE** | TCT tokenization | Normal sampling | Guaranteed | Semantics only |
 | **UTF8-BPE** | UTF8 tokenization | Normal sampling | Not guaranteed | Syntax + semantics |
-| **UTF8-BPE + Outlines** | UTF8 tokenization | Constrained sampling | Guaranteed | Syntax + semantics |
+| **UTF8-BPE + XGrammar** | UTF8 tokenization | Constrained sampling | Guaranteed* | Syntax + semantics |
+
+*XGrammar guarantees validity only when generation terminates naturally. TCT's `decode_prefix` always produces valid JSON even from truncated sequences.
 
 **Key insight**: By matching compression, we isolate the key question: *Does structural tokenization help learning?* If TCT wins at equal sequence length, it's not just about vocab size.
 
-**Tools for constrained decoding:**
-```python
-# Outlines (recommended - native JSON Schema support)
-from outlines import models, generate
+**TCT Tokenizer Wheels:**
+- `tct_kubernetes_20k` (20,000 vocab)
+- `tct_eslintrc_10k` (10,000 vocab)
+- `tct_tsconfig_10k` (10,000 vocab)
 
-model = models.transformers("your-utf8-bpe-model")
-generator = generate.json(model, schema)
-output = generator(prompt)
-```
+All wheels support `decode_prefix()` for truncation-tolerant streaming decode.
 
 ---
 
@@ -303,7 +302,7 @@ This isolates the effect of tokenization, which is the core scientific claim. Us
 **Setup**:
 1. TCT-BPE model: trained with TCT tokenization
 2. UTF8-BPE model: trained with standard BPE
-3. UTF8-BPE + Outlines: UTF8-BPE model with constrained decoding at inference
+3. UTF8-BPE + XGrammar: UTF8-BPE model with constrained decoding at inference
 
 **Metrics**:
 - Output quality (semantic correctness, not just validity)
@@ -311,7 +310,7 @@ This isolates the effect of tokenization, which is the core scientific claim. Us
 - Training efficiency (UTF8-BPE vs TCT-BPE)
 
 **Expected Results**:
-- TCT-BPE beats UTF8-BPE+Outlines on quality (proves learning advantage)
+- TCT-BPE beats UTF8-BPE+XGrammar on quality (proves learning advantage)
 - TCT-BPE faster at inference (no grammar checking overhead)
 
 ---
@@ -321,7 +320,7 @@ This isolates the effect of tokenization, which is the core scientific claim. Us
 **Question**: Does TCT-BPE have lower inference overhead than constrained decoding?
 
 **Metrics**:
-- Tokens/second: TCT-BPE vs. UTF8-BPE vs. UTF8-BPE + Outlines
+- Tokens/second: TCT-BPE vs. UTF8-BPE vs. UTF8-BPE + XGrammar
 - Latency per sample
 
 **Expected Results**:
@@ -329,7 +328,7 @@ This isolates the effect of tokenization, which is the core scientific claim. Us
 |--------|------------|----------|
 | TCT-BPE | High | None (just decoding) |
 | UTF8-BPE | High | None |
-| UTF8-BPE + Outlines | Lower | FSM constraint checking |
+| UTF8-BPE + XGrammar | Lower | FSM constraint checking |
 
 **Rationale**: Validates that TCT has low inference cost while constrained decoding has high cost.
 
@@ -514,7 +513,7 @@ Assuming RTX 4090 or A100 GPUs:
 | Experiment | GPU Hours (Est.) |
 |------------|------------------|
 | 3 schemas × 3 sizes (~33M, ~60M, ~130M) × 2 methods (TCT-BPE, UTF8-BPE) | ~150-200 hours |
-| Constrained decoding inference (UTF8-BPE + Outlines) | ~10 hours |
+| Constrained decoding inference (UTF8-BPE + XGrammar) | ~10 hours |
 | Ablations (data efficiency, etc.) | ~30 hours |
 | **Total** | **~200-250 GPU hours** |
 
