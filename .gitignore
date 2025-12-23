@@ -16,7 +16,11 @@ tct/
 
 # Model checkpoints (large files, don't commit)
 checkpoints/
+checkpoints-bpe/
 *.pt
+
+# Training logs
+logs/*.log
 
 # Local developer guide (keep local-only)
 CLAUDE.md
