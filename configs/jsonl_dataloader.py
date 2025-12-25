@@ -191,7 +191,9 @@ def create_dataloader(
         count_key = "train_count" if split_name == "train" else "validate_count"
         print(f"Dataset: {data_dir.name}")
         print(f"  Split: {split_name} ({metadata.get(count_key, '?'):,} sequences)")
-        print(f"  Vocab: {metadata.get('base_vocab_size', '?'):,}")
+        base_vocab = metadata.get('base_vocab_size', 0)
+        full_vocab = base_vocab + 1 if base_vocab else '?'  # +1 for pad token
+        print(f"  Vocab: {full_vocab:,}")
 
     # Create dataset
     dataset = JSONLDataset(
