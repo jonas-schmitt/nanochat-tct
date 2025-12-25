@@ -22,38 +22,51 @@ fi
 cd "$WORKSPACE"
 
 # Install system dependencies
-echo "Installing system dependencies..."
+echo "[1/6] Installing system dependencies..."
 apt-get update -qq && apt-get install -y -qq git wget curl htop tmux
+echo "      Done."
 
 # Install Python dependencies
-echo "Installing Python dependencies..."
-pip install --quiet --upgrade pip
-pip install --quiet torch torchvision --index-url https://download.pytorch.org/whl/cu121
-pip install --quiet xgrammar
+echo "[2/6] Upgrading pip..."
+pip install --upgrade pip
+echo "      Done."
+
+echo "[3/6] Installing PyTorch..."
+pip install torch torchvision --index-url https://download.pytorch.org/whl/cu121
+echo "      Done."
+
+echo "[4/6] Installing xgrammar..."
+pip install xgrammar
+echo "      Done."
 
 # Install TCT wheels if present
+echo "[5/6] Installing TCT wheels..."
 if [ -d "$WORKSPACE/tct-wheels" ]; then
-    echo "Installing TCT wheels..."
-    pip install --quiet "$WORKSPACE/tct-wheels"/*.whl
+    pip install "$WORKSPACE/tct-wheels"/*.whl
+    echo "      Done."
 else
-    echo "WARNING: tct-wheels not found at $WORKSPACE/tct-wheels"
+    echo "      WARNING: tct-wheels not found at $WORKSPACE/tct-wheels"
 fi
 
 # Extract data if needed
+echo "[6/6] Setting up data and code..."
 if [ -f "$WORKSPACE/tct-experiment-data.tar.gz" ] && [ ! -d "$DATA_DIR/kubernetes-tct-bpe" ]; then
-    echo "Extracting experiment data..."
+    echo "      Extracting experiment data..."
     mkdir -p "$DATA_DIR"
     cd "$DATA_DIR"
-    tar -xzf "$WORKSPACE/tct-experiment-data.tar.gz"
+    tar -xvzf "$WORKSPACE/tct-experiment-data.tar.gz"
     cd "$WORKSPACE"
+    echo "      Data extracted."
+else
+    echo "      Data already extracted."
 fi
 
 # Clone or update code from GitHub
 if [ ! -d "$CODE_DIR" ]; then
-    echo "Cloning nanochat-tct from GitHub..."
+    echo "      Cloning nanochat-tct from GitHub..."
     git clone https://github.com/jonas-schmitt/nanochat-tct.git "$CODE_DIR"
 else
-    echo "Updating nanochat-tct from GitHub..."
+    echo "      Updating nanochat-tct from GitHub..."
     cd "$CODE_DIR"
     git pull
 fi
@@ -62,12 +75,13 @@ cd "$CODE_DIR"
 
 # Copy merge tables if needed
 if [ -d "$WORKSPACE/bpe-merges" ] && [ ! -d "$CODE_DIR/bpe-merges" ]; then
-    echo "Copying BPE merge tables..."
+    echo "      Copying BPE merge tables..."
     cp -r "$WORKSPACE/bpe-merges" "$CODE_DIR/"
 fi
 
 # Create checkpoints directory
 mkdir -p "$CODE_DIR/checkpoints"
+echo "      Done."
 
 # Verify setup
 echo
