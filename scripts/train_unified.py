@@ -123,6 +123,7 @@ print0(f"Data path: {data_path}")
 print0(f"Vocab size: {vocab_size:,}")
 print0(f"Context size: {T}")
 print0(f"Model size: {model_size} ({model_cfg['estimated_params']:,} params)")
+print0(f"Dropout: {model_cfg.get('dropout', 0.0)}")
 print0()
 print0(f"Batch size: {B}")
 print0(f"Gradient accumulation: {grad_accum}")
@@ -144,6 +145,7 @@ model_config_kwargs = dict(
     n_head=model_cfg["n_heads"],
     n_kv_head=model_cfg["n_heads"],
     n_embd=model_cfg["d_model"],
+    dropout=model_cfg.get("dropout", 0.0),
 )
 
 with torch.device("meta"):

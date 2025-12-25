@@ -31,6 +31,7 @@ class GPTConfig:
     n_head: int = 6 # number of query heads
     n_kv_head: int = 6 # number of key/value heads (GQA)
     n_embd: int = 768
+    dropout: float = 0.0  # dropout probability (0.0 = no dropout)
 
 
 def norm(x):
@@ -62,6 +63,7 @@ class CausalSelfAttention(nn.Module):
         self.c_k = nn.Linear(self.n_embd, self.n_kv_head * self.head_dim, bias=False)
         self.c_v = nn.Linear(self.n_embd, self.n_kv_head * self.head_dim, bias=False)
         self.c_proj = nn.Linear(self.n_embd, self.n_embd, bias=False)
+        self.dropout = nn.Dropout(config.dropout)
 
     def forward(self, x, cos_sin, kv_cache):
         B, T, C = x.size()
@@ -107,6 +109,7 @@ class CausalSelfAttention(nn.Module):
         # Re-assemble the heads side by side and project back to residual stream
         y = y.transpose(1, 2).contiguous().view(B, T, -1)
         y = self.c_proj(y)
+        y = self.dropout(y)
         return y
 
 
@@ -115,11 +118,13 @@ class MLP(nn.Module):
         super().__init__()
         self.c_fc = nn.Linear(config.n_embd, 4 * config.n_embd, bias=False)
         self.c_proj = nn.Linear(4 * config.n_embd, config.n_embd, bias=False)
+        self.dropout = nn.Dropout(config.dropout)
 
     def forward(self, x):
         x = self.c_fc(x)
         x = F.relu(x).square()
         x = self.c_proj(x)
+        x = self.dropout(x)
         return x
 
 
