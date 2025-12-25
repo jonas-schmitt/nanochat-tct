@@ -48,6 +48,39 @@ SCHEMA_CONFIGS = {
         "description": "TypeScript compiler configuration files",
     },
 
+    "tsconfig-base": {
+        # Experiment: No BPE compression, longer sequences
+        # Context: 2048 to fit P99=1108 with room to spare
+        "context_size": 2048,
+        "default_epochs": 150,
+
+        # Base vocabulary (no BPE) - just TCT base tokens
+        "tct_vocab_size": 257,
+        "utf8_vocab_size": None,  # No UTF8 variant for base
+
+        # Training data statistics (same files, different encoding)
+        "train_files": 337_991,
+        "validate_files": 17_789,
+        "total_files": 355_780,
+        "train_tokens_tct": 116_595_633,  # Much more tokens (no compression)
+        "train_tokens_utf8": 0,
+        "avg_tokens": 328,
+
+        # Percentiles (base encoding, no BPE)
+        "p50": 252,
+        "p90": 473,
+        "p95": 561,
+        "p99": 1108,
+
+        # Data directories
+        "data_dir_tct": "tsconfig-tct-base",
+        "data_dir_utf8": None,
+
+        # Schema complexity
+        "complexity": "low",
+        "description": "TypeScript config - NO BPE (base encoding experiment)",
+    },
+
     "eslintrc": {
         # Context: 512 covers 99.6%+ of sequences (P99=341-345)
         "context_size": 512,
@@ -136,8 +169,8 @@ def get_schema_config(schema: str, data_root: Path = None) -> dict:
     data_root = Path(data_root) if data_root else DEFAULT_DATA_ROOT
 
     # Resolve data paths
-    config["data_path_tct"] = data_root / config["data_dir_tct"]
-    config["data_path_utf8"] = data_root / config["data_dir_utf8"]
+    config["data_path_tct"] = data_root / config["data_dir_tct"] if config.get("data_dir_tct") else None
+    config["data_path_utf8"] = data_root / config["data_dir_utf8"] if config.get("data_dir_utf8") else None
 
     return config
 
