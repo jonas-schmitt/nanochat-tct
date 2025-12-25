@@ -628,20 +628,13 @@ def generate_tct(
 
     elapsed = time.perf_counter() - start_time
 
-    # Decode with TCT
-    # Try decode() first (full decoding), fall back to decode_prefix() for truncated sequences
-    # Note: decode_prefix has a bug where is_complete=True but tokens not fully consumed
+    # Decode with TCT using decode_prefix (truncation-tolerant)
+    # Note: decode_prefix has a known bug - see ~/git/tct/BUG_REPORT_decode_prefix.md
     try:
-        result = tokenizer.decode(generated_tokens)
-        text = result[0] if isinstance(result, tuple) else result
-        is_complete = True
-    except Exception:
-        # Fall back to decode_prefix for truncated/invalid sequences
-        try:
-            text, consumed, is_complete = tokenizer.decode_prefix(generated_tokens)
-        except Exception as e:
-            text = f"DECODE_ERROR: {e}"
-            is_complete = False
+        text, consumed, is_complete = tokenizer.decode_prefix(generated_tokens)
+    except Exception as e:
+        text = f"DECODE_ERROR: {e}"
+        is_complete = False
 
     # Validate
     json_valid, parsed, error = validate_json(text)
