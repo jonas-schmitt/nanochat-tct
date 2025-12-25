@@ -38,37 +38,35 @@ else
 fi
 echo "      Done."
 
+# Install uv if not present
+echo "[3/6] Installing uv package manager..."
+if ! command -v uv &> /dev/null; then
+    curl -LsSf https://astral.sh/uv/install.sh | sh
+    export PATH="$HOME/.local/bin:$PATH"
+fi
+echo "      uv version: $(uv --version)"
+
 # Create/activate venv with Python 3.12
-echo "[3/6] Setting up Python 3.12 virtual environment..."
+echo "[4/6] Setting up Python 3.12 virtual environment..."
 VENV_DIR="$WORKSPACE/venv"
 if [ ! -d "$VENV_DIR" ]; then
     echo "      Creating venv..."
-    python3.12 -m venv "$VENV_DIR"
+    uv venv --python 3.12 "$VENV_DIR"
 fi
 source "$VENV_DIR/bin/activate"
 echo "      Using Python: $(python --version)"
 
 # Install Python dependencies from pyproject.toml
-echo "[4/6] Installing Python dependencies from pyproject.toml..."
+echo "[5/6] Installing Python dependencies from pyproject.toml..."
 cd "$CODE_DIR"
-pip install --upgrade pip
-if ! python -c "import torch" 2>/dev/null; then
-    echo "      Installing PyTorch (this may take a while)..."
-    pip install torch --index-url https://download.pytorch.org/whl/cu121
-else
-    echo "      PyTorch already installed."
-fi
-pip install -e ".[eval]"
-echo "      Done."
-
-# Install TCT wheels if present
-echo "[5/6] Installing TCT wheels..."
+uv pip install -e ".[gpu,eval]"
+# Install TCT wheels
 if [ -d "$WORKSPACE/tct-wheels" ]; then
-    pip install "$WORKSPACE/tct-wheels"/*.whl
-    echo "      Done."
+    uv pip install "$WORKSPACE/tct-wheels"/*.whl
 else
     echo "      WARNING: tct-wheels not found at $WORKSPACE/tct-wheels"
 fi
+echo "      Done."
 
 # Extract data if needed
 echo "[6/6] Setting up data..."
