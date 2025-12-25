@@ -40,8 +40,8 @@ SCHEMA_CONFIGS = {
         "p99": 159,
 
         # Data directories
-        "data_dir_tct": "tsconfig-tct-bpe-10k",
-        "data_dir_utf8": "tsconfig-utf8-bpe-10k",
+        "data_dir_tct": "tsconfig-tct-bpe",
+        "data_dir_utf8": "tsconfig-utf8-bpe",
 
         # Schema complexity (for documentation)
         "complexity": "low",
@@ -105,12 +105,45 @@ SCHEMA_CONFIGS = {
         "p99": 345,
 
         # Data directories
-        "data_dir_tct": "eslintrc-tct-bpe-10k",
-        "data_dir_utf8": "eslintrc-utf8-bpe-10k",
+        "data_dir_tct": "eslintrc-tct-bpe",
+        "data_dir_utf8": "eslintrc-utf8-bpe",
 
         # Schema complexity
         "complexity": "medium",
         "description": "ESLint linter configuration files",
+    },
+
+    "eslintrc-base": {
+        # Experiment: No BPE compression, longer sequences
+        # Context: 2048 to fit P90=1079, P99=5264 may truncate
+        "context_size": 2048,
+        "default_epochs": 150,
+
+        # Base vocabulary (no BPE) - just TCT base tokens
+        "tct_vocab_size": 257,
+        "utf8_vocab_size": None,  # No UTF8 variant for base
+
+        # Training data statistics (same files, different encoding)
+        "train_files": 114_499,
+        "validate_files": 12_723,
+        "total_files": 127_222,
+        "train_tokens_tct": 60_809_434,  # Much more tokens (no compression)
+        "train_tokens_utf8": 0,
+        "avg_tokens": 533,
+
+        # Percentiles (base encoding, no BPE)
+        "p50": 233,
+        "p90": 1079,
+        "p95": 1950,
+        "p99": 5264,
+
+        # Data directories
+        "data_dir_tct": "eslintrc-tct-base",
+        "data_dir_utf8": None,
+
+        # Schema complexity
+        "complexity": "medium",
+        "description": "ESLint config - NO BPE (base encoding experiment)",
     },
 
     "kubernetes": {
