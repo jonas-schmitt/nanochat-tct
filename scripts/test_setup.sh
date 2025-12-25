@@ -36,9 +36,13 @@ for schema in $SCHEMAS; do
     for tokenizer in $TOKENIZERS; do
         for size in $SIZES; do
             exp_name="${schema}_${tokenizer}_${size}"
-            echo -n "Testing $exp_name... "
+            echo "============================================================"
+            echo "Testing: $exp_name"
+            echo "============================================================"
 
-            if python -m scripts.train_unified \
+            # Run training for 10 steps and capture output
+            set +e
+            output=$(python -m scripts.train_unified \
                 --schema="$schema" \
                 --tokenizer="$tokenizer" \
                 --model_size="$size" \
@@ -47,13 +51,23 @@ for schema in $SCHEMAS; do
                 --save_every_pct=100 \
                 --eval_every_epoch=100 \
                 --num_eval_batches=1 \
-                2>&1 | head -100 | grep -q "step 000010"; then
-                echo "PASS"
+                2>&1)
+            exit_code=$?
+            set -e
+
+            # Show relevant output
+            echo "$output" | grep -E "(EXPERIMENT|Vocab|Context|Batch|Parameters|step 00|Error|error|CUDA|OOM)" | head -20
+
+            # Check if we reached step 10
+            if echo "$output" | grep -q "step 000010"; then
+                echo ">>> PASS"
                 passed=$((passed + 1))
             else
-                echo "FAIL"
+                echo ">>> FAIL (exit code: $exit_code)"
+                echo "$output" | tail -20
                 failed=$((failed + 1))
             fi
+            echo
         done
     done
 done
