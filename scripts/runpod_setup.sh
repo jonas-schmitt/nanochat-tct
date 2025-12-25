@@ -22,46 +22,12 @@ fi
 cd "$WORKSPACE"
 
 # Install system dependencies
-echo "[1/6] Installing system dependencies..."
+echo "[1/5] Installing system dependencies..."
 apt-get update -qq && apt-get install -y -qq git wget curl htop tmux
 echo "      Done."
 
-# Install Python dependencies
-echo "[2/6] Upgrading pip..."
-pip install --upgrade pip
-echo "      Done."
-
-echo "[3/6] Installing PyTorch..."
-pip install torch torchvision --index-url https://download.pytorch.org/whl/cu121
-echo "      Done."
-
-echo "[4/6] Installing xgrammar..."
-pip install xgrammar
-echo "      Done."
-
-# Install TCT wheels if present
-echo "[5/6] Installing TCT wheels..."
-if [ -d "$WORKSPACE/tct-wheels" ]; then
-    pip install "$WORKSPACE/tct-wheels"/*.whl
-    echo "      Done."
-else
-    echo "      WARNING: tct-wheels not found at $WORKSPACE/tct-wheels"
-fi
-
-# Extract data if needed
-echo "[6/6] Setting up data and code..."
-if [ -f "$WORKSPACE/tct-experiment-data.tar.gz" ] && [ ! -d "$DATA_DIR/kubernetes-tct-bpe" ]; then
-    echo "      Extracting experiment data..."
-    mkdir -p "$DATA_DIR"
-    cd "$DATA_DIR"
-    tar -xvzf "$WORKSPACE/tct-experiment-data.tar.gz"
-    cd "$WORKSPACE"
-    echo "      Data extracted."
-else
-    echo "      Data already extracted."
-fi
-
-# Clone or update code from GitHub
+# Clone or update code from GitHub (needed for pyproject.toml)
+echo "[2/5] Setting up code..."
 if [ ! -d "$CODE_DIR" ]; then
     echo "      Cloning nanochat-tct from GitHub..."
     git clone https://github.com/jonas-schmitt/nanochat-tct.git "$CODE_DIR"
@@ -70,8 +36,37 @@ else
     cd "$CODE_DIR"
     git pull
 fi
+echo "      Done."
 
+# Install Python dependencies from pyproject.toml
+echo "[3/5] Installing Python dependencies from pyproject.toml..."
 cd "$CODE_DIR"
+pip install --upgrade pip
+pip install torch --index-url https://download.pytorch.org/whl/cu121
+pip install -e ".[eval]"
+echo "      Done."
+
+# Install TCT wheels if present
+echo "[4/5] Installing TCT wheels..."
+if [ -d "$WORKSPACE/tct-wheels" ]; then
+    pip install "$WORKSPACE/tct-wheels"/*.whl
+    echo "      Done."
+else
+    echo "      WARNING: tct-wheels not found at $WORKSPACE/tct-wheels"
+fi
+
+# Extract data if needed
+echo "[5/5] Setting up data..."
+if [ -f "$WORKSPACE/tct-experiment-data.tar.gz" ] && [ ! -d "$DATA_DIR/kubernetes-tct-bpe" ]; then
+    echo "      Extracting experiment data..."
+    mkdir -p "$DATA_DIR"
+    cd "$DATA_DIR"
+    tar -xvzf "$WORKSPACE/tct-experiment-data.tar.gz"
+    cd "$CODE_DIR"
+    echo "      Data extracted."
+else
+    echo "      Data already extracted."
+fi
 
 # Copy merge tables if needed
 if [ -d "$WORKSPACE/bpe-merges" ] && [ ! -d "$CODE_DIR/bpe-merges" ]; then
@@ -115,7 +110,10 @@ echo "=== Setup Complete ==="
 echo "Code directory: $CODE_DIR"
 echo "Data directory: $DATA_DIR"
 echo
-echo "To run experiments:"
+echo "Next steps:"
 echo "  cd $CODE_DIR"
-echo "  bash scripts/run_experiments.sh"
+echo "  bash scripts/test_setup.sh           # Verify setup"
+echo "  bash scripts/run_tsconfig.sh         # Run tsconfig experiments"
+echo "  bash scripts/run_eslintrc.sh         # Run eslintrc experiments"
+echo "  bash scripts/run_kubernetes.sh       # Run kubernetes experiments"
 echo
