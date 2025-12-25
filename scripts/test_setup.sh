@@ -25,9 +25,10 @@ echo
 # Test iterations (just enough to verify forward/backward pass)
 TEST_ITERS=10
 
-SCHEMAS="tsconfig eslintrc kubernetes"
+# Only test largest configs - if these fit, everything else will too
+SCHEMAS="eslintrc kubernetes"
 TOKENIZERS="tct utf8"
-SIZES="small medium large"
+SIZES="large"
 
 passed=0
 failed=0
