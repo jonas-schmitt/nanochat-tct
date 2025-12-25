@@ -389,4 +389,9 @@ print0(f"Min val loss: {min_val_loss:.4f}")
 print0()
 
 # Cleanup
+del model, orig_model, optimizer, train_loader, val_loader
+gc.collect()
+if device_type == "cuda":
+    torch.cuda.empty_cache()
+    torch.cuda.reset_peak_memory_stats()
 compute_cleanup()
