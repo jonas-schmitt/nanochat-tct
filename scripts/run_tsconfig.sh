@@ -34,7 +34,7 @@ mkdir -p "$LOG_DIR"
 cd "$CODE_DIR"
 
 echo "============================================================"
-echo "TSConfig Experiments (100 epochs, context=256)"
+echo "TSConfig Experiments (150 epochs, context=256)"
 echo "============================================================"
 echo "Date: $(date)"
 echo "GPU: $(nvidia-smi --query-gpu=name --format=csv,noheader 2>/dev/null || echo 'No GPU')"
