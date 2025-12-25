@@ -19,7 +19,7 @@ SCHEMA_CONFIGS = {
     "tsconfig": {
         # Context: 256 covers 99.3%+ of sequences (P99=148-159)
         "context_size": 256,
-        "default_epochs": 50,  # Simple configs, fast convergence
+        "default_epochs": 100,  # Doubled for better convergence
 
         # Vocabulary sizes (includes PAD token 0)
         "tct_vocab_size": 10000,
@@ -51,7 +51,7 @@ SCHEMA_CONFIGS = {
     "eslintrc": {
         # Context: 512 covers 99.6%+ of sequences (P99=341-345)
         "context_size": 512,
-        "default_epochs": 75,  # Medium complexity
+        "default_epochs": 150,  # Doubled for better convergence
 
         # Vocabulary sizes (includes PAD token 0)
         "tct_vocab_size": 10000,
@@ -83,7 +83,7 @@ SCHEMA_CONFIGS = {
     "kubernetes": {
         # Context: 2048 covers 99%+ of sequences (P99=2622-2653)
         "context_size": 2048,
-        "default_epochs": 100,  # Complex nested structures
+        "default_epochs": 200,  # Doubled for better convergence
 
         # Vocabulary sizes (includes PAD token 0)
         "tct_vocab_size": 20000,
