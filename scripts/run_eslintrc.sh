@@ -34,7 +34,7 @@ mkdir -p "$LOG_DIR"
 cd "$CODE_DIR"
 
 echo "============================================================"
-echo "ESLintrc Experiments (75 epochs, context=512)"
+echo "ESLintrc Experiments (150 epochs, context=512)"
 echo "============================================================"
 echo "Date: $(date)"
 echo "GPU: $(nvidia-smi --query-gpu=name --format=csv,noheader 2>/dev/null || echo 'No GPU')"
