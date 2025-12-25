@@ -1,7 +1,7 @@
 #!/bin/bash
 # Run TSConfig Experiments
 # Trains 6 models: 2 tokenizers × 3 sizes
-# Estimated time: ~10-15 hours on RTX 4090
+# Uses base encoding (no BPE) - most data available (117M tokens)
 #
 # Usage:
 #   bash scripts/run_tsconfig.sh           # Run all
@@ -34,7 +34,7 @@ mkdir -p "$LOG_DIR"
 cd "$CODE_DIR"
 
 echo "============================================================"
-echo "TSConfig Experiments (150 epochs, context=256)"
+echo "TSConfig Experiments (50 epochs, context=2048, base encoding)"
 echo "============================================================"
 echo "Date: $(date)"
 echo "GPU: $(nvidia-smi --query-gpu=name --format=csv,noheader 2>/dev/null || echo 'No GPU')"

@@ -2,12 +2,12 @@
 Schema-specific configurations for TCT experiments.
 
 Each schema has:
-- context_size: Recommended context length (based on P99 percentile)
-- vocab sizes: For both TCT-BPE and UTF8-BPE tokenizers
+- context_size: 2048 for all (standardized)
+- vocab sizes: For both TCT and UTF8 tokenizers
 - training data statistics
 - data directory paths
 
-Data from TRAINING_DATA_REPORT.md (2025-12-23)
+Data from TRAINING_DATA_REPORT.md (2025-12-25)
 """
 
 from pathlib import Path
@@ -16,57 +16,27 @@ from pathlib import Path
 DEFAULT_DATA_ROOT = Path.home() / "Desktop" / "data"
 
 SCHEMA_CONFIGS = {
+    # =========================================================================
+    # TSCONFIG - Base encoding (no BPE), most data available
+    # =========================================================================
     "tsconfig": {
-        # Context: 256 covers 99.3%+ of sequences (P99=148-159)
-        "context_size": 256,
-        "default_epochs": 100,
+        # Context: 2048 covers all sequences (P99=1108)
+        "context_size": 2048,
+        "default_epochs": 50,
 
-        # Vocabulary sizes (includes PAD token 0)
-        "tct_vocab_size": 10000,
-        "utf8_vocab_size": 16197,
+        # Vocabulary sizes
+        "tct_vocab_size": 257,      # Base encoding, no BPE
+        "utf8_vocab_size": 276,     # Minimal BPE to match avg length
 
         # Training data statistics
         "train_files": 320_202,
         "validate_files": 35_578,
         "total_files": 355_780,
-        "train_tokens_tct": 7_877_907,
-        "train_tokens_utf8": 7_889_868,
-        "avg_tokens": 24.75,
+        "train_tokens_tct": 117_000_000,
+        "train_tokens_utf8": 103_000_000,
+        "avg_tokens": 327,
 
-        # Percentiles (for context selection)
-        "p50": 11,
-        "p90": 31,
-        "p95": 47,
-        "p99": 159,
-
-        # Data directories
-        "data_dir_tct": "tsconfig-tct-bpe",
-        "data_dir_utf8": "tsconfig-utf8-bpe",
-
-        # Schema complexity (for documentation)
-        "complexity": "low",
-        "description": "TypeScript compiler configuration files",
-    },
-
-    "tsconfig-base": {
-        # Experiment: No BPE compression, longer sequences
-        # Context: 2048 to fit P99=1108 with room to spare
-        "context_size": 2048,
-        "default_epochs": 150,
-
-        # Base vocabulary (no BPE) - just TCT base tokens
-        "tct_vocab_size": 257,
-        "utf8_vocab_size": None,  # No UTF8 variant for base
-
-        # Training data statistics (same files, different encoding)
-        "train_files": 337_991,
-        "validate_files": 17_789,
-        "total_files": 355_780,
-        "train_tokens_tct": 116_595_633,  # Much more tokens (no compression)
-        "train_tokens_utf8": 0,
-        "avg_tokens": 328,
-
-        # Percentiles (base encoding, no BPE)
+        # Percentiles
         "p50": 252,
         "p90": 473,
         "p95": 561,
@@ -74,108 +44,81 @@ SCHEMA_CONFIGS = {
 
         # Data directories
         "data_dir_tct": "tsconfig-tct-base",
-        "data_dir_utf8": None,
+        "data_dir_utf8": "tsconfig-utf8-bpe-matched",
 
-        # Schema complexity
+        # Schema info
         "complexity": "low",
-        "description": "TypeScript config - NO BPE (base encoding experiment)",
+        "description": "TypeScript compiler configuration files (base encoding)",
     },
 
+    # =========================================================================
+    # ESLINTRC - BPE-500, limited data
+    # =========================================================================
     "eslintrc": {
-        # Context: 512 covers 99.6%+ of sequences (P99=341-345)
-        "context_size": 512,
-        "default_epochs": 150,
+        # Context: 2048 covers all sequences (P99=1858)
+        "context_size": 2048,
+        "default_epochs": 75,
 
-        # Vocabulary sizes (includes PAD token 0)
-        "tct_vocab_size": 10000,
-        "utf8_vocab_size": 18337,
+        # Vocabulary sizes (BPE-500 compression)
+        "tct_vocab_size": 499,
+        "utf8_vocab_size": 726,
 
         # Training data statistics
-        "train_files": 114_500,
+        "train_files": 114_499,
         "validate_files": 12_722,
-        "total_files": 127_222,
-        "train_tokens_tct": 4_016_279,
-        "train_tokens_utf8": 4_019_742,
-        "avg_tokens": 35.19,
+        "total_files": 127_221,
+        "train_tokens_tct": 21_500_000,
+        "train_tokens_utf8": 21_600_000,
+        "avg_tokens": 188,
 
         # Percentiles
-        "p50": 15,
-        "p90": 74,
-        "p95": 137,
-        "p99": 345,
+        "p50": 93,
+        "p90": 404,
+        "p95": 713,
+        "p99": 1858,
 
         # Data directories
-        "data_dir_tct": "eslintrc-tct-bpe",
-        "data_dir_utf8": "eslintrc-utf8-bpe",
+        "data_dir_tct": "eslintrc-tct-bpe-500",
+        "data_dir_utf8": "eslintrc-utf8-bpe-500",
 
-        # Schema complexity
+        # Schema info
         "complexity": "medium",
-        "description": "ESLint linter configuration files",
+        "description": "ESLint linter configuration files (BPE-500)",
     },
 
-    "eslintrc-base": {
-        # Experiment: No BPE compression, longer sequences
-        # Context: 2048 to fit P90=1079, P99=5264 may truncate
-        "context_size": 2048,
-        "default_epochs": 150,
-
-        # Base vocabulary (no BPE) - just TCT base tokens
-        "tct_vocab_size": 257,
-        "utf8_vocab_size": None,  # No UTF8 variant for base
-
-        # Training data statistics (same files, different encoding)
-        "train_files": 114_499,
-        "validate_files": 12_723,
-        "total_files": 127_222,
-        "train_tokens_tct": 60_809_434,  # Much more tokens (no compression)
-        "train_tokens_utf8": 0,
-        "avg_tokens": 533,
-
-        # Percentiles (base encoding, no BPE)
-        "p50": 233,
-        "p90": 1079,
-        "p95": 1950,
-        "p99": 5264,
-
-        # Data directories
-        "data_dir_tct": "eslintrc-tct-base",
-        "data_dir_utf8": None,
-
-        # Schema complexity
-        "complexity": "medium",
-        "description": "ESLint config - NO BPE (base encoding experiment)",
-    },
-
+    # =========================================================================
+    # KUBERNETES - BPE-20k, complex manifests
+    # =========================================================================
     "kubernetes": {
-        # Context: 2048 covers 99%+ of sequences (P99=2622-2653)
+        # Context: 2048 covers ~99% of sequences (P99=2622, some truncation)
         "context_size": 2048,
-        "default_epochs": 200,
+        "default_epochs": 100,
 
-        # Vocabulary sizes (includes PAD token 0)
-        "tct_vocab_size": 20000,
-        "utf8_vocab_size": 23887,
+        # Vocabulary sizes (BPE-20k compression)
+        "tct_vocab_size": 19_999,
+        "utf8_vocab_size": 23_886,
 
         # Training data statistics
-        "train_files": 221_795,
-        "validate_files": 24_643,
+        "train_files": 221_794,
+        "validate_files": 24_644,
         "total_files": 246_438,
-        "train_tokens_tct": 42_000_000,  # approximate
-        "train_tokens_utf8": 42_000_000,  # approximate
-        "avg_tokens": 189.07,
+        "train_tokens_tct": 42_000_000,
+        "train_tokens_utf8": 42_000_000,
+        "avg_tokens": 189,
 
         # Percentiles
         "p50": 37,
         "p90": 205,
         "p95": 418,
-        "p99": 2653,
+        "p99": 2622,
 
         # Data directories
         "data_dir_tct": "kubernetes-tct-bpe",
         "data_dir_utf8": "kubernetes-utf8-bpe",
 
-        # Schema complexity
+        # Schema info
         "complexity": "high",
-        "description": "Kubernetes manifest files (YAML/JSON)",
+        "description": "Kubernetes manifest files (BPE-20k)",
     },
 }
 
@@ -255,7 +198,7 @@ def print_schema_summary():
               f"{cfg['total_files']:<10,} {cfg['complexity']}")
 
     print()
-    print("Context lengths based on P99 percentile for 99%+ coverage.")
+    print("All schemas use context=2048 for standardized comparison.")
     print()
 
 

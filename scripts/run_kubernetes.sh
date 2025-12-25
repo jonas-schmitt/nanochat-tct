@@ -1,7 +1,7 @@
 #!/bin/bash
 # Run Kubernetes Experiments
 # Trains 6 models: 2 tokenizers × 3 sizes
-# Estimated time: ~40-50 hours on RTX 4090
+# Uses BPE-20k compression - complex manifests (42M tokens)
 #
 # Usage:
 #   bash scripts/run_kubernetes.sh           # Run all
@@ -34,7 +34,7 @@ mkdir -p "$LOG_DIR"
 cd "$CODE_DIR"
 
 echo "============================================================"
-echo "Kubernetes Experiments (300 epochs, context=2048)"
+echo "Kubernetes Experiments (100 epochs, context=2048, BPE-20k)"
 echo "============================================================"
 echo "Date: $(date)"
 echo "GPU: $(nvidia-smi --query-gpu=name --format=csv,noheader 2>/dev/null || echo 'No GPU')"

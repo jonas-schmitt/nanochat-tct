@@ -1,7 +1,7 @@
 #!/bin/bash
 # Run ESLintrc Experiments
 # Trains 6 models: 2 tokenizers × 3 sizes
-# Estimated time: ~20-25 hours on RTX 4090
+# Uses BPE-500 compression - limited data (21M tokens)
 #
 # Usage:
 #   bash scripts/run_eslintrc.sh           # Run all
@@ -34,7 +34,7 @@ mkdir -p "$LOG_DIR"
 cd "$CODE_DIR"
 
 echo "============================================================"
-echo "ESLintrc Experiments (225 epochs, context=512)"
+echo "ESLintrc Experiments (75 epochs, context=2048, BPE-500)"
 echo "============================================================"
 echo "Date: $(date)"
 echo "GPU: $(nvidia-smi --query-gpu=name --format=csv,noheader 2>/dev/null || echo 'No GPU')"
