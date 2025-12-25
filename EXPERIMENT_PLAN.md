@@ -171,8 +171,8 @@ Each directory contains:
 | Size | Learning Rate |
 |------|---------------|
 | Small | 3.0e-4 |
-| Medium | 2.5e-4 |
-| Large | 2.0e-4 |
+| Medium | 2.0e-4 |
+| Large | 1.5e-4 |
 
 **Constant across all models**:
 - Optimizer: AdamW (β1=0.9, β2=0.95)

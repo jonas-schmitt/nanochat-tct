@@ -58,28 +58,29 @@ ARCHITECTURES = {
 # Training Hyperparameters (context-dependent batch sizes)
 # =============================================================================
 
-# Batch sizes optimized for single RTX 4090 (24GB VRAM)
+# Batch sizes optimized for RTX 4090 (24GB VRAM)
+# Also works for RTX 3090/A5000 (same VRAM)
 # Effective batch = batch_size × gradient_accumulation × world_size
 # Target effective batch: ~128 for stability
 
 TRAINING_PARAMS = {
     # Context 256 (tsconfig): fits easily, large batch
     256: {
-        "small": {"batch_size": 32, "gradient_accumulation": 4},   # ~50M model
-        "medium": {"batch_size": 16, "gradient_accumulation": 8},  # ~100M model
-        "large": {"batch_size": 4, "gradient_accumulation": 32},   # ~323M model
+        "small": {"batch_size": 64, "gradient_accumulation": 2},   # ~50M model
+        "medium": {"batch_size": 32, "gradient_accumulation": 4},  # ~100M model
+        "large": {"batch_size": 16, "gradient_accumulation": 8},   # ~323M model
     },
     # Context 512 (eslintrc): moderate batch
     512: {
-        "small": {"batch_size": 16, "gradient_accumulation": 8},   # ~50M model
-        "medium": {"batch_size": 8, "gradient_accumulation": 16},  # ~100M model
-        "large": {"batch_size": 2, "gradient_accumulation": 64},   # ~323M model
+        "small": {"batch_size": 32, "gradient_accumulation": 4},   # ~50M model
+        "medium": {"batch_size": 16, "gradient_accumulation": 8},  # ~100M model
+        "large": {"batch_size": 8, "gradient_accumulation": 16},   # ~323M model
     },
     # Context 2048 (kubernetes): smaller batch for memory
     2048: {
-        "small": {"batch_size": 8, "gradient_accumulation": 16},   # ~47M model
+        "small": {"batch_size": 16, "gradient_accumulation": 8},   # ~47M model
         "medium": {"batch_size": 4, "gradient_accumulation": 32},  # ~117M model
-        "large": {"batch_size": 1, "gradient_accumulation": 128},  # ~345M model
+        "large": {"batch_size": 2, "gradient_accumulation": 64},   # ~345M model
     },
 }
 
