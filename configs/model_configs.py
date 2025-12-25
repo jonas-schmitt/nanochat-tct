@@ -213,8 +213,12 @@ def get_model_config(
     else:
         batch_config = TRAINING_PARAMS[context_size][model_size]
 
-    config["batch_size"] = batch_config["batch_size"]
-    config["gradient_accumulation"] = batch_config["gradient_accumulation"]
+    # Apply batch multiplier for larger GPUs (set by job.sh based on VRAM)
+    import os
+    batch_multiplier = int(os.environ.get("TCT_BATCH_MULTIPLIER", "1"))
+
+    config["batch_size"] = batch_config["batch_size"] * batch_multiplier
+    config["gradient_accumulation"] = max(1, batch_config["gradient_accumulation"] // batch_multiplier)
 
     # Add training duration
     config["epochs"] = epochs

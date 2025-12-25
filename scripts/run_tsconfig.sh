@@ -1,7 +1,6 @@
-#!/bin/bash
+#!/bin/bash -l
 # Run TSConfig Experiments
-# Trains 6 models: 2 tokenizers × 3 sizes
-# Uses base encoding (no BPE) - most data available (117M tokens)
+# Trains models with base encoding (no BPE) - most data available (117M tokens)
 #
 # Usage:
 #   bash scripts/run_tsconfig.sh           # Run all
@@ -10,9 +9,20 @@
 
 set -e
 
-WORKSPACE="${WORKSPACE:-/workspace}"
-CODE_DIR="${CODE_DIR:-$WORKSPACE/nanochat-tct}"
-DATA_DIR="${DATA_DIR:-$WORKSPACE/data}"
+# Auto-detect paths if not set by job.sh
+if [ -z "$CODE_DIR" ]; then
+    if [ -d "/workspace/nanochat-tct" ]; then
+        CODE_DIR="/workspace/nanochat-tct"
+        DATA_DIR="/workspace/data"
+    elif [ -n "$WORK" ]; then
+        CODE_DIR="$WORK/nanochat-tct"
+        DATA_DIR="$WORK/data/tct"
+    else
+        CODE_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+        DATA_DIR="$HOME/Desktop/data"
+    fi
+fi
+
 LOG_DIR="${LOG_DIR:-$CODE_DIR/logs}"
 
 SCHEMA="tsconfig"
@@ -38,6 +48,7 @@ echo "TSConfig Experiments (50 epochs, context=2048, base encoding)"
 echo "============================================================"
 echo "Date: $(date)"
 echo "GPU: $(nvidia-smi --query-gpu=name --format=csv,noheader 2>/dev/null || echo 'No GPU')"
+echo "Data: $DATA_DIR"
 echo "============================================================"
 echo
 

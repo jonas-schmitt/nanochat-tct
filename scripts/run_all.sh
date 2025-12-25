@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/bin/bash -l
 # Run All Experiments
 # Trains 18 models: 3 schemas × 2 tokenizers × 3 sizes
 # Order: all small, then all medium, then all large
@@ -8,8 +8,16 @@
 
 set -e
 
-WORKSPACE="${WORKSPACE:-/workspace}"
-CODE_DIR="${CODE_DIR:-$WORKSPACE/nanochat-tct}"
+# Auto-detect paths if not set
+if [ -z "$CODE_DIR" ]; then
+    if [ -d "/workspace/nanochat-tct" ]; then
+        CODE_DIR="/workspace/nanochat-tct"
+    elif [ -n "$WORK" ]; then
+        CODE_DIR="$WORK/nanochat-tct"
+    else
+        CODE_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+    fi
+fi
 
 cd "$CODE_DIR"
 
