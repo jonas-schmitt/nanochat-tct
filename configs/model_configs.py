@@ -28,7 +28,7 @@ SMALL_ARCH = {
     "d_model": 512,
     "n_layers": 10,
     "n_heads": 8,
-    "dropout": 0.2,
+    "dropout": 0.1,
     "transformer_params": "~31M",
 }
 
@@ -36,7 +36,7 @@ MEDIUM_ARCH = {
     "d_model": 768,
     "n_layers": 13,
     "n_heads": 12,
-    "dropout": 0.2,
+    "dropout": 0.1,
     "transformer_params": "~92M",
 }
 
@@ -44,7 +44,7 @@ LARGE_ARCH = {
     "d_model": 1024,
     "n_layers": 24,
     "n_heads": 16,
-    "dropout": 0.2,
+    "dropout": 0.1,
     "transformer_params": "~302M",
 }
 
