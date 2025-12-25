@@ -376,6 +376,10 @@ for step in range(start_step, total_steps + 1):
                f"loss: {debiased_smooth_loss:.4f} | ppl: {train_ppl:.1f} | "
                f"lr: {lr:.2e} | dt: {dt*1000:.0f}ms | tok/s: {tok_per_sec:,}")
 
+    # Periodic memory cleanup to prevent fragmentation
+    if step % 1000 == 0 and device_type == "cuda":
+        torch.cuda.empty_cache()
+
 print0()
 print0("=" * 80)
 print0("TRAINING COMPLETE")
