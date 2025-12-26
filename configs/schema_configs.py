@@ -44,7 +44,7 @@ SCHEMA_CONFIGS = {
 
         # Data directories
         "data_dir_tct": "tsconfig-tct-base",
-        "data_dir_utf8": "tsconfig-utf8-bpe-matched",
+        "data_dir_utf8": "tsconfig-utf8-base-matched",
 
         # Schema info
         "complexity": "low",
@@ -57,7 +57,7 @@ SCHEMA_CONFIGS = {
     "eslintrc": {
         # Context: 2048 covers all sequences (P99=1858)
         "context_size": 2048,
-        "default_epochs": 75,
+        "default_epochs": 100,
 
         # Vocabulary sizes (BPE-500 compression)
         "tct_vocab_size": 499,
@@ -92,7 +92,7 @@ SCHEMA_CONFIGS = {
     "kubernetes": {
         # Context: 2048 covers ~99% of sequences (P99=2622, some truncation)
         "context_size": 2048,
-        "default_epochs": 100,
+        "default_epochs": 200,
 
         # Vocabulary sizes (BPE-20k compression)
         "tct_vocab_size": 19_999,

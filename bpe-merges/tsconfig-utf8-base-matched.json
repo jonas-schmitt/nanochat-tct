@@ -1,0 +1,172 @@
+{
+  "schema": "tsconfig",
+  "base_vocab_size": 256,
+  "merges": [
+    {
+      "pair": [
+        32,
+        32
+      ],
+      "new_token": 256,
+      "frequency": 26497287
+    },
+    {
+      "pair": [
+        256,
+        256
+      ],
+      "new_token": 257,
+      "frequency": 9898952
+    },
+    {
+      "pair": [
+        10,
+        257
+      ],
+      "new_token": 258,
+      "frequency": 5567873
+    },
+    {
+      "pair": [
+        34,
+        58
+      ],
+      "new_token": 259,
+      "frequency": 4811332
+    },
+    {
+      "pair": [
+        259,
+        32
+      ],
+      "new_token": 260,
+      "frequency": 4797216
+    },
+    {
+      "pair": [
+        44,
+        258
+      ],
+      "new_token": 261,
+      "frequency": 3861729
+    },
+    {
+      "pair": [
+        261,
+        34
+      ],
+      "new_token": 262,
+      "frequency": 2475375
+    },
+    {
+      "pair": [
+        101,
+        115
+      ],
+      "new_token": 263,
+      "frequency": 2130001
+    },
+    {
+      "pair": [
+        116,
+        114
+      ],
+      "new_token": 264,
+      "frequency": 2072509
+    },
+    {
+      "pair": [
+        117,
+        101
+      ],
+      "new_token": 265,
+      "frequency": 1727725
+    },
+    {
+      "pair": [
+        264,
+        265
+      ],
+      "new_token": 266,
+      "frequency": 1702205
+    },
+    {
+      "pair": [
+        260,
+        266
+      ],
+      "new_token": 267,
+      "frequency": 1696559
+    },
+    {
+      "pair": [
+        111,
+        110
+      ],
+      "new_token": 268,
+      "frequency": 1658230
+    },
+    {
+      "pair": [
+        260,
+        34
+      ],
+      "new_token": 269,
+      "frequency": 1395081
+    },
+    {
+      "pair": [
+        257,
+        34
+      ],
+      "new_token": 270,
+      "frequency": 1339249
+    },
+    {
+      "pair": [
+        111,
+        100
+      ],
+      "new_token": 271,
+      "frequency": 1337417
+    },
+    {
+      "pair": [
+        108,
+        101
+      ],
+      "new_token": 272,
+      "frequency": 1317369
+    },
+    {
+      "pair": [
+        256,
+        34
+      ],
+      "new_token": 273,
+      "frequency": 1239664
+    },
+    {
+      "pair": [
+        116,
+        115
+      ],
+      "new_token": 274,
+      "frequency": 1217248
+    },
+    {
+      "pair": [
+        267,
+        262
+      ],
+      "new_token": 275,
+      "frequency": 1099178
+    }
+  ],
+  "metadata": {
+    "trained_on_instances": 355780,
+    "training_date": "2025-12-25",
+    "max_merges": 20,
+    "dict_size": 0
+  }
+}

@@ -44,7 +44,7 @@ mkdir -p "$LOG_DIR"
 cd "$CODE_DIR"
 
 echo "============================================================"
-echo "Kubernetes Experiments (100 epochs, context=2048, BPE-20k)"
+echo "Kubernetes Experiments (200 epochs, context=2048, BPE-20k)"
 echo "============================================================"
 echo "Date: $(date)"
 echo "GPU: $(nvidia-smi --query-gpu=name --format=csv,noheader 2>/dev/null || echo 'No GPU')"
