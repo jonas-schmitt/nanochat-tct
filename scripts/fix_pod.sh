@@ -6,9 +6,6 @@ set -e
 
 DATA_DIR="${DATA_DIR:-/workspace/data}"
 CODE_DIR="${CODE_DIR:-/workspace/nanochat-tct}"
-S3_BUCKET="s3://m4rt30bdh2"
-S3_OPTS="--region eu-ro-1 --endpoint-url https://s3api-eu-ro-1.runpod.io"
-
 cd "$DATA_DIR"
 
 echo "============================================================"
@@ -23,19 +20,21 @@ rm -rf tsconfig-tct-bpe-10k tsconfig-utf8-bpe-10k
 rm -rf eslintrc-tct-base
 echo "Done."
 
-# Extract datasets from tarballs if present, otherwise download
+# Check datasets exist or extract from tarballs
 echo "[2/4] Setting up new datasets..."
 
 for dataset in eslintrc-tct-bpe-500 eslintrc-utf8-bpe-500 tsconfig-utf8-base-matched; do
     if [ -d "$dataset" ]; then
         echo "  - $dataset (already exists)"
     elif [ -f "$dataset.tar.gz" ]; then
-        echo "  - $dataset (extracting from tarball)..."
+        echo "  - $dataset (extracting from local tarball)..."
         tar -xzf "$dataset.tar.gz" && rm "$dataset.tar.gz"
+    elif [ -f "/workspace/$dataset.tar.gz" ]; then
+        echo "  - $dataset (extracting from /workspace tarball)..."
+        tar -xzf "/workspace/$dataset.tar.gz"
     else
-        echo "  - $dataset (downloading)..."
-        aws s3 cp $S3_BUCKET/$dataset.tar.gz . $S3_OPTS
-        tar -xzf "$dataset.tar.gz" && rm "$dataset.tar.gz"
+        echo "  - $dataset (MISSING - should already be on pod!)"
+        exit 1
     fi
 done
 
