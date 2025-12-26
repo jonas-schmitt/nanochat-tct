@@ -25,6 +25,28 @@ fi
 
 LOG_DIR="${LOG_DIR:-$CODE_DIR/logs}"
 
+# Auto-detect GPU VRAM and set batch multiplier
+# Base config is for 24GB (RTX 4090). Scale up for larger GPUs.
+if [ -z "$TCT_BATCH_MULTIPLIER" ]; then
+    GPU_MEM=$(nvidia-smi --query-gpu=memory.total --format=csv,noheader,nounits 2>/dev/null | head -1 | tr -d ' ')
+    GPU_MEM=${GPU_MEM:-24000}
+    GPU_MEM=$((GPU_MEM / 1000))  # Convert to GB
+
+    if [ "$GPU_MEM" -ge 90 ]; then
+        export TCT_BATCH_MULTIPLIER=4    # H100 NVL (94GB), H200 (141GB)
+    elif [ "$GPU_MEM" -ge 70 ]; then
+        export TCT_BATCH_MULTIPLIER=3    # A100 80GB, H100 80GB
+    elif [ "$GPU_MEM" -ge 44 ]; then
+        export TCT_BATCH_MULTIPLIER=2    # L40S/L40/A40/RTX 6000 Ada (48GB)
+    elif [ "$GPU_MEM" -ge 30 ]; then
+        export TCT_BATCH_MULTIPLIER=1    # RTX 5090 (32GB) - 1.33x headroom
+        export TCT_BATCH_SIZE_BOOST=4    # Add 4 to batch size for 32GB
+    else
+        export TCT_BATCH_MULTIPLIER=1    # RTX 4090/3090 (24GB)
+    fi
+    echo "GPU VRAM: ${GPU_MEM}GB -> Batch multiplier: ${TCT_BATCH_MULTIPLIER}x"
+fi
+
 SCHEMA="kubernetes"
 TOKENIZERS="${TOKENIZERS:-tct utf8}"
 SIZES="${SIZES:-small medium large}"
@@ -44,7 +66,7 @@ mkdir -p "$LOG_DIR"
 cd "$CODE_DIR"
 
 echo "============================================================"
-echo "Kubernetes Experiments (200 epochs, context=2048, BPE-20k)"
+echo "Kubernetes Experiments (150 epochs, context=2048, BPE-20k)"
 echo "============================================================"
 echo "Date: $(date)"
 echo "GPU: $(nvidia-smi --query-gpu=name --format=csv,noheader 2>/dev/null || echo 'No GPU')"

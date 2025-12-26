@@ -213,11 +213,12 @@ def get_model_config(
     else:
         batch_config = TRAINING_PARAMS[context_size][model_size]
 
-    # Apply batch multiplier for larger GPUs (set by job.sh based on VRAM)
+    # Apply batch multiplier for larger GPUs (set by run scripts based on VRAM)
     import os
     batch_multiplier = int(os.environ.get("TCT_BATCH_MULTIPLIER", "1"))
+    batch_boost = int(os.environ.get("TCT_BATCH_SIZE_BOOST", "0"))  # For 32GB GPUs
 
-    config["batch_size"] = batch_config["batch_size"] * batch_multiplier
+    config["batch_size"] = batch_config["batch_size"] * batch_multiplier + batch_boost
     config["gradient_accumulation"] = max(1, batch_config["gradient_accumulation"] // batch_multiplier)
 
     # Add training duration
