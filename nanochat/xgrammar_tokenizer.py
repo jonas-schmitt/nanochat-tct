@@ -9,7 +9,7 @@ Provides:
 Usage (decoding only - no xgrammar required):
     from nanochat.xgrammar_tokenizer import UTF8BPEDecoder
 
-    decoder = UTF8BPEDecoder("bpe-merges/kubernetes-utf8-bpe-matched.json")
+    decoder = UTF8BPEDecoder("bpe-merges/kubernetes-utf8-bpe.json")
     text = decoder.decode([123, 456, 789])  # Decode token IDs to string
     vocab_size = decoder.vocab_size()
 
@@ -20,7 +20,7 @@ Usage (constrained generation - requires xgrammar):
     )
 
     tokenizer_info = build_xgrammar_tokenizer_info(
-        merge_table_path="bpe-merges/kubernetes-utf8-bpe-matched.json"
+        merge_table_path="bpe-merges/kubernetes-utf8-bpe.json"
     )
     schema = {"type": "object", "properties": {...}}
     compiled = compile_json_schema_grammar(tokenizer_info, schema)
@@ -103,7 +103,7 @@ class UTF8BPEDecoder:
     Compatible with both constrained (XGrammar) and unconstrained generation.
 
     Usage:
-        decoder = UTF8BPEDecoder("bpe-merges/kubernetes-utf8-bpe-matched.json")
+        decoder = UTF8BPEDecoder("bpe-merges/kubernetes-utf8-bpe.json")
         text = decoder.decode([123, 456, 789])  # Decode token IDs to string
         vocab_size = decoder.vocab_size()
     """

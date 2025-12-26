@@ -79,7 +79,7 @@ SCHEMA_CONFIGS = {
 
         # Data directories
         "data_dir_tct": "eslintrc-tct-bpe-500",
-        "data_dir_utf8": "eslintrc-utf8-bpe-matched",
+        "data_dir_utf8": "eslintrc-utf8-bpe-500",
 
         # Schema info
         "complexity": "medium",
@@ -114,7 +114,7 @@ SCHEMA_CONFIGS = {
 
         # Data directories
         "data_dir_tct": "kubernetes-tct-bpe",
-        "data_dir_utf8": "kubernetes-utf8-bpe-matched",
+        "data_dir_utf8": "kubernetes-utf8-bpe",
 
         # Schema info
         "complexity": "high",

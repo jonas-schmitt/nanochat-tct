@@ -105,7 +105,7 @@ All encoded sequences stored in JSONL format:
 ├── eslintrc-utf8-bpe-500.json      # 470 merges, vocab 726
 ├── tsconfig-utf8-base-matched.json # 20 merges, vocab 276
 ├── kubernetes-tct-bpe-20k.json     # 19,742 merges, vocab 19,999
-└── kubernetes-utf8-bpe-matched.json # 23,630 merges, vocab 23,886
+└── kubernetes-utf8-bpe.json         # 23,630 merges, vocab 23,886
 ```
 
 Note: tsconfig-tct-base uses no BPE (base vocab 257 only).

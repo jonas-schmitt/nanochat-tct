@@ -320,9 +320,9 @@ def get_utf8_merge_table_path(schema: str) -> str:
         Path to merge table JSON file
     """
     merge_table_paths = {
-        "kubernetes": "bpe-merges/kubernetes-utf8-bpe-matched.json",
-        "eslintrc": "bpe-merges/eslintrc-utf8-bpe-matched.json",
-        "tsconfig": "bpe-merges/tsconfig-utf8-bpe-matched.json",
+        "kubernetes": "bpe-merges/kubernetes-utf8-bpe.json",
+        "eslintrc": "bpe-merges/eslintrc-utf8-bpe-500.json",
+        "tsconfig": "bpe-merges/tsconfig-utf8-base-matched.json",
     }
     if schema not in merge_table_paths:
         raise ValueError(f"Unknown schema: {schema}")

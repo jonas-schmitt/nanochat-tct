@@ -285,7 +285,7 @@ echo
 
 # Check datasets
 echo "Datasets in $DATA_DIR:"
-for dir in tsconfig-tct-base tsconfig-utf8-bpe-matched eslintrc-tct-bpe-500 eslintrc-utf8-bpe-500 kubernetes-tct-bpe kubernetes-utf8-bpe; do
+for dir in tsconfig-tct-base tsconfig-utf8-base-matched eslintrc-tct-bpe-500 eslintrc-utf8-bpe-500 kubernetes-tct-bpe kubernetes-utf8-bpe; do
     if [ -d "$DATA_DIR/$dir" ]; then
         echo "  [OK] $dir"
     else

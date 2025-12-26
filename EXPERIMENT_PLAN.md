@@ -90,8 +90,8 @@ All data is stored in `~/Desktop/data/` with consistent naming.
 
 | Schema | TCT-BPE Directory | UTF8-BPE Directory | Files |
 |--------|-------------------|-------------------|-------|
-| **tsconfig** | `tsconfig-tct-bpe-10k/` | `tsconfig-utf8-bpe-10k/` | 356K |
-| **eslintrc** | `eslintrc-tct-bpe-10k/` | `eslintrc-utf8-bpe-10k/` | 127K |
+| **tsconfig** | `tsconfig-tct-base/` | `tsconfig-utf8-base-matched/` | 356K |
+| **eslintrc** | `eslintrc-tct-bpe-500/` | `eslintrc-utf8-bpe-500/` | 127K |
 | **kubernetes** | `kubernetes-tct-bpe/` | `kubernetes-utf8-bpe/` | 246K |
 
 Each directory contains:
@@ -471,7 +471,7 @@ python -m scripts.eval_generation \
 
 ### Tokenizer Consistency
 
-For UTF8-BPE evaluation, both constrained and unconstrained generation use `UTF8BPEDecoder` from the merge table (`bpe-merges/kubernetes-utf8-bpe-matched.json`). This ensures:
+For UTF8-BPE evaluation, both constrained and unconstrained generation use `UTF8BPEDecoder` from the merge table (`bpe-merges/kubernetes-utf8-bpe.json`). This ensures:
 1. Consistent tokenization between constrained and unconstrained modes
 2. No dependency on external tokenizer modules for evaluation
 3. Fair comparison using the same decoding logic
