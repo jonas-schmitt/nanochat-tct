@@ -25,3 +25,11 @@ logs/*.log
 
 # Local developer guide (keep local-only)
 CLAUDE.md
+
+# RunPod upload staging (large files)
+runpod-upload/
+
+# Archives (never commit)
+*.tar.gz
+*.tar
+*.zip
