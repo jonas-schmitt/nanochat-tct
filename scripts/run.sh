@@ -1,16 +1,52 @@
 #!/bin/bash -l
-# Run Kubernetes Experiments
-# Trains models with BPE-20k compression - complex manifests (42M tokens)
+# Unified Run Script for TCT Experiments
+# Works with all schemas: kubernetes, tsconfig, eslintrc
 #
 # Usage:
-#   bash scripts/run_kubernetes.sh           # Run all
-#   bash scripts/run_kubernetes.sh small     # Run only small models
-#   bash scripts/run_kubernetes.sh tct       # Run only TCT models
-#   bash scripts/run_kubernetes.sh resume    # Resume from latest checkpoint
+#   bash scripts/run.sh kubernetes              # Run all kubernetes experiments
+#   bash scripts/run.sh kubernetes small        # Run only small models
+#   bash scripts/run.sh kubernetes tct          # Run only TCT tokenizer
+#   bash scripts/run.sh kubernetes resume       # Resume from latest checkpoint
+#   bash scripts/run.sh kubernetes resume small tct  # Combine filters
 
 set -e
 
-# Auto-detect paths if not set by job.sh
+# =============================================================================
+# Parse arguments
+# =============================================================================
+
+SCHEMA=""
+FILTER_TOKENIZER=""
+FILTER_SIZE=""
+RESUME_MODE=""
+
+for arg in "$@"; do
+    case $arg in
+        kubernetes|tsconfig|eslintrc) SCHEMA="$arg" ;;
+        tct|utf8) FILTER_TOKENIZER="$arg" ;;
+        small|small-deep|medium|large) FILTER_SIZE="$arg" ;;
+        resume) RESUME_MODE="1" ;;
+    esac
+done
+
+if [ -z "$SCHEMA" ]; then
+    echo "Usage: bash scripts/run.sh <schema> [size] [tokenizer] [resume]"
+    echo ""
+    echo "Schemas: kubernetes, tsconfig, eslintrc"
+    echo "Sizes: small, small-deep, medium, large"
+    echo "Tokenizers: tct, utf8"
+    echo ""
+    echo "Examples:"
+    echo "  bash scripts/run.sh kubernetes"
+    echo "  bash scripts/run.sh kubernetes small tct"
+    echo "  bash scripts/run.sh kubernetes resume small"
+    exit 1
+fi
+
+# =============================================================================
+# Auto-detect paths
+# =============================================================================
+
 if [ -z "$CODE_DIR" ]; then
     if [ -d "/workspace/nanochat-tct" ]; then
         CODE_DIR="/workspace/nanochat-tct"
@@ -26,8 +62,10 @@ fi
 
 LOG_DIR="${LOG_DIR:-$CODE_DIR/logs}"
 
+# =============================================================================
 # Auto-detect GPU VRAM and set batch multiplier
-# Base config is for 24GB (RTX 4090). Scale up for larger GPUs.
+# =============================================================================
+
 if [ -z "$TCT_BATCH_MULTIPLIER" ]; then
     GPU_MEM=$(nvidia-smi --query-gpu=memory.total --format=csv,noheader,nounits 2>/dev/null | head -1 | tr -d ' ')
     GPU_MEM=${GPU_MEM:-24000}
@@ -48,24 +86,32 @@ if [ -z "$TCT_BATCH_MULTIPLIER" ]; then
     echo "GPU VRAM: ${GPU_MEM}GB -> Batch multiplier: ${TCT_BATCH_MULTIPLIER}x"
 fi
 
-SCHEMA="kubernetes"
-TOKENIZERS="${TOKENIZERS:-tct utf8}"
-SIZES="${SIZES:-small small-deep medium large}"
+# =============================================================================
+# Schema-specific settings
+# =============================================================================
 
-# Parse filter arguments
-FILTER_TOKENIZER=""
-FILTER_SIZE=""
-RESUME_MODE=""
+case $SCHEMA in
+    kubernetes)
+        TOKENIZERS="${TOKENIZERS:-tct utf8}"
+        SIZES="${SIZES:-small small-deep medium large}"
+        EPOCHS=150
+        ;;
+    tsconfig)
+        TOKENIZERS="${TOKENIZERS:-tct utf8}"
+        SIZES="${SIZES:-small medium large}"
+        EPOCHS=50
+        ;;
+    eslintrc)
+        TOKENIZERS="${TOKENIZERS:-tct utf8}"
+        SIZES="${SIZES:-small medium large}"
+        EPOCHS=100
+        ;;
+esac
 
-for arg in "$@"; do
-    case $arg in
-        tct|utf8) FILTER_TOKENIZER="$arg" ;;
-        small|small-deep|medium|large) FILTER_SIZE="$arg" ;;
-        resume) RESUME_MODE="1" ;;
-    esac
-done
+# =============================================================================
+# Helper functions
+# =============================================================================
 
-# Function to find latest checkpoint epoch
 find_latest_epoch() {
     local exp_name=$1
     local checkpoint_dir="checkpoints/${exp_name}"
@@ -74,15 +120,22 @@ find_latest_epoch() {
     fi
 }
 
+# =============================================================================
+# Run experiments
+# =============================================================================
+
 mkdir -p "$LOG_DIR"
 cd "$CODE_DIR"
 
 echo "============================================================"
-echo "Kubernetes Experiments (150 epochs, context=2048, BPE-20k)"
+echo "$SCHEMA Experiments ($EPOCHS epochs, context=2048)"
 echo "============================================================"
 echo "Date: $(date)"
 echo "GPU: $(nvidia-smi --query-gpu=name --format=csv,noheader 2>/dev/null || echo 'No GPU')"
 echo "Data: $DATA_DIR"
+echo "Sizes: $SIZES"
+echo "Tokenizers: $TOKENIZERS"
+[ -n "$RESUME_MODE" ] && echo "Mode: RESUME"
 echo "============================================================"
 echo
 
@@ -132,5 +185,5 @@ for tokenizer in $TOKENIZERS; do
 done
 
 echo "============================================================"
-echo "Kubernetes experiments completed at $(date)"
+echo "$SCHEMA experiments completed at $(date)"
 echo "============================================================"
