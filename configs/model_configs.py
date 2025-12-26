@@ -1,21 +1,17 @@
 """
 Schema-agnostic model configurations for TCT experiments.
 
-Three preset architectures targeting standard GPT sizes:
-- Small:  ~50M params with k8s vocab (d_model=512, 8 layers)
-- Medium: ~125M params with k8s vocab (d_model=768, 12 layers)
-- Large:  ~350M params with k8s vocab (d_model=1024, 24 layers)
+All schemas use context_size=2048.
 
-The SAME architecture is used for both TCT-BPE and UTF8-BPE.
-- TCT-BPE: Smaller vocab → fewer params
-- UTF8-BPE: Larger vocab → more params (same transformer capacity)
+Four preset architectures:
+- Small:      d_model=512, 10 layers (~50M params)
+- Small-deep: d_model=384, 20 layers (~50M params, deeper)
+- Medium:     d_model=768, 13 layers (~125M params)
+- Large:      d_model=1024, 24 layers (~350M params)
 
-Example parameter counts (kubernetes, context=2048):
-| Model  | TCT-BPE (20k) | UTF8-BPE (24k) | Target |
-|--------|---------------|----------------|--------|
-| Small  | ~47M          | ~51M           | ~50M   |
-| Medium | ~117M         | ~123M          | ~125M  |
-| Large  | ~345M         | ~353M          | ~350M  |
+The SAME architecture is used for both TCT and UTF8 tokenizers.
+- TCT: Smaller vocab → fewer embedding params
+- UTF8: Larger vocab → more embedding params (same transformer capacity)
 """
 
 from typing import Dict, Any
@@ -73,27 +69,13 @@ ARCHITECTURES = {
 # Effective batch = batch_size × gradient_accumulation × world_size
 # Target effective batch: ~128 for stability
 
+# All schemas use context_size=2048
 TRAINING_PARAMS = {
-    # Context 256 (tsconfig): fits easily, large batch
-    256: {
-        "small": {"batch_size": 64, "gradient_accumulation": 2},        # ~50M model
-        "small-deep": {"batch_size": 64, "gradient_accumulation": 2},   # ~50M model (deeper)
-        "medium": {"batch_size": 32, "gradient_accumulation": 4},       # ~100M model
-        "large": {"batch_size": 16, "gradient_accumulation": 8},        # ~323M model
-    },
-    # Context 512 (eslintrc): moderate batch
-    512: {
-        "small": {"batch_size": 32, "gradient_accumulation": 4},        # ~50M model
-        "small-deep": {"batch_size": 32, "gradient_accumulation": 4},   # ~50M model (deeper)
-        "medium": {"batch_size": 16, "gradient_accumulation": 8},       # ~100M model
-        "large": {"batch_size": 8, "gradient_accumulation": 16},        # ~323M model
-    },
-    # Context 2048 (kubernetes): smaller batch for memory
     2048: {
-        "small": {"batch_size": 16, "gradient_accumulation": 8},        # ~47M model
+        "small": {"batch_size": 16, "gradient_accumulation": 8},        # ~50M model
         "small-deep": {"batch_size": 16, "gradient_accumulation": 8},   # ~50M model (deeper)
-        "medium": {"batch_size": 4, "gradient_accumulation": 32},       # ~117M model
-        "large": {"batch_size": 2, "gradient_accumulation": 64},        # ~345M model
+        "medium": {"batch_size": 4, "gradient_accumulation": 32},       # ~125M model
+        "large": {"batch_size": 2, "gradient_accumulation": 64},        # ~350M model
     },
 }
 
@@ -269,37 +251,35 @@ def print_model_summary():
 
     print()
 
-    # Parameter estimates for each schema
-    print("Estimated Total Parameters by Schema:")
+    # Parameter estimates for each schema (all use context=2048)
+    print("Estimated Total Parameters by Schema (context=2048):")
     print("-" * 80)
 
     schemas = [
-        ("kubernetes", 20000, 23887, 2048),
-        ("eslintrc", 10000, 18337, 512),
-        ("tsconfig", 10000, 16197, 256),
+        ("kubernetes", 19999, 23886),
+        ("eslintrc", 499, 726),
+        ("tsconfig", 257, 276),
     ]
 
-    for schema, tct_vocab, utf8_vocab, context in schemas:
-        print(f"\n{schema} (TCT={tct_vocab}, UTF8={utf8_vocab}, ctx={context}):")
-        print(f"  {'Size':<10} {'TCT-BPE':<15} {'UTF8-BPE':<15}")
+    for schema, tct_vocab, utf8_vocab in schemas:
+        print(f"\n{schema} (TCT={tct_vocab}, UTF8={utf8_vocab}):")
+        print(f"  {'Size':<12} {'TCT-BPE':<15} {'UTF8-BPE':<15}")
         for name in ARCHITECTURES:
-            p_tct = estimate_params(name, tct_vocab, context)
-            p_utf8 = estimate_params(name, utf8_vocab, context)
-            print(f"  {name:<10} {p_tct:>12,} {p_utf8:>14,}")
+            p_tct = estimate_params(name, tct_vocab, 2048)
+            p_utf8 = estimate_params(name, utf8_vocab, 2048)
+            print(f"  {name:<12} {p_tct:>12,} {p_utf8:>14,}")
 
     print()
 
-    # Training params by context
-    print("Batch Sizes by Context (single GPU):")
-    print("-" * 60)
-    print(f"{'Context':<10} {'Small':<20} {'Medium':<20} {'Large':<20}")
-    for ctx in sorted(TRAINING_PARAMS.keys()):
-        small = TRAINING_PARAMS[ctx]["small"]
-        medium = TRAINING_PARAMS[ctx]["medium"]
-        large = TRAINING_PARAMS[ctx]["large"]
-        print(f"{ctx:<10} {small['batch_size']}×{small['gradient_accumulation']:<14} "
-              f"{medium['batch_size']}×{medium['gradient_accumulation']:<14} "
-              f"{large['batch_size']}×{large['gradient_accumulation']:<14}")
+    # Training params (context=2048 for all)
+    print("Batch Sizes (context=2048, single RTX 4090):")
+    print("-" * 70)
+    print(f"{'Size':<12} {'Batch':<10} {'Grad Accum':<12} {'Effective Batch':<15}")
+    params = TRAINING_PARAMS[2048]
+    for size in ["small", "small-deep", "medium", "large"]:
+        p = params[size]
+        effective = p["batch_size"] * p["gradient_accumulation"]
+        print(f"{size:<12} {p['batch_size']:<10} {p['gradient_accumulation']:<12} {effective:<15}")
 
     print()
 
