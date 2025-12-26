@@ -78,7 +78,7 @@ SCHEMAS = {
     ),
     "eslintrc": SchemaConfig(
         name="eslintrc",
-        merge_table="bpe-merges/eslintrc-utf8-bpe-10k.json",
+        merge_table="bpe-merges/eslintrc-utf8-bpe-matched.json",
         tct_module_name="tct_eslintrc_10k",
         context_size=256,
         valid_sample={"rules": {"semi": "error"}},
@@ -86,7 +86,7 @@ SCHEMAS = {
     ),
     "tsconfig": SchemaConfig(
         name="tsconfig",
-        merge_table="bpe-merges/tsconfig-utf8-bpe-10k.json",
+        merge_table="bpe-merges/tsconfig-utf8-bpe-matched.json",
         tct_module_name="tct_tsconfig_10k",
         context_size=256,
         valid_sample={"compilerOptions": {"target": "es6"}},
