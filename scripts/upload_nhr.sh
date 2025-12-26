@@ -2,10 +2,11 @@
 # Upload data to NHR FAU clusters
 #
 # Usage:
-#   bash scripts/upload_nhr.sh <username>                    # Upload all datasets
-#   bash scripts/upload_nhr.sh <username> kubernetes         # Upload only kubernetes
-#   bash scripts/upload_nhr.sh <username> --cluster=tinygpu  # Use TinyGPU instead of Alex
-#   bash scripts/upload_nhr.sh <username> --dry-run          # Show what would be uploaded
+#   bash scripts/upload_nhr.sh <username>                        # Upload all datasets
+#   bash scripts/upload_nhr.sh <username> kubernetes             # Upload only kubernetes
+#   bash scripts/upload_nhr.sh <username> --data=/path/to/data   # Custom data path
+#   bash scripts/upload_nhr.sh <username> --cluster=tinygpu      # Use TinyGPU instead of Alex
+#   bash scripts/upload_nhr.sh <username> --dry-run              # Show what would be uploaded
 #
 # Datasets uploaded:
 #   tsconfig:   tsconfig-tct-base, tsconfig-utf8-base-matched
@@ -22,10 +23,12 @@ USERNAME=""
 CLUSTER="alex"
 DRY_RUN=""
 SCHEMAS=""
+LOCAL_DATA=""
 
 for arg in "$@"; do
     case $arg in
         --cluster=*) CLUSTER="${arg#*=}" ;;
+        --data=*) LOCAL_DATA="${arg#*=}" ;;
         --dry-run) DRY_RUN="1" ;;
         kubernetes|tsconfig|eslintrc) SCHEMAS="$SCHEMAS $arg" ;;
         -*) echo "Unknown option: $arg"; exit 1 ;;
@@ -41,13 +44,15 @@ if [ -z "$USERNAME" ]; then
     echo "  schemas               Optional: kubernetes, tsconfig, eslintrc (default: all)"
     echo ""
     echo "Options:"
+    echo "  --data=PATH           Path to data directory (default: ~/Desktop/data)"
     echo "  --cluster=NAME        Cluster: alex (default), tinygpu"
     echo "  --dry-run             Show what would be uploaded without uploading"
     echo ""
     echo "Examples:"
-    echo "  bash scripts/upload_nhr.sh ab12cdef                    # Upload all"
-    echo "  bash scripts/upload_nhr.sh ab12cdef kubernetes         # Only kubernetes"
-    echo "  bash scripts/upload_nhr.sh ab12cdef --dry-run          # Dry run"
+    echo "  bash scripts/upload_nhr.sh ab12cdef                        # Upload all"
+    echo "  bash scripts/upload_nhr.sh ab12cdef kubernetes             # Only kubernetes"
+    echo "  bash scripts/upload_nhr.sh ab12cdef --data=/mnt/data       # Custom path"
+    echo "  bash scripts/upload_nhr.sh ab12cdef --dry-run              # Dry run"
     exit 1
 fi
 
@@ -57,11 +62,22 @@ if [ -z "$SCHEMAS" ]; then
 fi
 SCHEMAS="${SCHEMAS# }"  # Trim leading space
 
+# Default data path
+if [ -z "$LOCAL_DATA" ]; then
+    LOCAL_DATA="$HOME/Desktop/data"
+fi
+
+# Verify data path exists
+if [ ! -d "$LOCAL_DATA" ]; then
+    echo "ERROR: Data directory not found: $LOCAL_DATA"
+    echo "Use --data=/path/to/data to specify location"
+    exit 1
+fi
+
 # =============================================================================
 # Configuration
 # =============================================================================
 
-LOCAL_DATA="$HOME/Desktop/data"
 REMOTE_HOST="${USERNAME}@${CLUSTER}.nhr.fau.de"
 REMOTE_DATA="\$WORK/data/tct"
 
