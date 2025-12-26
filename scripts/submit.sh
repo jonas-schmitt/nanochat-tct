@@ -179,12 +179,6 @@ module purge
 module load python/3.11-anaconda 2>/dev/null || module load python 2>/dev/null
 module load cuda 2>/dev/null || true
 
-# Set proxy for pip/uv (required on NHR compute nodes)
-export http_proxy=http://proxy.nhr.fau.de:80
-export https_proxy=http://proxy.nhr.fau.de:80
-export HTTP_PROXY=http://proxy.nhr.fau.de:80
-export HTTPS_PROXY=http://proxy.nhr.fau.de:80
-
 # Set paths
 export WORK="\${WORK:-\$HOME}"
 export CODE_DIR="\$WORK/nanochat-tct"

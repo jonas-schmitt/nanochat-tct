@@ -131,29 +131,51 @@ echo "Done."
 
 echo "[3/6] Setting up Python environment..."
 
-# Install uv if not present
-if ! command -v uv &> /dev/null; then
-    echo "Installing uv package manager..."
-    curl -LsSf https://astral.sh/uv/install.sh | sh
-    export PATH="$HOME/.local/bin:$PATH"
+# Try to use uv, fall back to pip
+USE_UV=""
+export PATH="$HOME/.local/bin:$PATH"
+
+if command -v uv &> /dev/null; then
+    echo "Found uv: $(uv --version)"
+    USE_UV="1"
+else
+    echo "uv not found, attempting to install..."
+    if curl -LsSf https://astral.sh/uv/install.sh | sh 2>/dev/null; then
+        if command -v uv &> /dev/null; then
+            echo "Installed uv: $(uv --version)"
+            USE_UV="1"
+        fi
+    fi
+    if [ -z "$USE_UV" ]; then
+        echo "uv installation failed, will use pip instead"
+    fi
 fi
-echo "uv version: $(uv --version)"
 
 # Create venv
 if [ ! -d "$VENV_DIR" ]; then
     echo "Creating virtual environment..."
-    case $PLATFORM in
-        runpod)
-            uv venv --python 3.12 "$VENV_DIR"
-            ;;
-        nhr|hpc)
-            uv venv --python python3 "$VENV_DIR"
-            ;;
-        local)
-            uv venv "$VENV_DIR"
-            ;;
-    esac
+    if [ -n "$USE_UV" ]; then
+        case $PLATFORM in
+            runpod)
+                uv venv --python 3.12 "$VENV_DIR" || python3.12 -m venv "$VENV_DIR"
+                ;;
+            nhr|hpc)
+                uv venv --python python3 "$VENV_DIR" || python3 -m venv "$VENV_DIR"
+                ;;
+            local)
+                uv venv "$VENV_DIR" || python3 -m venv "$VENV_DIR"
+                ;;
+        esac
+    else
+        python3 -m venv "$VENV_DIR"
+    fi
 fi
+
+if [ ! -f "$VENV_DIR/bin/activate" ]; then
+    echo "ERROR: Failed to create virtual environment at $VENV_DIR"
+    exit 1
+fi
+
 source "$VENV_DIR/bin/activate"
 echo "Python: $(python --version)"
 echo "Done."
@@ -164,7 +186,17 @@ echo "Done."
 
 echo "[4/6] Installing Python dependencies..."
 cd "$CODE_DIR"
-uv pip install -e ".[gpu,eval]"
+
+# Helper function for package installation
+pip_install() {
+    if [ -n "$USE_UV" ]; then
+        uv pip install "$@" || pip install "$@"
+    else
+        pip install "$@"
+    fi
+}
+
+pip_install -e ".[gpu,eval]"
 echo "Done."
 
 # =============================================================================
@@ -183,7 +215,7 @@ fi
 
 if [ -n "$TCT_WHEELS" ] && [ -d "$TCT_WHEELS" ]; then
     echo "Installing from $TCT_WHEELS..."
-    uv pip install "$TCT_WHEELS"/*.whl
+    pip_install "$TCT_WHEELS"/*.whl
 else
     echo "WARNING: TCT wheels not found. You may need to install them manually."
 fi
