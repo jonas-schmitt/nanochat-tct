@@ -176,8 +176,19 @@ echo
 
 # Load modules
 module purge
-module load python/3.11-anaconda 2>/dev/null || module load python 2>/dev/null
 module load cuda 2>/dev/null || true
+
+# Try Python 3.12 module first, fall back to conda
+USE_CONDA=""
+if module load python/3.12 2>/dev/null; then
+    echo "Using Python 3.12 module"
+elif module load python/3.12-anaconda 2>/dev/null; then
+    echo "Using Python 3.12-anaconda module"
+else
+    echo "Python 3.12 module not available, using conda"
+    module load python 2>/dev/null || true
+    USE_CONDA="1"
+fi
 
 # Set paths
 export WORK="\${WORK:-\$HOME}"
@@ -191,12 +202,24 @@ $( [ -n "$BATCH_BOOST" ] && echo "export TCT_BATCH_SIZE_BOOST=$BATCH_BOOST" )
 
 cd "\$CODE_DIR"
 
-# Activate virtual environment
-if [ -f "\$VENV_DIR/bin/activate" ]; then
+# Activate environment
+if [ -n "\$USE_CONDA" ]; then
+    # Conda environment
+    CONDA_ENV_NAME="tct-py312"
+    source "\$(conda info --base)/etc/profile.d/conda.sh"
+    if conda env list | grep -q "^\${CONDA_ENV_NAME} "; then
+        conda activate "\$CONDA_ENV_NAME"
+    else
+        echo "ERROR: Conda environment \$CONDA_ENV_NAME not found"
+        echo "Run setup first: bash scripts/submit.sh --setup --gpu=$GPU_TYPE"
+        exit 1
+    fi
+elif [ -f "\$VENV_DIR/bin/activate" ]; then
+    # Venv with Python 3.12 module
     source "\$VENV_DIR/bin/activate"
 else
-    echo "ERROR: Virtual environment not found at \$VENV_DIR"
-    echo "Run: bash scripts/submit.sh --setup --gpu=$GPU_TYPE"
+    echo "ERROR: No Python environment found"
+    echo "Run setup first: bash scripts/submit.sh --setup --gpu=$GPU_TYPE"
     exit 1
 fi
 

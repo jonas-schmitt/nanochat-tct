@@ -84,10 +84,32 @@ case $PLATFORM in
     nhr)
         # Load modules
         module purge 2>/dev/null || true
-        module load python/3.11-anaconda 2>/dev/null || module load python/3.10 2>/dev/null || true
         module load cuda 2>/dev/null || true
+
+        # Try to load Python 3.12 module, fall back to conda
+        if module load python/3.12 2>/dev/null; then
+            echo "Loaded Python 3.12 module"
+        elif module load python/3.12-anaconda 2>/dev/null; then
+            echo "Loaded Python 3.12-anaconda module"
+        else
+            echo "Python 3.12 module not available, will use conda"
+            module load python 2>/dev/null || true
+            NHR_USE_CONDA="1"
+
+            # Configure conda to use $WORK (not $HOME - quota issues)
+            mkdir -p "$WORK/software/conda/pkgs"
+            mkdir -p "$WORK/software/conda/envs"
+            conda config --add pkgs_dirs "$WORK/software/conda/pkgs" 2>/dev/null || true
+            conda config --add envs_dirs "$WORK/software/conda/envs" 2>/dev/null || true
+        fi
+
         echo "Loaded modules:"
         module list 2>&1 | head -10
+
+        # Configure paths to use $WORK (not $HOME - quota issues)
+        export PYTHONUSERBASE="$WORK/software/private"
+        mkdir -p "$PYTHONUSERBASE"
+
         # Set proxy for pip/uv (required on compute nodes)
         export http_proxy=http://proxy.nhr.fau.de:80
         export https_proxy=http://proxy.nhr.fau.de:80
@@ -151,32 +173,48 @@ else
     fi
 fi
 
-# Create venv
-if [ ! -d "$VENV_DIR" ]; then
-    echo "Creating virtual environment..."
-    if [ -n "$USE_UV" ]; then
-        case $PLATFORM in
-            runpod)
-                uv venv --python 3.12 "$VENV_DIR" || python3.12 -m venv "$VENV_DIR"
-                ;;
-            nhr|hpc)
-                uv venv --python python3 "$VENV_DIR" || python3 -m venv "$VENV_DIR"
-                ;;
-            local)
-                uv venv "$VENV_DIR" || python3 -m venv "$VENV_DIR"
-                ;;
-        esac
-    else
-        python3 -m venv "$VENV_DIR"
+# Create environment
+if [ -n "$NHR_USE_CONDA" ]; then
+    # NHR: Use conda for Python 3.12
+    CONDA_ENV_NAME="tct-py312"
+    if ! conda env list | grep -q "^${CONDA_ENV_NAME} "; then
+        echo "Creating conda environment with Python 3.12..."
+        conda create -y -n "$CONDA_ENV_NAME" python=3.12
     fi
+    echo "Activating conda environment: $CONDA_ENV_NAME"
+    source "$(conda info --base)/etc/profile.d/conda.sh"
+    conda activate "$CONDA_ENV_NAME"
+    # Set VENV_DIR to conda env for consistency
+    VENV_DIR="$(conda info --base)/envs/$CONDA_ENV_NAME"
+else
+    # Other platforms: Use venv
+    if [ ! -d "$VENV_DIR" ]; then
+        echo "Creating virtual environment..."
+        if [ -n "$USE_UV" ]; then
+            case $PLATFORM in
+                runpod)
+                    uv venv --python 3.12 "$VENV_DIR" || python3.12 -m venv "$VENV_DIR"
+                    ;;
+                hpc)
+                    uv venv --python python3 "$VENV_DIR" || python3 -m venv "$VENV_DIR"
+                    ;;
+                local)
+                    uv venv "$VENV_DIR" || python3 -m venv "$VENV_DIR"
+                    ;;
+            esac
+        else
+            python3 -m venv "$VENV_DIR"
+        fi
+    fi
+
+    if [ ! -f "$VENV_DIR/bin/activate" ]; then
+        echo "ERROR: Failed to create virtual environment at $VENV_DIR"
+        exit 1
+    fi
+
+    source "$VENV_DIR/bin/activate"
 fi
 
-if [ ! -f "$VENV_DIR/bin/activate" ]; then
-    echo "ERROR: Failed to create virtual environment at $VENV_DIR"
-    exit 1
-fi
-
-source "$VENV_DIR/bin/activate"
 echo "Python: $(python --version)"
 echo "Done."
 
