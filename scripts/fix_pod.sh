@@ -6,8 +6,6 @@ set -e
 
 DATA_DIR="${DATA_DIR:-/workspace/data}"
 CODE_DIR="${CODE_DIR:-/workspace/nanochat-tct}"
-S3_BUCKET="s3://m4rt30bdh2"
-S3_OPTS="--region eu-ro-1 --endpoint-url https://s3api-eu-ro-1.runpod.io"
 
 cd "$DATA_DIR"
 
@@ -36,8 +34,8 @@ for dataset in eslintrc-tct-bpe-500 eslintrc-utf8-bpe-500 tsconfig-utf8-base-mat
         echo "  - $dataset (extracting from /workspace tarball)..."
         tar -xzf "/workspace/$dataset.tar.gz"
     else
-        echo "  - $dataset (syncing from S3)..."
-        aws s3 sync "$S3_BUCKET/$dataset/" "$dataset/" $S3_OPTS
+        echo "  - $dataset (MISSING!)"
+        exit 1
     fi
 done
 
