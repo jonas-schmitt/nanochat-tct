@@ -6,7 +6,8 @@ Step-by-step guide for running TCT experiments on NHR FAU clusters (Alex/TinyGPU
 
 - NHR FAU account with access to Alex or TinyGPU
 - SSH key configured for cluster access
-- Local data prepared in `~/Desktop/data/`
+- Local data prepared (default: `~/Desktop/data/`)
+- TCT wheels require Python 3.12 (setup.sh handles this automatically)
 
 ## Step 1: Upload Data
 
@@ -20,6 +21,9 @@ bash scripts/upload_nhr.sh <username>
 
 # Or upload specific schemas
 bash scripts/upload_nhr.sh <username> kubernetes
+
+# Custom data path
+bash scripts/upload_nhr.sh <username> --data=/path/to/data
 
 # Dry run first to see what will be uploaded
 bash scripts/upload_nhr.sh <username> --dry-run
@@ -145,7 +149,8 @@ $WORK/
 │   ├── eslintrc-tct-bpe-500/
 │   └── eslintrc-utf8-bpe-500/
 ├── tct-wheels/             # TCT tokenizer wheels
-└── venv-tct/               # Python virtual environment
+├── venv-tct/               # Python venv (if python/3.12 module available)
+└── software/conda/envs/tct-py312/  # Conda env (fallback if no module)
 ```
 
 ## Troubleshooting
@@ -153,11 +158,16 @@ $WORK/
 ### Job fails immediately
 - Check `logs/slurm_<jobid>.err` for errors
 - Verify data exists: `ls $WORK/data/tct/`
-- Verify venv exists: `ls $WORK/venv-tct/`
+- Verify environment exists: `ls $WORK/venv-tct/` or `conda env list`
 
 ### CUDA not available
 - Re-run setup in an interactive GPU job
 - Check module is loaded: `module list`
+
+### Python version mismatch
+- TCT wheels require Python 3.12
+- Check available modules: `module avail python`
+- Setup.sh will use conda if python/3.12 module unavailable
 
 ### Out of memory
 - Use smaller batch size (happens automatically based on GPU)
