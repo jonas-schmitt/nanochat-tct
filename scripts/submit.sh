@@ -6,6 +6,7 @@
 #   bash scripts/submit.sh kubernetes small --gpu=a100       # Use A100 GPU
 #   bash scripts/submit.sh kubernetes resume --gpu=a40       # Resume with A40
 #   bash scripts/submit.sh --setup                           # Run setup only
+#   bash scripts/submit.sh kubernetes --verbose              # Verbose output
 #
 # GPU options:
 #   --gpu=a40      Alex A40 (40GB) - default
@@ -18,8 +19,61 @@
 #   --time=HH:MM:SS   Wall time (default: 24:00:00)
 #   --setup           Run setup before training
 #   --dry-run         Print sbatch script without submitting
+#   --verbose         Verbose output for debugging
 
 set -e
+
+# =============================================================================
+# Helper functions
+# =============================================================================
+
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
+NC='\033[0m' # No Color
+
+log_info() { echo -e "${BLUE}[INFO]${NC} $1"; }
+log_success() { echo -e "${GREEN}[OK]${NC} $1"; }
+log_warn() { echo -e "${YELLOW}[WARN]${NC} $1"; }
+log_error() { echo -e "${RED}[ERROR]${NC} $1"; }
+log_verbose() { [ -n "$VERBOSE" ] && echo -e "${BLUE}[DEBUG]${NC} $1" || true; }
+
+die() {
+    log_error "$1"
+    [ -n "$2" ] && echo "  Hint: $2"
+    exit 1
+}
+
+show_help() {
+    echo "Usage: bash scripts/submit.sh <schema>... [size]... [tokenizer] [resume] [options]"
+    echo ""
+    echo "Schemas: kubernetes, tsconfig, eslintrc"
+    echo "Sizes: small, medium, large, small-deep"
+    echo "Tokenizers: tct, utf8"
+    echo ""
+    echo "Options:"
+    echo "  --gpu=TYPE      GPU type: a40 (default), a100, a100_80, v100, rtx3080"
+    echo "  --time=TIME     Wall time limit (default: 24:00:00)"
+    echo "  --setup         Run setup before training"
+    echo "  --dry-run       Print job script without submitting"
+    echo "  --verbose, -v   Verbose output for debugging"
+    echo "  --help, -h      Show this help message"
+    echo ""
+    echo "GPU Options:"
+    echo "  a40       Alex cluster, 40GB VRAM, batch multiplier 2x"
+    echo "  a100      Alex/TinyGPU, 40GB VRAM, batch multiplier 2x"
+    echo "  a100_80   Alex cluster, 80GB VRAM, batch multiplier 3x"
+    echo "  v100      TinyGPU, 32GB VRAM, batch multiplier 1x"
+    echo "  rtx3080   TinyGPU, 10GB VRAM, batch multiplier 1x"
+    echo ""
+    echo "Examples:"
+    echo "  bash scripts/submit.sh kubernetes small medium --gpu=a100"
+    echo "  bash scripts/submit.sh kubernetes resume --gpu=a40 --time=12:00:00"
+    echo "  bash scripts/submit.sh --setup --gpu=a100  # Setup only"
+    echo "  bash scripts/submit.sh kubernetes --dry-run --verbose"
+    exit 0
+}
 
 # =============================================================================
 # Parse arguments
@@ -29,6 +83,7 @@ GPU_TYPE="a40"
 TIME_LIMIT="24:00:00"
 RUN_SETUP=""
 DRY_RUN=""
+VERBOSE=""
 RUN_ARGS=""
 
 for arg in "$@"; do
@@ -37,6 +92,8 @@ for arg in "$@"; do
         --time=*) TIME_LIMIT="${arg#*=}" ;;
         --setup) RUN_SETUP="1" ;;
         --dry-run) DRY_RUN="1" ;;
+        --verbose|-v) VERBOSE="1" ;;
+        --help|-h) show_help ;;
         *) RUN_ARGS="$RUN_ARGS $arg" ;;
     esac
 done
@@ -45,24 +102,14 @@ RUN_ARGS="${RUN_ARGS# }"  # Trim leading space
 
 # Validate we have something to run
 if [ -z "$RUN_ARGS" ] && [ -z "$RUN_SETUP" ]; then
-    echo "Usage: bash scripts/submit.sh <schema>... [size]... [tokenizer] [resume] [options]"
-    echo ""
-    echo "Schemas: kubernetes, tsconfig, eslintrc"
-    echo "Sizes: small, medium, large, small-deep"
-    echo "Tokenizers: tct, utf8"
-    echo ""
-    echo "Options:"
-    echo "  --gpu=TYPE    GPU type: a40 (default), a100, a100_80, v100, rtx3080"
-    echo "  --time=TIME   Wall time limit (default: 24:00:00)"
-    echo "  --setup       Run setup before training"
-    echo "  --dry-run     Print job script without submitting"
-    echo ""
-    echo "Examples:"
-    echo "  bash scripts/submit.sh kubernetes small medium --gpu=a100"
-    echo "  bash scripts/submit.sh kubernetes resume --gpu=a40 --time=12:00:00"
-    echo "  bash scripts/submit.sh --setup  # Setup only"
-    exit 1
+    die "No schema or --setup specified" "Use --help to see usage"
 fi
+
+log_verbose "GPU type: $GPU_TYPE"
+log_verbose "Time limit: $TIME_LIMIT"
+log_verbose "Run args: $RUN_ARGS"
+log_verbose "Setup mode: ${RUN_SETUP:-no}"
+log_verbose "Dry run: ${DRY_RUN:-no}"
 
 # =============================================================================
 # GPU configuration
@@ -105,11 +152,14 @@ case $GPU_TYPE in
         GPU_MEM=10
         ;;
     *)
-        echo "Unknown GPU type: $GPU_TYPE"
-        echo "Available: a40, a100, a100_80, v100, rtx3080"
-        exit 1
+        die "Unknown GPU type: $GPU_TYPE" "Available: a40, a100, a100_80, v100, rtx3080"
         ;;
 esac
+
+log_verbose "Cluster: $CLUSTER"
+log_verbose "Partition: $PARTITION"
+log_verbose "GRES: $GRES"
+log_verbose "GPU memory: ${GPU_MEM}GB"
 
 # Calculate batch multiplier based on GPU memory
 if [ "$GPU_MEM" -ge 70 ]; then
@@ -122,7 +172,11 @@ elif [ "$GPU_MEM" -ge 30 ]; then
 else
     BATCH_MULTIPLIER=1    # RTX 3080 10GB (may need smaller batch)
     BATCH_BOOST=0
+    log_warn "RTX 3080 has limited VRAM (10GB) - large models may OOM"
 fi
+
+log_verbose "Batch multiplier: ${BATCH_MULTIPLIER}x"
+[ -n "$BATCH_BOOST" ] && log_verbose "Batch boost: +$BATCH_BOOST"
 
 # =============================================================================
 # Generate job name
@@ -286,28 +340,47 @@ echo "Time:       $TIME_LIMIT"
 echo "Batch mult: ${BATCH_MULTIPLIER}x"
 echo "Job name:   $JOB_NAME"
 echo "Run args:   ${RUN_ARGS:-<setup only>}"
+[ -n "$VERBOSE" ] && echo "Verbose:    enabled"
 echo "============================================================"
 echo
 
+log_verbose "Job script location: $JOB_SCRIPT"
+
 if [ -n "$DRY_RUN" ]; then
-    echo "=== Job Script (dry run) ==="
+    log_info "Dry run mode - showing job script without submitting"
+    echo ""
+    echo "=== Job Script ==="
     cat "$JOB_SCRIPT"
+    echo "=== End Job Script ==="
     rm "$JOB_SCRIPT"
+    log_info "To submit, remove --dry-run flag"
 else
     # Ensure logs directory exists
     mkdir -p "$CODE_DIR/logs"
+    log_verbose "Log directory: $CODE_DIR/logs"
 
     # Submit to appropriate cluster
     if [ "$CLUSTER" = "alex" ]; then
-        echo "Submitting to Alex cluster..."
-        sbatch "$JOB_SCRIPT"
+        log_info "Submitting to Alex cluster..."
+        log_verbose "Running: sbatch $JOB_SCRIPT"
+        if sbatch "$JOB_SCRIPT"; then
+            log_success "Job submitted successfully"
+        else
+            die "Failed to submit job" "Check that you're on the login node and sbatch is available"
+        fi
     else
-        echo "Submitting to TinyGPU cluster..."
-        sbatch.tinygpu "$JOB_SCRIPT"
+        log_info "Submitting to TinyGPU cluster..."
+        log_verbose "Running: sbatch.tinygpu $JOB_SCRIPT"
+        if sbatch.tinygpu "$JOB_SCRIPT"; then
+            log_success "Job submitted successfully"
+        else
+            die "Failed to submit job" "Check that you're on the login node and sbatch.tinygpu is available"
+        fi
     fi
 
     echo
     echo "Monitor with: squeue -u \$USER"
+    echo "View output:  tail -f logs/slurm_<jobid>.out"
     echo "Cancel with:  scancel <jobid>"
 
     rm "$JOB_SCRIPT"
