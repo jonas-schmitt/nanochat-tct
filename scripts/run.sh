@@ -3,11 +3,13 @@
 # Works with all schemas: kubernetes, tsconfig, eslintrc
 #
 # Usage:
-#   bash scripts/run.sh kubernetes              # Run all kubernetes experiments
+#   bash scripts/run.sh kubernetes              # Run all kubernetes experiments (small, medium, large)
+#   bash scripts/run.sh kubernetes tsconfig     # Run both schemas
 #   bash scripts/run.sh kubernetes small        # Run only small models
+#   bash scripts/run.sh kubernetes small-deep   # Run small-deep (must be explicit)
 #   bash scripts/run.sh kubernetes tct          # Run only TCT tokenizer
 #   bash scripts/run.sh kubernetes resume       # Resume from latest checkpoint
-#   bash scripts/run.sh kubernetes resume small tct  # Combine filters
+#   bash scripts/run.sh kubernetes tsconfig small medium resume  # Combine options
 
 set -e
 
@@ -15,31 +17,37 @@ set -e
 # Parse arguments
 # =============================================================================
 
-SCHEMA=""
+SCHEMAS=""
 FILTER_TOKENIZER=""
-FILTER_SIZE=""
+FILTER_SIZES=""
 RESUME_MODE=""
 
 for arg in "$@"; do
     case $arg in
-        kubernetes|tsconfig|eslintrc) SCHEMA="$arg" ;;
+        kubernetes|tsconfig|eslintrc) SCHEMAS="$SCHEMAS $arg" ;;
         tct|utf8) FILTER_TOKENIZER="$arg" ;;
-        small|small-deep|medium|large) FILTER_SIZE="$arg" ;;
+        small|small-deep|medium|large) FILTER_SIZES="$FILTER_SIZES $arg" ;;
         resume) RESUME_MODE="1" ;;
     esac
 done
 
-if [ -z "$SCHEMA" ]; then
-    echo "Usage: bash scripts/run.sh <schema> [size] [tokenizer] [resume]"
+# Trim leading spaces
+SCHEMAS="${SCHEMAS# }"
+FILTER_SIZES="${FILTER_SIZES# }"
+
+if [ -z "$SCHEMAS" ]; then
+    echo "Usage: bash scripts/run.sh <schema>... [size]... [tokenizer] [resume]"
     echo ""
     echo "Schemas: kubernetes, tsconfig, eslintrc"
-    echo "Sizes: small, small-deep, medium, large"
+    echo "Sizes: small, medium, large (default), small-deep (kubernetes only, must be explicit)"
     echo "Tokenizers: tct, utf8"
     echo ""
     echo "Examples:"
     echo "  bash scripts/run.sh kubernetes"
+    echo "  bash scripts/run.sh kubernetes tsconfig eslintrc    # Run all schemas"
     echo "  bash scripts/run.sh kubernetes small tct"
-    echo "  bash scripts/run.sh kubernetes resume small"
+    echo "  bash scripts/run.sh kubernetes small small-deep     # Include small-deep"
+    echo "  bash scripts/run.sh kubernetes tsconfig resume"
     exit 1
 fi
 
@@ -90,23 +98,17 @@ fi
 # Schema-specific settings
 # =============================================================================
 
-case $SCHEMA in
-    kubernetes)
-        TOKENIZERS="${TOKENIZERS:-tct utf8}"
-        SIZES="${SIZES:-small small-deep medium large}"
-        EPOCHS=150
-        ;;
-    tsconfig)
-        TOKENIZERS="${TOKENIZERS:-tct utf8}"
-        SIZES="${SIZES:-small medium large}"
-        EPOCHS=50
-        ;;
-    eslintrc)
-        TOKENIZERS="${TOKENIZERS:-tct utf8}"
-        SIZES="${SIZES:-small medium large}"
-        EPOCHS=100
-        ;;
-esac
+get_epochs() {
+    case $1 in
+        kubernetes) echo 150 ;;
+        tsconfig) echo 50 ;;
+        eslintrc) echo 100 ;;
+    esac
+}
+
+# Default sizes exclude small-deep (must be explicit)
+DEFAULT_SIZES="small medium large"
+TOKENIZERS="${TOKENIZERS:-tct utf8}"
 
 # =============================================================================
 # Helper functions
@@ -127,63 +129,73 @@ find_latest_epoch() {
 mkdir -p "$LOG_DIR"
 cd "$CODE_DIR"
 
+# Use filter sizes if provided, otherwise defaults
+SIZES="${FILTER_SIZES:-$DEFAULT_SIZES}"
+
 echo "============================================================"
-echo "$SCHEMA Experiments ($EPOCHS epochs, context=2048)"
+echo "TCT Experiments"
 echo "============================================================"
 echo "Date: $(date)"
 echo "GPU: $(nvidia-smi --query-gpu=name --format=csv,noheader 2>/dev/null || echo 'No GPU')"
 echo "Data: $DATA_DIR"
+echo "Schemas: $SCHEMAS"
 echo "Sizes: $SIZES"
 echo "Tokenizers: $TOKENIZERS"
 [ -n "$RESUME_MODE" ] && echo "Mode: RESUME"
 echo "============================================================"
 echo
 
-for tokenizer in $TOKENIZERS; do
-    [ -n "$FILTER_TOKENIZER" ] && [ "$tokenizer" != "$FILTER_TOKENIZER" ] && continue
+for SCHEMA in $SCHEMAS; do
+    EPOCHS=$(get_epochs "$SCHEMA")
 
-    for size in $SIZES; do
-        [ -n "$FILTER_SIZE" ] && [ "$size" != "$FILTER_SIZE" ] && continue
+    echo "============================================================"
+    echo "$SCHEMA ($EPOCHS epochs)"
+    echo "============================================================"
 
-        exp_name="${SCHEMA}_${tokenizer}_${size}"
-        log_file="$LOG_DIR/${exp_name}.log"
+    for tokenizer in $TOKENIZERS; do
+        [ -n "$FILTER_TOKENIZER" ] && [ "$tokenizer" != "$FILTER_TOKENIZER" ] && continue
 
-        # Skip if already completed
-        if [ -f "checkpoints/${exp_name}/best.pt" ]; then
-            echo "[SKIP] $exp_name (already completed)"
-            continue
-        fi
+        for size in $SIZES; do
+            exp_name="${SCHEMA}_${tokenizer}_${size}"
+            log_file="$LOG_DIR/${exp_name}.log"
 
-        # Check for resume
-        RESUME_ARG=""
-        if [ -n "$RESUME_MODE" ]; then
-            latest_epoch=$(find_latest_epoch "$exp_name")
-            if [ -n "$latest_epoch" ]; then
-                echo "[RESUME] $exp_name from epoch $latest_epoch"
-                RESUME_ARG="--resume_from_epoch=$latest_epoch"
-                # Add separator to log file
-                echo "" >> "$log_file"
-                echo "============================================================" >> "$log_file"
-                echo "RESUMING from epoch $latest_epoch at $(date)" >> "$log_file"
-                echo "============================================================" >> "$log_file"
+            # Skip if already completed
+            if [ -f "checkpoints/${exp_name}/best.pt" ]; then
+                echo "[SKIP] $exp_name (already completed)"
+                continue
             fi
-        fi
 
-        echo "[START] $exp_name at $(date)"
+            # Check for resume
+            RESUME_ARG=""
+            if [ -n "$RESUME_MODE" ]; then
+                latest_epoch=$(find_latest_epoch "$exp_name")
+                if [ -n "$latest_epoch" ]; then
+                    echo "[RESUME] $exp_name from epoch $latest_epoch"
+                    RESUME_ARG="--resume_from_epoch=$latest_epoch"
+                    # Add separator to log file
+                    echo "" >> "$log_file"
+                    echo "============================================================" >> "$log_file"
+                    echo "RESUMING from epoch $latest_epoch at $(date)" >> "$log_file"
+                    echo "============================================================" >> "$log_file"
+                fi
+            fi
 
-        python -m scripts.train_unified \
-            --schema="$SCHEMA" \
-            --tokenizer="$tokenizer" \
-            --model_size="$size" \
-            --data_root="$DATA_DIR" \
-            $RESUME_ARG \
-            2>&1 | tee -a "$log_file"
+            echo "[START] $exp_name at $(date)"
 
-        echo "[DONE] $exp_name at $(date)"
-        echo
+            python -m scripts.train_unified \
+                --schema="$SCHEMA" \
+                --tokenizer="$tokenizer" \
+                --model_size="$size" \
+                --data_root="$DATA_DIR" \
+                $RESUME_ARG \
+                2>&1 | tee -a "$log_file"
+
+            echo "[DONE] $exp_name at $(date)"
+            echo
+        done
     done
 done
 
 echo "============================================================"
-echo "$SCHEMA experiments completed at $(date)"
+echo "All experiments completed at $(date)"
 echo "============================================================"
