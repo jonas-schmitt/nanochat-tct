@@ -50,7 +50,7 @@ fi
 
 SCHEMA="kubernetes"
 TOKENIZERS="${TOKENIZERS:-tct utf8}"
-SIZES="${SIZES:-small medium large}"
+SIZES="${SIZES:-small small-deep medium large}"
 
 # Parse filter arguments
 FILTER_TOKENIZER=""
@@ -60,7 +60,7 @@ RESUME_MODE=""
 for arg in "$@"; do
     case $arg in
         tct|utf8) FILTER_TOKENIZER="$arg" ;;
-        small|medium|large) FILTER_SIZE="$arg" ;;
+        small|small-deep|medium|large) FILTER_SIZE="$arg" ;;
         resume) RESUME_MODE="1" ;;
     esac
 done

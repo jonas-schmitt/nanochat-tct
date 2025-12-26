@@ -32,6 +32,15 @@ SMALL_ARCH = {
     "transformer_params": "~31M",
 }
 
+# Small-deep: Same ~50M params but narrower & deeper (better for complex patterns)
+SMALL_DEEP_ARCH = {
+    "d_model": 384,
+    "n_layers": 20,
+    "n_heads": 6,
+    "dropout": 0.1,
+    "transformer_params": "~35M",
+}
+
 MEDIUM_ARCH = {
     "d_model": 768,
     "n_layers": 13,
@@ -50,6 +59,7 @@ LARGE_ARCH = {
 
 ARCHITECTURES = {
     "small": SMALL_ARCH,
+    "small-deep": SMALL_DEEP_ARCH,
     "medium": MEDIUM_ARCH,
     "large": LARGE_ARCH,
 }
@@ -66,21 +76,24 @@ ARCHITECTURES = {
 TRAINING_PARAMS = {
     # Context 256 (tsconfig): fits easily, large batch
     256: {
-        "small": {"batch_size": 64, "gradient_accumulation": 2},   # ~50M model
-        "medium": {"batch_size": 32, "gradient_accumulation": 4},  # ~100M model
-        "large": {"batch_size": 16, "gradient_accumulation": 8},   # ~323M model
+        "small": {"batch_size": 64, "gradient_accumulation": 2},        # ~50M model
+        "small-deep": {"batch_size": 64, "gradient_accumulation": 2},   # ~50M model (deeper)
+        "medium": {"batch_size": 32, "gradient_accumulation": 4},       # ~100M model
+        "large": {"batch_size": 16, "gradient_accumulation": 8},        # ~323M model
     },
     # Context 512 (eslintrc): moderate batch
     512: {
-        "small": {"batch_size": 32, "gradient_accumulation": 4},   # ~50M model
-        "medium": {"batch_size": 16, "gradient_accumulation": 8},  # ~100M model
-        "large": {"batch_size": 8, "gradient_accumulation": 16},   # ~323M model
+        "small": {"batch_size": 32, "gradient_accumulation": 4},        # ~50M model
+        "small-deep": {"batch_size": 32, "gradient_accumulation": 4},   # ~50M model (deeper)
+        "medium": {"batch_size": 16, "gradient_accumulation": 8},       # ~100M model
+        "large": {"batch_size": 8, "gradient_accumulation": 16},        # ~323M model
     },
     # Context 2048 (kubernetes): smaller batch for memory
     2048: {
-        "small": {"batch_size": 16, "gradient_accumulation": 8},   # ~47M model
-        "medium": {"batch_size": 4, "gradient_accumulation": 32},  # ~117M model
-        "large": {"batch_size": 2, "gradient_accumulation": 64},   # ~345M model
+        "small": {"batch_size": 16, "gradient_accumulation": 8},        # ~47M model
+        "small-deep": {"batch_size": 16, "gradient_accumulation": 8},   # ~50M model (deeper)
+        "medium": {"batch_size": 4, "gradient_accumulation": 32},       # ~117M model
+        "large": {"batch_size": 2, "gradient_accumulation": 64},        # ~345M model
     },
 }
 
@@ -98,9 +111,10 @@ COMMON_TRAINING = {
 
 # Learning rate adjustments by model size (smaller for larger models)
 LR_ADJUSTMENTS = {
-    "small": 3e-4,   # ~50M params
-    "medium": 2e-4,  # ~125M params
-    "large": 1.5e-4, # ~350M params
+    "small": 3e-4,       # ~50M params
+    "small-deep": 3e-4,  # ~50M params (deeper, same LR)
+    "medium": 2e-4,      # ~125M params
+    "large": 1.5e-4,     # ~350M params
 }
 
 # =============================================================================
@@ -112,7 +126,13 @@ MODEL_CONFIGS = {
         **SMALL_ARCH,
         **COMMON_TRAINING,
         "learning_rate": LR_ADJUSTMENTS["small"],
-        "description": "Small model (~33M with 20k vocab), fastest training",
+        "description": "Small model (~50M with 20k vocab), fastest training",
+    },
+    "small-deep": {
+        **SMALL_DEEP_ARCH,
+        **COMMON_TRAINING,
+        "learning_rate": LR_ADJUSTMENTS["small-deep"],
+        "description": "Small-deep model (~50M with 20k vocab), narrower but deeper",
     },
     "medium": {
         **MEDIUM_ARCH,
