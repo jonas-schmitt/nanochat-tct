@@ -6,6 +6,7 @@
 #   bash scripts/run_eslintrc.sh           # Run all
 #   bash scripts/run_eslintrc.sh small     # Run only small models
 #   bash scripts/run_eslintrc.sh tct       # Run only TCT models
+#   bash scripts/run_eslintrc.sh resume    # Resume from latest checkpoint
 
 set -e
 
@@ -32,13 +33,24 @@ SIZES="${SIZES:-small medium large}"
 # Parse filter arguments
 FILTER_TOKENIZER=""
 FILTER_SIZE=""
+RESUME_MODE=""
 
 for arg in "$@"; do
     case $arg in
         tct|utf8) FILTER_TOKENIZER="$arg" ;;
         small|medium|large) FILTER_SIZE="$arg" ;;
+        resume) RESUME_MODE="1" ;;
     esac
 done
+
+# Function to find latest checkpoint epoch
+find_latest_epoch() {
+    local exp_name=$1
+    local checkpoint_dir="checkpoints/${exp_name}"
+    if [ -d "$checkpoint_dir" ]; then
+        ls "$checkpoint_dir"/epoch_*.pt 2>/dev/null | sort -V | tail -1 | grep -oP 'epoch_\K\d+' | sed 's/^0*//'
+    fi
+}
 
 mkdir -p "$LOG_DIR"
 cd "$CODE_DIR"
@@ -67,6 +79,16 @@ for tokenizer in $TOKENIZERS; do
             continue
         fi
 
+        # Check for resume
+        RESUME_ARG=""
+        if [ -n "$RESUME_MODE" ]; then
+            latest_epoch=$(find_latest_epoch "$exp_name")
+            if [ -n "$latest_epoch" ]; then
+                echo "[RESUME] $exp_name from epoch $latest_epoch"
+                RESUME_ARG="--resume_from_epoch=$latest_epoch"
+            fi
+        fi
+
         echo "[START] $exp_name at $(date)"
 
         python -m scripts.train_unified \
@@ -74,6 +96,7 @@ for tokenizer in $TOKENIZERS; do
             --tokenizer="$tokenizer" \
             --model_size="$size" \
             --data_root="$DATA_DIR" \
+            $RESUME_ARG \
             2>&1 | tee "$log_file"
 
         echo "[DONE] $exp_name at $(date)"
