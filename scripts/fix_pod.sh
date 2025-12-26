@@ -28,8 +28,8 @@ for dataset in eslintrc-tct-bpe-500 eslintrc-utf8-bpe-500 tsconfig-utf8-base-mat
     if [ -d "$dataset" ]; then
         echo "  - $dataset (already exists)"
     elif [ -d "/workspace/$dataset" ]; then
-        echo "  - $dataset (linking from /workspace)..."
-        ln -s "/workspace/$dataset" "$dataset"
+        echo "  - $dataset (copying from /workspace)..."
+        cp -r "/workspace/$dataset" "$dataset"
     elif [ -f "$dataset.tar.gz" ]; then
         echo "  - $dataset (extracting from local tarball)..."
         tar -xzf "$dataset.tar.gz" && rm "$dataset.tar.gz"
