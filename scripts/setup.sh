@@ -245,6 +245,7 @@ echo "  source $VENV_DIR/bin/activate"
 echo "  source $CODE_DIR/.env"
 echo
 echo "To run experiments:"
-echo "  bash scripts/run_all.sh       # All 18 models"
-echo "  bash scripts/run_tsconfig.sh  # Just tsconfig"
+echo "  bash scripts/run.sh kubernetes tsconfig eslintrc  # All schemas"
+echo "  bash scripts/run.sh kubernetes small medium       # Specific sizes"
+echo "  bash scripts/run.sh kubernetes resume             # Resume from checkpoint"
 echo
