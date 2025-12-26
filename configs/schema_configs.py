@@ -92,7 +92,7 @@ SCHEMA_CONFIGS = {
     "kubernetes": {
         # Context: 2048 covers ~99% of sequences (P99=2622, some truncation)
         "context_size": 2048,
-        "default_epochs": 200,
+        "default_epochs": 150,
 
         # Vocabulary sizes (BPE-20k compression)
         "tct_vocab_size": 19_999,
