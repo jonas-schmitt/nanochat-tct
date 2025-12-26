@@ -252,18 +252,16 @@ def print_model_summary():
     print()
 
     # Parameter estimates for each schema (all use context=2048)
+    from configs.schema_configs import SCHEMA_CONFIGS
+
     print("Estimated Total Parameters by Schema (context=2048):")
     print("-" * 80)
 
-    schemas = [
-        ("kubernetes", 19999, 23886),
-        ("eslintrc", 499, 726),
-        ("tsconfig", 257, 276),
-    ]
-
-    for schema, tct_vocab, utf8_vocab in schemas:
-        print(f"\n{schema} (TCT={tct_vocab}, UTF8={utf8_vocab}):")
-        print(f"  {'Size':<12} {'TCT-BPE':<15} {'UTF8-BPE':<15}")
+    for schema_name, cfg in SCHEMA_CONFIGS.items():
+        tct_vocab = cfg["tct_vocab_size"]
+        utf8_vocab = cfg["utf8_vocab_size"]
+        print(f"\n{schema_name} (TCT={tct_vocab}, UTF8={utf8_vocab}):")
+        print(f"  {'Size':<12} {'TCT':<15} {'UTF8':<15}")
         for name in ARCHITECTURES:
             p_tct = estimate_params(name, tct_vocab, 2048)
             p_utf8 = estimate_params(name, utf8_vocab, 2048)
