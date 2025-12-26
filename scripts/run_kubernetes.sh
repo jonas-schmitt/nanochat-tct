@@ -108,6 +108,11 @@ for tokenizer in $TOKENIZERS; do
             if [ -n "$latest_epoch" ]; then
                 echo "[RESUME] $exp_name from epoch $latest_epoch"
                 RESUME_ARG="--resume_from_epoch=$latest_epoch"
+                # Add separator to log file
+                echo "" >> "$log_file"
+                echo "============================================================" >> "$log_file"
+                echo "RESUMING from epoch $latest_epoch at $(date)" >> "$log_file"
+                echo "============================================================" >> "$log_file"
             fi
         fi
 
@@ -119,7 +124,7 @@ for tokenizer in $TOKENIZERS; do
             --model_size="$size" \
             --data_root="$DATA_DIR" \
             $RESUME_ARG \
-            2>&1 | tee "$log_file"
+            2>&1 | tee -a "$log_file"
 
         echo "[DONE] $exp_name at $(date)"
         echo
