@@ -88,6 +88,12 @@ case $PLATFORM in
         module load cuda 2>/dev/null || true
         echo "Loaded modules:"
         module list 2>&1 | head -10
+        # Set proxy for pip/uv (required on compute nodes)
+        export http_proxy=http://proxy.nhr.fau.de:80
+        export https_proxy=http://proxy.nhr.fau.de:80
+        export HTTP_PROXY=http://proxy.nhr.fau.de:80
+        export HTTPS_PROXY=http://proxy.nhr.fau.de:80
+        echo "Proxy configured for NHR"
         ;;
     hpc)
         # Generic HPC - try common module names
