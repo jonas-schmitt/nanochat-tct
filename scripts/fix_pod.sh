@@ -25,6 +25,9 @@ echo "Done."
 echo "[2/4] Setting up new datasets..."
 
 for dataset in eslintrc-tct-bpe-500 eslintrc-utf8-bpe-500 tsconfig-utf8-base-matched; do
+    # Remove placeholder files if they exist
+    [ -f "$dataset" ] && rm -f "$dataset"
+
     if [ -d "$dataset" ]; then
         echo "  - $dataset (already exists)"
     elif [ -d "/workspace/$dataset" ]; then
