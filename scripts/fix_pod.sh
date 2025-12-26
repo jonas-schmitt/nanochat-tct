@@ -23,20 +23,21 @@ rm -rf tsconfig-tct-bpe-10k tsconfig-utf8-bpe-10k
 rm -rf eslintrc-tct-base
 echo "Done."
 
-# Download new datasets
-echo "[2/4] Downloading new datasets..."
+# Extract datasets from tarballs if present, otherwise download
+echo "[2/4] Setting up new datasets..."
 
-echo "  - eslintrc-tct-bpe-500..."
-aws s3 cp $S3_BUCKET/eslintrc-tct-bpe-500.tar.gz . $S3_OPTS
-tar -xzf eslintrc-tct-bpe-500.tar.gz && rm eslintrc-tct-bpe-500.tar.gz
-
-echo "  - eslintrc-utf8-bpe-500..."
-aws s3 cp $S3_BUCKET/eslintrc-utf8-bpe-500.tar.gz . $S3_OPTS
-tar -xzf eslintrc-utf8-bpe-500.tar.gz && rm eslintrc-utf8-bpe-500.tar.gz
-
-echo "  - tsconfig-utf8-base-matched..."
-aws s3 cp $S3_BUCKET/tsconfig-utf8-base-matched.tar.gz . $S3_OPTS
-tar -xzf tsconfig-utf8-base-matched.tar.gz && rm tsconfig-utf8-base-matched.tar.gz
+for dataset in eslintrc-tct-bpe-500 eslintrc-utf8-bpe-500 tsconfig-utf8-base-matched; do
+    if [ -d "$dataset" ]; then
+        echo "  - $dataset (already exists)"
+    elif [ -f "$dataset.tar.gz" ]; then
+        echo "  - $dataset (extracting from tarball)..."
+        tar -xzf "$dataset.tar.gz" && rm "$dataset.tar.gz"
+    else
+        echo "  - $dataset (downloading)..."
+        aws s3 cp $S3_BUCKET/$dataset.tar.gz . $S3_OPTS
+        tar -xzf "$dataset.tar.gz" && rm "$dataset.tar.gz"
+    fi
+done
 
 echo "Done."
 
