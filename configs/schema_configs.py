@@ -24,9 +24,9 @@ SCHEMA_CONFIGS = {
         "context_size": 2048,
         "default_epochs": 50,
 
-        # Vocabulary sizes
-        "tct_vocab_size": 257,      # Base encoding, no BPE
-        "utf8_vocab_size": 276,     # Minimal BPE to match avg length
+        # Vocabulary sizes (includes pad token)
+        "tct_vocab_size": 258,      # Base encoding (257) + pad
+        "utf8_vocab_size": 277,     # Minimal BPE (276) + pad
 
         # Training data statistics
         "train_files": 320_202,
@@ -59,9 +59,9 @@ SCHEMA_CONFIGS = {
         "context_size": 2048,
         "default_epochs": 100,
 
-        # Vocabulary sizes (BPE-500 compression)
-        "tct_vocab_size": 499,
-        "utf8_vocab_size": 726,
+        # Vocabulary sizes (includes pad token)
+        "tct_vocab_size": 500,      # BPE-500 (499) + pad
+        "utf8_vocab_size": 727,     # UTF8 BPE (726) + pad
 
         # Training data statistics
         "train_files": 114_499,
@@ -94,9 +94,9 @@ SCHEMA_CONFIGS = {
         "context_size": 2048,
         "default_epochs": 150,
 
-        # Vocabulary sizes (BPE-20k compression)
-        "tct_vocab_size": 19_999,
-        "utf8_vocab_size": 23_886,
+        # Vocabulary sizes (includes pad token)
+        "tct_vocab_size": 20_000,   # BPE-20k (19999) + pad
+        "utf8_vocab_size": 23_887,  # UTF8 BPE (23886) + pad
 
         # Training data statistics
         "train_files": 221_794,
