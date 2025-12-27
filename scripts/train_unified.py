@@ -61,6 +61,7 @@ warmup_fraction = 0.05  # warmup as fraction of first epoch
 grad_clip = 1.0         # gradient clipping
 device_batch_size = None  # None => use config default
 gradient_accumulation_override = None  # None => use config default
+lr_schedule = ""        # "" => use config default, or "constant"/"cosine"
 resume_from_epoch = 0   # resume training from this epoch (0 = start fresh)
 eval_every_epoch = 1    # evaluate every N epochs
 save_every_pct = 10     # save checkpoint every N% of training
@@ -133,7 +134,8 @@ print0()
 print0(f"Batch size: {B}")
 print0(f"Gradient accumulation: {grad_accum}")
 print0(f"Effective batch size: {B * grad_accum * ddp_world_size}")
-lr_sched_desc = "constant" if model_cfg.get("lr_schedule") == "constant" else f"cosine decay to {learning_rate * 0.1:.1e}"
+lr_sched_effective = lr_schedule if lr_schedule else model_cfg.get("lr_schedule", "cosine")
+lr_sched_desc = "constant" if lr_sched_effective == "constant" else f"cosine decay to {learning_rate * 0.1:.1e}"
 print0(f"Learning rate: {learning_rate} ({lr_sched_desc})")
 print0()
 print0(f"Epochs: {num_epochs}")
@@ -227,14 +229,15 @@ print0()
 # Learning rate scheduler
 import math
 min_lr = learning_rate * 0.1  # Decay to 10% of max LR
-lr_schedule = model_cfg.get("lr_schedule", "cosine")  # "constant" or "cosine"
+# Use CLI override if provided, otherwise use config default
+lr_schedule_actual = lr_schedule if lr_schedule else model_cfg.get("lr_schedule", "cosine")
 
 def get_lr(step):
     # Warmup phase
     if step < warmup_steps:
         return learning_rate * (step + 1) / warmup_steps
     # After warmup: constant or cosine decay
-    if lr_schedule == "constant":
+    if lr_schedule_actual == "constant":
         return learning_rate
     # Cosine decay phase
     progress = (step - warmup_steps) / max(1, total_steps - warmup_steps)

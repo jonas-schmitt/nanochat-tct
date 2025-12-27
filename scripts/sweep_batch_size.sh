@@ -59,6 +59,7 @@ for eff_batch in 16 32 64; do
     echo "[START] Effective batch=$eff_batch (batch=$BATCH, grad_accum=$GRAD_ACCUM)"
     echo "Log: $log_file"
 
+    # Use constant LR to isolate batch size effect (no confounding from decay schedule)
     python -m scripts.train_unified \
         --schema="$SCHEMA" \
         --tokenizer="$TOKENIZER" \
@@ -68,6 +69,7 @@ for eff_batch in 16 32 64; do
         --gradient_accumulation_override="$GRAD_ACCUM" \
         --epochs="$EPOCHS" \
         --model_tag="$exp_name" \
+        --lr_schedule="constant" \
         2>&1 | tee "$log_file"
 
     echo "[DONE] Effective batch=$eff_batch"
