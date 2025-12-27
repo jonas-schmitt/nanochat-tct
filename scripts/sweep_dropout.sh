@@ -49,7 +49,7 @@ echo "Model: $MODEL_SIZE"
 echo "Tokenizer: $TOKENIZER"
 echo "Epochs: $EPOCHS"
 echo "Effective batch: $EFF_BATCH"
-echo "Dropout values: 0.0, 0.1, 0.2"
+echo "Dropout values: 0.1, 0.2"
 [ -n "$RESUME_MODE" ] && echo "Mode: RESUME"
 echo "GPU: $(nvidia-smi --query-gpu=name --format=csv,noheader 2>/dev/null || echo 'No GPU')"
 echo "============================================================"
@@ -63,7 +63,7 @@ find_latest_epoch() {
     fi
 }
 
-for dropout in 0.0 0.1 0.2; do
+for dropout in 0.1 0.2; do
     # Format dropout for filename (replace . with p)
     dropout_str=$(echo "$dropout" | tr '.' 'p')
     exp_name="sweep_${SCHEMA}_${TOKENIZER}_${MODEL_SIZE}_dropout${dropout_str}"
