@@ -244,10 +244,10 @@ else
     USE_CONDA="1"
 fi
 
-# Set paths (derive from script location)
-export CODE_DIR="\$(cd "\$(dirname "\$0")/.." && pwd)"
-export DATA_DIR="\$CODE_DIR/../data"
-export WORK="\${WORK:-\$(dirname "\$CODE_DIR")}"
+# Set paths (use paths from submit.sh)
+export CODE_DIR="$CODE_DIR"
+export DATA_DIR="$CODE_DIR/../data"
+export WORK="\${WORK:-$(dirname "$CODE_DIR")}"
 export VENV_DIR="\$WORK/venv-tct"
 
 # Batch size scaling for GPU
