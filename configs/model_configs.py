@@ -67,11 +67,11 @@ ARCHITECTURES = {
 # =============================================================================
 # Dynamic Batch Size Scaling
 # =============================================================================
-# Target effective batch: 32 (optimal for our data sizes: 10^7-10^8 tokens)
+# Target effective batch: 64 (empirically optimal for kubernetes ~42M tokens)
 # Research shows CBS scales with data size, not model size
 # Maximize micro batch for GPU efficiency, use grad_accum to reach target eff batch
 
-TARGET_EFFECTIVE_BATCH = 32
+TARGET_EFFECTIVE_BATCH = 64
 
 # Reference batch sizes: max micro batch that fits on 24GB VRAM (RTX 4090/3090)
 # These scale linearly with available VRAM
