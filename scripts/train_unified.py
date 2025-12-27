@@ -63,6 +63,7 @@ device_batch_size = None  # None => use config default
 gradient_accumulation_override = None  # None => use config default
 lr_schedule = ""        # "" => use config default, or "constant"/"cosine"
 dropout = None          # None => use config default, or 0.0-0.5
+learning_rate_override = None  # None => use config default, or e.g. 3e-4
 resume_from_epoch = 0   # resume training from this epoch (0 = start fresh)
 eval_every_epoch = 1    # evaluate every N epochs
 save_every_pct = 10     # save checkpoint every N% of training
@@ -110,7 +111,7 @@ get_max_memory = torch.cuda.max_memory_allocated if device_type == "cuda" else l
 B = device_batch_size if device_batch_size is not None else model_cfg["batch_size"]
 T = context_size
 grad_accum = gradient_accumulation_override if gradient_accumulation_override is not None else model_cfg["gradient_accumulation"]
-learning_rate = model_cfg["learning_rate"]
+learning_rate = learning_rate_override if learning_rate_override is not None else model_cfg["learning_rate"]
 weight_decay = model_cfg["weight_decay"]
 beta1 = model_cfg["beta1"]
 beta2 = model_cfg["beta2"]
