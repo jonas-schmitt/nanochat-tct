@@ -118,7 +118,8 @@ MODEL_CONFIGS = {
         **COMMON_TRAINING,
         "learning_rate": LR_ADJUSTMENTS["small-long"],
         "epochs_multiplier": 2,  # 2x default epochs (e.g., 300 for kubernetes)
-        "description": "Small model with smaller batch (eff=32), 8x more steps per epoch",
+        "lr_schedule": "constant",  # No decay - matches old successful config
+        "description": "Small model with smaller batch (eff=32), constant LR, 8x more steps",
     },
     "small-deep": {
         **SMALL_DEEP_ARCH,

@@ -132,7 +132,8 @@ print0()
 print0(f"Batch size: {B}")
 print0(f"Gradient accumulation: {grad_accum}")
 print0(f"Effective batch size: {B * grad_accum * ddp_world_size}")
-print0(f"Learning rate: {learning_rate} (cosine decay to {learning_rate * 0.1:.1e})")
+lr_sched_desc = "constant" if model_cfg.get("lr_schedule") == "constant" else f"cosine decay to {learning_rate * 0.1:.1e}"
+print0(f"Learning rate: {learning_rate} ({lr_sched_desc})")
 print0()
 print0(f"Epochs: {num_epochs}")
 print0(f"Steps per epoch: {steps_per_epoch}")
@@ -222,14 +223,18 @@ x, y = next(train_iter)
 print0(f"First batch shape: x={x.shape}, y={y.shape}")
 print0()
 
-# Learning rate scheduler (warmup + cosine decay)
+# Learning rate scheduler
 import math
 min_lr = learning_rate * 0.1  # Decay to 10% of max LR
+lr_schedule = model_cfg.get("lr_schedule", "cosine")  # "constant" or "cosine"
 
 def get_lr(step):
     # Warmup phase
     if step < warmup_steps:
         return learning_rate * (step + 1) / warmup_steps
+    # After warmup: constant or cosine decay
+    if lr_schedule == "constant":
+        return learning_rate
     # Cosine decay phase
     progress = (step - warmup_steps) / max(1, total_steps - warmup_steps)
     return min_lr + 0.5 * (learning_rate - min_lr) * (1 + math.cos(math.pi * progress))
