@@ -406,7 +406,7 @@ print0(f"Min val loss: {min_val_loss:.4f}")
 print0()
 
 # Cleanup
-del model, orig_model, optimizer, train_loader, val_loader
+del model, orig_model, optimizer, train_loader
 gc.collect()
 if device_type == "cuda":
     torch.cuda.empty_cache()
