@@ -1,0 +1,193 @@
+### Starting TaskPrologue of job 3254686 on a0429 at Sat Dec 27 17:39:19 CET 2025
+Running on cores 96-111 with governor ondemand
+Sat Dec 27 17:39:19 2025       
++-----------------------------------------------------------------------------------------+
+| NVIDIA-SMI 580.105.08             Driver Version: 580.105.08     CUDA Version: 13.0     |
++-----------------------------------------+------------------------+----------------------+
+| GPU  Name                 Persistence-M | Bus-Id          Disp.A | Volatile Uncorr. ECC |
+| Fan  Temp   Perf          Pwr:Usage/Cap |           Memory-Usage | GPU-Util  Compute M. |
+|                                         |                        |               MIG M. |
+|=========================================+========================+======================|
+|   0  NVIDIA A40                     On  |   00000000:E1:00.0 Off |                  Off |
+|  0%   36C    P8             30W /  300W |       0MiB /  49140MiB |      0%      Default |
+|                                         |                        |                  N/A |
++-----------------------------------------+------------------------+----------------------+
+
++-----------------------------------------------------------------------------------------+
+| Processes:                                                                              |
+|  GPU   GI   CI              PID   Type   Process name                        GPU Memory |
+|        ID   ID                                                               Usage      |
+|=========================================================================================|
+|  No running processes found                                                             |
++-----------------------------------------------------------------------------------------+
+### Finished TaskPrologue
+
+============================================================
+TCT Training Job
+============================================================
+Job ID:     3254686
+Node:       a0429
+GPU:        a40 (a40)
+Start:      Sat Dec 27 17:39:20 CET 2025
+============================================================
+
+Python 3.12 module not available, using conda
+Python:  Python 3.12.12
+PyTorch: 2.9.1+cu128
+CUDA:    12.8
+GPU:     NVIDIA A40
+
+Starting training: kubernetes small
+
+GPU: NVIDIA A40 (49GB) - batch sizes auto-scaled
+============================================================
+TCT Experiments
+============================================================
+Date: Sat Dec 27 17:39:46 CET 2025
+GPU: NVIDIA A40 (49GB)
+Data: /home/woody/iwia/iwia104h/nanochat-tct/../data
+Schemas: kubernetes
+Sizes: small
+Tokenizers: tct utf8
+============================================================
+
+============================================================
+kubernetes (150 epochs)
+============================================================
+[START] kubernetes_tct_small at Sat Dec 27 17:39:46 CET 2025
+2025-12-27 17:39:51,265 - nanochat.common - [32m[1mINFO[0m - Distributed world size: 1
+Traceback (most recent call last):
+  File "<frozen runpy>", line 198, in _run_module_as_main
+  File "<frozen runpy>", line 88, in _run_code
+  File "/home/woody/iwia/iwia104h/nanochat-tct/scripts/train_unified.py", line 202, in <module>
+    train_loader = create_dataloader(
+                   ^^^^^^^^^^^^^^^^^^
+  File "/home/woody/iwia/iwia104h/nanochat-tct/configs/jsonl_dataloader.py", line 184, in create_dataloader
+    raise FileNotFoundError(f"JSONL file not found: {jsonl_file}")
+FileNotFoundError: JSONL file not found: /home/woody/iwia/iwia104h/nanochat-tct/../data/kubernetes-tct-bpe/train.jsonl
+
+                                                       █████                █████
+                                                      ░░███                ░░███
+     ████████    ██████   ████████    ██████   ██████  ░███████    ██████  ███████
+    ░░███░░███  ░░░░░███ ░░███░░███  ███░░███ ███░░███ ░███░░███  ░░░░░███░░░███░
+     ░███ ░███   ███████  ░███ ░███ ░███ ░███░███ ░░░  ░███ ░███   ███████  ░███
+     ░███ ░███  ███░░███  ░███ ░███ ░███ ░███░███  ███ ░███ ░███  ███░░███  ░███ ███
+     ████ █████░░████████ ████ █████░░██████ ░░██████  ████ █████░░███████  ░░█████
+    ░░░░ ░░░░░  ░░░░░░░░ ░░░░ ░░░░░  ░░░░░░   ░░░░░░  ░░░░ ░░░░░  ░░░░░░░░   ░░░░░
+    
+Overriding: schema = kubernetes
+Overriding: tokenizer = tct
+Overriding: model_size = small
+Overriding: data_root = /home/woody/iwia/iwia104h/nanochat-tct/../data
+Autodetected device type: cuda
+================================================================================
+EXPERIMENT: kubernetes / tct-BPE / small
+================================================================================
+Schema: kubernetes
+Tokenizer: tct-BPE
+Data path: /home/woody/iwia/iwia104h/nanochat-tct/../data/kubernetes-tct-bpe
+Vocab size: 20,000
+Context size: 2048
+Model size: small (52,997,120 params)
+Dropout: 0.0
+
+Batch size: 16
+Gradient accumulation: 4
+Effective batch size: 64
+Learning rate: 0.0003 (cosine decay to 3.0e-05)
+
+Epochs: 200
+Steps per epoch: 320
+Total steps: 64000
+Warmup steps: 16
+Save interval: every 6400 steps (10%)
+
+Number of parameters: 51,937,280
+
+Initializing dataloaders...
+[DONE] kubernetes_tct_small at Sat Dec 27 17:39:52 CET 2025
+
+[START] kubernetes_utf8_small at Sat Dec 27 17:39:52 CET 2025
+2025-12-27 17:39:56,662 - nanochat.common - [32m[1mINFO[0m - Distributed world size: 1
+Traceback (most recent call last):
+  File "<frozen runpy>", line 198, in _run_module_as_main
+  File "<frozen runpy>", line 88, in _run_code
+  File "/home/woody/iwia/iwia104h/nanochat-tct/scripts/train_unified.py", line 202, in <module>
+    train_loader = create_dataloader(
+                   ^^^^^^^^^^^^^^^^^^
+  File "/home/woody/iwia/iwia104h/nanochat-tct/configs/jsonl_dataloader.py", line 184, in create_dataloader
+    raise FileNotFoundError(f"JSONL file not found: {jsonl_file}")
+FileNotFoundError: JSONL file not found: /home/woody/iwia/iwia104h/nanochat-tct/../data/kubernetes-utf8-bpe/train.jsonl
+
+                                                       █████                █████
+                                                      ░░███                ░░███
+     ████████    ██████   ████████    ██████   ██████  ░███████    ██████  ███████
+    ░░███░░███  ░░░░░███ ░░███░░███  ███░░███ ███░░███ ░███░░███  ░░░░░███░░░███░
+     ░███ ░███   ███████  ░███ ░███ ░███ ░███░███ ░░░  ░███ ░███   ███████  ░███
+     ░███ ░███  ███░░███  ░███ ░███ ░███ ░███░███  ███ ░███ ░███  ███░░███  ░███ ███
+     ████ █████░░████████ ████ █████░░██████ ░░██████  ████ █████░░███████  ░░█████
+    ░░░░ ░░░░░  ░░░░░░░░ ░░░░ ░░░░░  ░░░░░░   ░░░░░░  ░░░░ ░░░░░  ░░░░░░░░   ░░░░░
+    
+Overriding: schema = kubernetes
+Overriding: tokenizer = utf8
+Overriding: model_size = small
+Overriding: data_root = /home/woody/iwia/iwia104h/nanochat-tct/../data
+Autodetected device type: cuda
+================================================================================
+EXPERIMENT: kubernetes / utf8-BPE / small
+================================================================================
+Schema: kubernetes
+Tokenizer: utf8-BPE
+Data path: /home/woody/iwia/iwia104h/nanochat-tct/../data/kubernetes-utf8-bpe
+Vocab size: 23,887
+Context size: 2048
+Model size: small (56,977,408 params)
+Dropout: 0.0
+
+Batch size: 16
+Gradient accumulation: 4
+Effective batch size: 64
+Learning rate: 0.0003 (cosine decay to 3.0e-05)
+
+Epochs: 200
+Steps per epoch: 320
+Total steps: 64000
+Warmup steps: 16
+Save interval: every 6400 steps (10%)
+
+Number of parameters: 55,917,568
+
+Initializing dataloaders...
+[DONE] kubernetes_utf8_small at Sat Dec 27 17:39:57 CET 2025
+
+============================================================
+All experiments completed at Sat Dec 27 17:39:57 CET 2025
+============================================================
+
+============================================================
+Job completed at Sat Dec 27 17:39:57 CET 2025
+============================================================
+=== JOB_STATISTICS ===
+=== current date     : Sat Dec 27 17:40:00 CET 2025
+= Job-ID             : 3254686 on alex
+= Job-Name           : tct_kubernetes_small
+= Job-Command        : /tmp/tct_job_ywzzRE.sh
+= Initial workdir    : /home/hpc/iwia/iwia104h/jonas/nanochat-tct
+= Queue/Partition    : a40
+= Slurm account      : iwia with QOS=normal
+= Requested resources:  for 1-00:00:00
+= Elapsed runtime    : 00:00:45
+= Total RAM usage    : 1.2 GiB of assigned  GiB (%)
+= Node list          : a0429
+= Subm/Elig/Start/End: 2025-12-27T17:39:08 / 2025-12-27T17:39:08 / 2025-12-27T17:39:12 / 2025-12-27T17:39:57
+======================
+=== Quota infos ======
+    Path              Used     SoftQ    HardQ    Gracetime  Filec    FileQ    FiHaQ    FileGrace    
+    /home/woody          8.7G  1000.0G  1500.0G        N/A  41,680    5,000K   7,500K        N/A    
+    /home/hpc           25.0G   104.9G   209.7G        N/A  31,040      500K   1,000K        N/A    
+    /home/vault          0.0K  1048.6G  2097.2G        N/A       1      200K     400K        N/A    
+======================
+=== GPU utilization ==
+gpu_name, gpu_bus_id, pid, gpu_utilization [%], mem_utilization [%], max_memory_usage [MiB], time [ms]
+NVIDIA A40, 00000000:E1:00.0, 372744, 0 %, 0 %, 548 MiB, 2235 ms
+NVIDIA A40, 00000000:E1:00.0, 372768, 0 %, 0 %, 568 MiB, 2028 ms

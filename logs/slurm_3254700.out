@@ -1,0 +1,58 @@
+### Starting TaskPrologue of job 3254700 on a0324 at Sat Dec 27 17:59:47 CET 2025
+Running on cores 16-31 with governor ondemand
+Sat Dec 27 17:59:47 2025       
++-----------------------------------------------------------------------------------------+
+| NVIDIA-SMI 580.105.08             Driver Version: 580.105.08     CUDA Version: 13.0     |
++-----------------------------------------+------------------------+----------------------+
+| GPU  Name                 Persistence-M | Bus-Id          Disp.A | Volatile Uncorr. ECC |
+| Fan  Temp   Perf          Pwr:Usage/Cap |           Memory-Usage | GPU-Util  Compute M. |
+|                                         |                        |               MIG M. |
+|=========================================+========================+======================|
+|   0  NVIDIA A40                     On  |   00000000:25:00.0 Off |                  Off |
+|  0%   33C    P8             22W /  300W |       0MiB /  49140MiB |      0%      Default |
+|                                         |                        |                  N/A |
++-----------------------------------------+------------------------+----------------------+
+
++-----------------------------------------------------------------------------------------+
+| Processes:                                                                              |
+|  GPU   GI   CI              PID   Type   Process name                        GPU Memory |
+|        ID   ID                                                               Usage      |
+|=========================================================================================|
+|  No running processes found                                                             |
++-----------------------------------------------------------------------------------------+
+### Finished TaskPrologue
+
+============================================================
+TCT Training Job
+============================================================
+Job ID:     3254700
+Node:       a0324
+GPU:        a40 (a40)
+Start:      Sat Dec 27 17:59:48 CET 2025
+============================================================
+
+Python 3.12 module not available, using conda
+Python:  Python 3.12.12
+PyTorch: 2.9.1+cu128
+CUDA:    12.8
+GPU:     NVIDIA A40
+
+Starting training: kubernetes large
+
+GPU: NVIDIA A40 (49GB) - batch sizes auto-scaled
+============================================================
+TCT Experiments
+============================================================
+Date: Sat Dec 27 17:59:54 CET 2025
+GPU: NVIDIA A40 (49GB)
+Data: /home/hpc/iwia/iwia104h/jonas/nanochat-tct/../data
+Schemas: kubernetes
+Sizes: large
+Tokenizers: tct utf8
+============================================================
+
+============================================================
+kubernetes (150 epochs)
+============================================================
+[START] kubernetes_tct_large at Sat Dec 27 17:59:54 CET 2025
+2025-12-27 17:59:58,831 - nanochat.common - [32m[1mINFO[0m - Distributed world size: 1
