@@ -88,6 +88,7 @@ for dropout in 0.0 0.1 0.2; do
     echo "[START] Dropout=$dropout"
     echo "Log: $log_file"
 
+    # Use constant LR to isolate dropout effect
     python -m scripts.train_unified \
         --schema="$SCHEMA" \
         --tokenizer="$TOKENIZER" \
@@ -98,6 +99,7 @@ for dropout in 0.0 0.1 0.2; do
         --epochs="$EPOCHS" \
         --model_tag="$exp_name" \
         --dropout="$dropout" \
+        --lr_schedule="constant" \
         $RESUME_ARG \
         2>&1 | tee -a "$log_file"
 
