@@ -85,11 +85,15 @@ else:
     raise ValueError(f"Unknown tokenizer: '{tokenizer}'. Use 'tct' or 'utf8'")
 
 context_size = schema_cfg["context_size"]
-num_epochs = epochs if epochs is not None else schema_cfg["default_epochs"]
+base_epochs = epochs if epochs is not None else schema_cfg["default_epochs"]
 train_tokens = schema_cfg.get(f"train_tokens_{tokenizer}", schema_cfg["train_tokens_tct"])
 
-# Load model config
-model_cfg = get_model_config(model_size, vocab_size, context_size, num_epochs)
+# Load model config (pass base_epochs, will apply multiplier inside)
+model_cfg = get_model_config(model_size, vocab_size, context_size, base_epochs)
+
+# Apply epochs multiplier if present (e.g., small-long uses 2x epochs)
+epochs_multiplier = model_cfg.get("epochs_multiplier", 1)
+num_epochs = base_epochs * epochs_multiplier
 
 # Compute init
 device_type = autodetect_device_type() if device_type == "" else device_type
