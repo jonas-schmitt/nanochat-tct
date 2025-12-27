@@ -1,16 +1,24 @@
 #!/bin/bash
 # Batch Size Sweep for Hyperparameter Tuning
 #
-# Tests effective batch sizes: 16, 32, 64
+# Tests effective batch sizes: 32, 64, 128
 # Uses kubernetes schema with small model and tct tokenizer
 #
 # Usage:
-#   bash scripts/sweep_batch_size.sh
-#   bash scripts/sweep_batch_size.sh 30   # Run for 30 epochs instead of default
+#   bash scripts/sweep_batch_size.sh          # Fresh run
+#   bash scripts/sweep_batch_size.sh resume   # Resume from checkpoints
 
 set -e
 
-EPOCHS=${1:-30}  # Default 30 epochs
+RESUME_MODE=""
+EPOCHS=30
+
+for arg in "$@"; do
+    case $arg in
+        resume) RESUME_MODE="1" ;;
+        [0-9]*) EPOCHS="$arg" ;;
+    esac
+done
 SCHEMA="kubernetes"
 TOKENIZER="tct"
 MODEL_SIZE="small"
@@ -36,6 +44,8 @@ echo "Schema: $SCHEMA"
 echo "Model: $MODEL_SIZE"
 echo "Tokenizer: $TOKENIZER"
 echo "Epochs: $EPOCHS"
+echo "Batch sizes: 32, 64, 128"
+[ -n "$RESUME_MODE" ] && echo "Mode: RESUME"
 echo "GPU: $(nvidia-smi --query-gpu=name --format=csv,noheader 2>/dev/null || echo 'No GPU')"
 echo "============================================================"
 echo
@@ -46,6 +56,14 @@ echo
 # - eff=64: batch=16, grad_accum=4
 # - eff=128: batch=16, grad_accum=8
 
+find_latest_epoch() {
+    local exp_name=$1
+    local checkpoint_dir="checkpoints/${exp_name}"
+    if [ -d "$checkpoint_dir" ]; then
+        ls "$checkpoint_dir"/epoch_*.pt 2>/dev/null | sort -V | tail -n 1 | grep -oP 'epoch_\K\d+' | sed 's/^0*//'
+    fi
+}
+
 for eff_batch in 32 64 128; do
     case $eff_batch in
         32) BATCH=16; GRAD_ACCUM=2 ;;
@@ -55,6 +73,22 @@ for eff_batch in 32 64 128; do
 
     exp_name="sweep_${SCHEMA}_${TOKENIZER}_${MODEL_SIZE}_eff${eff_batch}"
     log_file="$LOG_DIR/${exp_name}.log"
+
+    # Skip if already completed
+    if [ -f "checkpoints/${exp_name}/best.pt" ]; then
+        echo "[SKIP] $exp_name (already completed)"
+        continue
+    fi
+
+    # Check for resume
+    RESUME_ARG=""
+    if [ -n "$RESUME_MODE" ]; then
+        latest_epoch=$(find_latest_epoch "$exp_name")
+        if [ -n "$latest_epoch" ]; then
+            echo "[RESUME] $exp_name from epoch $latest_epoch"
+            RESUME_ARG="--resume_from_epoch=$latest_epoch"
+        fi
+    fi
 
     echo "[START] Effective batch=$eff_batch (batch=$BATCH, grad_accum=$GRAD_ACCUM)"
     echo "Log: $log_file"
@@ -70,7 +104,8 @@ for eff_batch in 32 64 128; do
         --epochs="$EPOCHS" \
         --model_tag="$exp_name" \
         --lr_schedule="constant" \
-        2>&1 | tee "$log_file"
+        $RESUME_ARG \
+        2>&1 | tee -a "$log_file"
 
     echo "[DONE] Effective batch=$eff_batch"
     echo
