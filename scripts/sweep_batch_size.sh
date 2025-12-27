@@ -41,15 +41,16 @@ echo "============================================================"
 echo
 
 # Sweep configurations:
-# - eff=16: batch=2, grad_accum=8
-# - eff=32: batch=4, grad_accum=8 (current default)
-# - eff=64: batch=8, grad_accum=8
+# Maximize micro batch size for GPU efficiency (batch=16 fits on RTX 4090 for small model)
+# - eff=16: batch=16, grad_accum=1
+# - eff=32: batch=16, grad_accum=2
+# - eff=64: batch=16, grad_accum=4
 
 for eff_batch in 16 32 64; do
     case $eff_batch in
-        16) BATCH=2; GRAD_ACCUM=8 ;;
-        32) BATCH=4; GRAD_ACCUM=8 ;;
-        64) BATCH=8; GRAD_ACCUM=8 ;;
+        16) BATCH=16; GRAD_ACCUM=1 ;;
+        32) BATCH=16; GRAD_ACCUM=2 ;;
+        64) BATCH=16; GRAD_ACCUM=4 ;;
     esac
 
     exp_name="sweep_${SCHEMA}_${TOKENIZER}_${MODEL_SIZE}_eff${eff_batch}"

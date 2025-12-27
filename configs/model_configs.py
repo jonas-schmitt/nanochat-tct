@@ -72,12 +72,13 @@ ARCHITECTURES = {
 # All schemas use context_size=2048
 # Smaller effective batch (32) works better for our data sizes (10^7-10^8 tokens)
 # Research shows CBS scales with data size, not model size
+# Maximize micro batch for GPU efficiency, use grad_accum to reach target eff batch
 TRAINING_PARAMS = {
     2048: {
-        "small": {"batch_size": 4, "gradient_accumulation": 8},         # ~50M model, eff=32
-        "small-deep": {"batch_size": 4, "gradient_accumulation": 8},    # ~50M model (deeper), eff=32
-        "medium": {"batch_size": 4, "gradient_accumulation": 8},        # ~125M model, eff=32
-        "large": {"batch_size": 2, "gradient_accumulation": 16},        # ~350M model, eff=32
+        "small": {"batch_size": 16, "gradient_accumulation": 2},        # ~50M model, eff=32
+        "small-deep": {"batch_size": 16, "gradient_accumulation": 2},   # ~50M model (deeper), eff=32
+        "medium": {"batch_size": 8, "gradient_accumulation": 4},        # ~125M model, eff=32
+        "large": {"batch_size": 4, "gradient_accumulation": 8},         # ~350M model, eff=32
     },
 }
 
