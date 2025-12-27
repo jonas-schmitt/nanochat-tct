@@ -64,23 +64,89 @@ ARCHITECTURES = {
 # Training Hyperparameters (context-dependent batch sizes)
 # =============================================================================
 
-# Batch sizes optimized for RTX 4090 (24GB VRAM)
-# Also works for RTX 3090/A5000 (same VRAM)
-# Effective batch = batch_size × gradient_accumulation × world_size
+# =============================================================================
+# Dynamic Batch Size Scaling
+# =============================================================================
 # Target effective batch: 32 (optimal for our data sizes: 10^7-10^8 tokens)
-
-# All schemas use context_size=2048
-# Smaller effective batch (32) works better for our data sizes (10^7-10^8 tokens)
 # Research shows CBS scales with data size, not model size
 # Maximize micro batch for GPU efficiency, use grad_accum to reach target eff batch
-TRAINING_PARAMS = {
+
+TARGET_EFFECTIVE_BATCH = 32
+
+# Reference batch sizes: max micro batch that fits on 24GB VRAM (RTX 4090/3090)
+# These scale linearly with available VRAM
+REFERENCE_VRAM_GB = 24
+REFERENCE_BATCH_SIZES = {
     2048: {
-        "small": {"batch_size": 16, "gradient_accumulation": 2},        # ~50M model, eff=32
-        "small-deep": {"batch_size": 16, "gradient_accumulation": 2},   # ~50M model (deeper), eff=32
-        "medium": {"batch_size": 8, "gradient_accumulation": 4},        # ~125M model, eff=32
-        "large": {"batch_size": 4, "gradient_accumulation": 8},         # ~350M model, eff=32
+        "small": 16,       # ~50M model
+        "small-deep": 16,  # ~50M model (deeper)
+        "medium": 8,       # ~125M model
+        "large": 4,        # ~350M model
     },
 }
+
+
+def get_gpu_memory_gb() -> float:
+    """Detect GPU VRAM in GB. Returns 24 as default if detection fails."""
+    try:
+        import torch
+        if torch.cuda.is_available():
+            # Get memory of first GPU in bytes, convert to GB
+            mem_bytes = torch.cuda.get_device_properties(0).total_memory
+            return mem_bytes / (1024 ** 3)
+    except Exception:
+        pass
+    return REFERENCE_VRAM_GB  # Default to reference
+
+
+def compute_batch_config(model_size: str, context_size: int, gpu_memory_gb: float = None) -> dict:
+    """
+    Compute optimal batch size and gradient accumulation based on GPU memory.
+
+    Uses power-of-2 batch sizes for clean division with target effective batch.
+
+    Args:
+        model_size: Model size name
+        context_size: Context/sequence length
+        gpu_memory_gb: GPU memory in GB (auto-detected if None)
+
+    Returns:
+        Dict with 'batch_size' and 'gradient_accumulation'
+    """
+    if gpu_memory_gb is None:
+        gpu_memory_gb = get_gpu_memory_gb()
+
+    # Get reference batch size for this model/context
+    if context_size not in REFERENCE_BATCH_SIZES:
+        closest = min(REFERENCE_BATCH_SIZES.keys(), key=lambda x: abs(x - context_size))
+        ref_batch = REFERENCE_BATCH_SIZES[closest].get(model_size, 4)
+    else:
+        ref_batch = REFERENCE_BATCH_SIZES[context_size].get(model_size, 4)
+
+    # Scale batch size proportionally to GPU memory
+    scale_factor = gpu_memory_gb / REFERENCE_VRAM_GB
+    max_batch = max(1, int(ref_batch * scale_factor))
+
+    # Find largest power-of-2 batch size that:
+    # 1. Fits in GPU memory (≤ max_batch)
+    # 2. Divides target evenly OR equals target
+    # Valid batch sizes: 1, 2, 4, 8, 16, 32
+    valid_batches = [b for b in [32, 16, 8, 4, 2, 1] if b <= max_batch]
+
+    if not valid_batches:
+        batch_size = 1
+    else:
+        batch_size = valid_batches[0]  # Largest that fits
+
+    # Compute gradient accumulation to reach target
+    grad_accum = max(1, TARGET_EFFECTIVE_BATCH // batch_size)
+
+    return {
+        "batch_size": batch_size,
+        "gradient_accumulation": grad_accum,
+        "effective_batch": batch_size * grad_accum,
+        "gpu_memory_gb": gpu_memory_gb,
+    }
 
 # Common training hyperparameters (all configs)
 COMMON_TRAINING = {
@@ -210,21 +276,11 @@ def get_model_config(
     config["vocab_size"] = vocab_size
     config["context_size"] = context_size
 
-    # Get context-specific batch sizes
-    if context_size not in TRAINING_PARAMS:
-        # Interpolate for unsupported context sizes
-        closest = min(TRAINING_PARAMS.keys(), key=lambda x: abs(x - context_size))
-        batch_config = TRAINING_PARAMS[closest][model_size]
-    else:
-        batch_config = TRAINING_PARAMS[context_size][model_size]
-
-    # Apply batch multiplier for larger GPUs (set by run scripts based on VRAM)
-    import os
-    batch_multiplier = int(os.environ.get("TCT_BATCH_MULTIPLIER", "1"))
-    batch_boost = int(os.environ.get("TCT_BATCH_SIZE_BOOST", "0"))  # For 32GB GPUs
-
-    config["batch_size"] = batch_config["batch_size"] * batch_multiplier + batch_boost
-    config["gradient_accumulation"] = max(1, batch_config["gradient_accumulation"] // batch_multiplier)
+    # Compute batch sizes dynamically based on GPU memory
+    batch_config = compute_batch_config(model_size, context_size)
+    config["batch_size"] = batch_config["batch_size"]
+    config["gradient_accumulation"] = batch_config["gradient_accumulation"]
+    config["gpu_memory_gb"] = batch_config["gpu_memory_gb"]
 
     # Add training duration
     config["epochs"] = epochs
@@ -272,15 +328,33 @@ def print_model_summary():
 
     print()
 
-    # Training params (context=2048 for all)
-    print("Batch Sizes (context=2048, single RTX 4090):")
-    print("-" * 70)
-    print(f"{'Size':<12} {'Batch':<10} {'Grad Accum':<12} {'Effective Batch':<15}")
-    params = TRAINING_PARAMS[2048]
+    # Training params for different GPUs (context=2048 for all)
+    # Target GPUs: RTX 4090 (24GB), A40 (40GB), A100 40GB, A100 80GB
+    target_gpus = [
+        ("RTX 4090", 24),
+        ("A40/A100-40", 40),
+        ("A100-80", 80),
+    ]
+
+    print("Batch Sizes by GPU (context=2048, target eff_batch=32):")
+    print("-" * 85)
+    print(f"{'Model':<12}", end="")
+    for gpu_name, _ in target_gpus:
+        print(f" {gpu_name:>22}", end="")
+    print()
+    print(f"{'':12}", end="")
+    for gpu_name, vram in target_gpus:
+        print(f" {'(batch×accum=eff)':>22}", end="")
+    print()
+    print("-" * 85)
+
     for size in ["small", "small-deep", "medium", "large"]:
-        p = params[size]
-        effective = p["batch_size"] * p["gradient_accumulation"]
-        print(f"{size:<12} {p['batch_size']:<10} {p['gradient_accumulation']:<12} {effective:<15}")
+        print(f"{size:<12}", end="")
+        for gpu_name, vram in target_gpus:
+            cfg = compute_batch_config(size, 2048, gpu_memory_gb=vram)
+            b, a, e = cfg["batch_size"], cfg["gradient_accumulation"], cfg["effective_batch"]
+            print(f" {b:>6}×{a:<2}={e:<10}", end="")
+        print()
 
     print()
 

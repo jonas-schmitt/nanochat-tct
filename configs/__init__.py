@@ -18,6 +18,9 @@ from .model_configs import (
     ARCHITECTURES,
     get_model_config,
     estimate_params,
+    compute_batch_config,
+    get_gpu_memory_gb,
+    TARGET_EFFECTIVE_BATCH,
 )
 
 # Dataloader requires torch, import lazily
@@ -54,6 +57,9 @@ __all__ = [
     "ARCHITECTURES",
     "get_model_config",
     "estimate_params",
+    "compute_batch_config",
+    "get_gpu_memory_gb",
+    "TARGET_EFFECTIVE_BATCH",
     # Dataloader (requires torch)
     "create_dataloader",
     "get_epoch_steps",
