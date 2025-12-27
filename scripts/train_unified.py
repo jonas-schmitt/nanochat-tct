@@ -60,6 +60,7 @@ model_tag = ""          # optional tag for checkpoint directory
 warmup_fraction = 0.05  # warmup as fraction of first epoch
 grad_clip = 1.0         # gradient clipping
 device_batch_size = None  # None => use config default
+gradient_accumulation_override = None  # None => use config default
 resume_from_epoch = 0   # resume training from this epoch (0 = start fresh)
 eval_every_epoch = 1    # evaluate every N epochs
 save_every_pct = 10     # save checkpoint every N% of training
@@ -106,7 +107,7 @@ get_max_memory = torch.cuda.max_memory_allocated if device_type == "cuda" else l
 # Training parameters
 B = device_batch_size if device_batch_size is not None else model_cfg["batch_size"]
 T = context_size
-grad_accum = model_cfg["gradient_accumulation"]
+grad_accum = gradient_accumulation_override if gradient_accumulation_override is not None else model_cfg["gradient_accumulation"]
 learning_rate = model_cfg["learning_rate"]
 weight_decay = model_cfg["weight_decay"]
 beta1 = model_cfg["beta1"]
