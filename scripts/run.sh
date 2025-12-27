@@ -152,10 +152,10 @@ for SCHEMA in $SCHEMAS; do
     echo "$SCHEMA ($EPOCHS epochs)"
     echo "============================================================"
 
-    for tokenizer in $TOKENIZERS; do
-        [ -n "$FILTER_TOKENIZER" ] && [ "$tokenizer" != "$FILTER_TOKENIZER" ] && continue
+    for size in $SIZES; do
+        for tokenizer in $TOKENIZERS; do
+            [ -n "$FILTER_TOKENIZER" ] && [ "$tokenizer" != "$FILTER_TOKENIZER" ] && continue
 
-        for size in $SIZES; do
             exp_name="${SCHEMA}_${tokenizer}_${size}"
             log_file="$LOG_DIR/${exp_name}.log"
 
