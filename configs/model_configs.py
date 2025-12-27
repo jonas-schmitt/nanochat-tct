@@ -55,7 +55,6 @@ LARGE_ARCH = {
 
 ARCHITECTURES = {
     "small": SMALL_ARCH,
-    "small-long": SMALL_ARCH,  # Same arch, different training (smaller batch, more steps)
     "small-deep": SMALL_DEEP_ARCH,
     "medium": MEDIUM_ARCH,
     "large": LARGE_ARCH,
@@ -68,16 +67,17 @@ ARCHITECTURES = {
 # Batch sizes optimized for RTX 4090 (24GB VRAM)
 # Also works for RTX 3090/A5000 (same VRAM)
 # Effective batch = batch_size × gradient_accumulation × world_size
-# Target effective batch: ~128 for stability
+# Target effective batch: 32 (optimal for our data sizes: 10^7-10^8 tokens)
 
 # All schemas use context_size=2048
+# Smaller effective batch (32) works better for our data sizes (10^7-10^8 tokens)
+# Research shows CBS scales with data size, not model size
 TRAINING_PARAMS = {
     2048: {
-        "small": {"batch_size": 16, "gradient_accumulation": 8},        # ~50M model, eff=128
-        "small-long": {"batch_size": 4, "gradient_accumulation": 8},    # ~50M model, eff=32, 8x more steps
-        "small-deep": {"batch_size": 16, "gradient_accumulation": 8},   # ~50M model (deeper)
-        "medium": {"batch_size": 4, "gradient_accumulation": 32},       # ~125M model
-        "large": {"batch_size": 2, "gradient_accumulation": 64},        # ~350M model
+        "small": {"batch_size": 4, "gradient_accumulation": 8},         # ~50M model, eff=32
+        "small-deep": {"batch_size": 4, "gradient_accumulation": 8},    # ~50M model (deeper), eff=32
+        "medium": {"batch_size": 4, "gradient_accumulation": 8},        # ~125M model, eff=32
+        "large": {"batch_size": 2, "gradient_accumulation": 16},        # ~350M model, eff=32
     },
 }
 
@@ -96,7 +96,6 @@ COMMON_TRAINING = {
 # Learning rate adjustments by model size (smaller for larger models)
 LR_ADJUSTMENTS = {
     "small": 3e-4,       # ~50M params
-    "small-long": 3e-4,  # ~50M params (same as small, longer training)
     "small-deep": 3e-4,  # ~50M params (deeper, same LR)
     "medium": 2e-4,      # ~125M params
     "large": 1.5e-4,     # ~350M params
@@ -112,15 +111,6 @@ MODEL_CONFIGS = {
         **COMMON_TRAINING,
         "learning_rate": LR_ADJUSTMENTS["small"],
         "description": "Small model (~50M with 20k vocab), fastest training",
-    },
-    "small-long": {
-        **SMALL_ARCH,
-        **COMMON_TRAINING,
-        "learning_rate": LR_ADJUSTMENTS["small-long"],
-        "epochs_multiplier": 2,  # 2x default epochs (e.g., 300 for kubernetes)
-        # Uses standard cosine decay and dropout=0.1 (from SMALL_ARCH)
-        # Key difference: smaller batch (eff=32) -> 8x more optimizer steps
-        "description": "Small model with smaller batch (eff=32), 8x more optimizer steps",
     },
     "small-deep": {
         **SMALL_DEEP_ARCH,
@@ -286,12 +276,10 @@ def print_model_summary():
     print("-" * 70)
     print(f"{'Size':<12} {'Batch':<10} {'Grad Accum':<12} {'Effective Batch':<15}")
     params = TRAINING_PARAMS[2048]
-    for size in ["small", "small-long", "small-deep", "medium", "large"]:
+    for size in ["small", "small-deep", "medium", "large"]:
         p = params[size]
         effective = p["batch_size"] * p["gradient_accumulation"]
-        multiplier = MODEL_CONFIGS[size].get("epochs_multiplier", 1)
-        suffix = f" (x{multiplier} epochs)" if multiplier > 1 else ""
-        print(f"{size:<12} {p['batch_size']:<10} {p['gradient_accumulation']:<12} {effective:<15}{suffix}")
+        print(f"{size:<12} {p['batch_size']:<10} {p['gradient_accumulation']:<12} {effective:<15}")
 
     print()
 

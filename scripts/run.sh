@@ -26,7 +26,7 @@ for arg in "$@"; do
     case $arg in
         kubernetes|tsconfig|eslintrc) SCHEMAS="$SCHEMAS $arg" ;;
         tct|utf8) FILTER_TOKENIZER="$arg" ;;
-        small|small-long|small-deep|medium|large) FILTER_SIZES="$FILTER_SIZES $arg" ;;
+        small|small-deep|medium|large) FILTER_SIZES="$FILTER_SIZES $arg" ;;
         resume) RESUME_MODE="1" ;;
     esac
 done
@@ -40,7 +40,6 @@ if [ -z "$SCHEMAS" ]; then
     echo ""
     echo "Schemas: kubernetes, tsconfig, eslintrc"
     echo "Sizes: small, medium, large (default)"
-    echo "        small-long (eff=32, 2x epochs - must be explicit)"
     echo "        small-deep (must be explicit)"
     echo "Tokenizers: tct, utf8"
     echo ""
@@ -48,7 +47,6 @@ if [ -z "$SCHEMAS" ]; then
     echo "  bash scripts/run.sh kubernetes"
     echo "  bash scripts/run.sh kubernetes tsconfig eslintrc    # Run all schemas"
     echo "  bash scripts/run.sh kubernetes small tct"
-    echo "  bash scripts/run.sh kubernetes small-long           # Longer training"
     echo "  bash scripts/run.sh kubernetes tsconfig resume"
     exit 1
 fi
