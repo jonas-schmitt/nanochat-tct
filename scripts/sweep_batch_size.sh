@@ -45,12 +45,14 @@ echo
 # - eff=16: batch=16, grad_accum=1
 # - eff=32: batch=16, grad_accum=2
 # - eff=64: batch=16, grad_accum=4
+# - eff=128: batch=16, grad_accum=8
 
-for eff_batch in 16 32 64; do
+for eff_batch in 16 32 64 128; do
     case $eff_batch in
         16) BATCH=16; GRAD_ACCUM=1 ;;
         32) BATCH=16; GRAD_ACCUM=2 ;;
         64) BATCH=16; GRAD_ACCUM=4 ;;
+        128) BATCH=16; GRAD_ACCUM=8 ;;
     esac
 
     exp_name="sweep_${SCHEMA}_${TOKENIZER}_${MODEL_SIZE}_eff${eff_batch}"
