@@ -62,6 +62,7 @@ grad_clip = 1.0         # gradient clipping
 device_batch_size = None  # None => use config default
 gradient_accumulation_override = None  # None => use config default
 lr_schedule = ""        # "" => use config default, or "constant"/"cosine"
+dropout = None          # None => use config default, or 0.0-0.5
 resume_from_epoch = 0   # resume training from this epoch (0 = start fresh)
 eval_every_epoch = 1    # evaluate every N epochs
 save_every_pct = 10     # save checkpoint every N% of training
@@ -129,7 +130,8 @@ print0(f"Data path: {data_path}")
 print0(f"Vocab size: {vocab_size:,}")
 print0(f"Context size: {T}")
 print0(f"Model size: {model_size} ({model_cfg['estimated_params']:,} params)")
-print0(f"Dropout: {model_cfg.get('dropout', 0.0)}")
+dropout_effective = dropout if dropout is not None else model_cfg.get("dropout", 0.0)
+print0(f"Dropout: {dropout_effective}")
 print0()
 print0(f"Batch size: {B}")
 print0(f"Gradient accumulation: {grad_accum}")
@@ -153,7 +155,7 @@ model_config_kwargs = dict(
     n_head=model_cfg["n_heads"],
     n_kv_head=model_cfg["n_heads"],
     n_embd=model_cfg["d_model"],
-    dropout=model_cfg.get("dropout", 0.0),
+    dropout=dropout_effective,
 )
 
 with torch.device("meta"):
