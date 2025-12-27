@@ -9,8 +9,8 @@
 #   bash scripts/submit.sh kubernetes --verbose              # Verbose output
 #
 # GPU options:
-#   --gpu=a40      Alex A40 (40GB) - default
-#   --gpu=a100     Alex/TinyGPU A100 (40GB)
+#   --gpu=a40      Alex A40 (40GB)
+#   --gpu=a100     Alex/TinyGPU A100 (40GB) - default
 #   --gpu=a100_80  Alex A100 (80GB)
 #   --gpu=v100     TinyGPU V100 (32GB)
 #   --gpu=rtx3080  TinyGPU RTX 3080 (10GB)
@@ -53,7 +53,7 @@ show_help() {
     echo "Tokenizers: tct, utf8"
     echo ""
     echo "Options:"
-    echo "  --gpu=TYPE      GPU type: a40 (default), a100, a100_80, v100, rtx3080"
+    echo "  --gpu=TYPE      GPU type: a40, a100 (default), a100_80, v100, rtx3080"
     echo "  --time=TIME     Wall time limit (default: 24:00:00)"
     echo "  --setup         Run setup before training"
     echo "  --dry-run       Print job script without submitting"
@@ -79,7 +79,7 @@ show_help() {
 # Parse arguments
 # =============================================================================
 
-GPU_TYPE="a40"
+GPU_TYPE="a100"
 TIME_LIMIT="24:00:00"
 RUN_SETUP=""
 DRY_RUN=""
