@@ -244,10 +244,10 @@ else
     USE_CONDA="1"
 fi
 
-# Set paths
-export WORK="\${WORK:-\$HOME}"
-export CODE_DIR="\$WORK/nanochat-tct"
-export DATA_DIR="\$WORK/data/tct"
+# Set paths (use paths from submit.sh)
+export CODE_DIR="$CODE_DIR"
+export DATA_DIR="$CODE_DIR/../data"
+export WORK="\${WORK:-$(dirname "$CODE_DIR")}"
 export VENV_DIR="\$WORK/venv-tct"
 
 # Batch size scaling for GPU
