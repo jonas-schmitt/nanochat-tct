@@ -247,7 +247,7 @@ fi
 # Set paths
 export WORK="\${WORK:-\$HOME}"
 export CODE_DIR="\$WORK/nanochat-tct"
-export DATA_DIR="\$WORK/data/tct"
+export DATA_DIR="\$CODE_DIR/../data"
 export VENV_DIR="\$WORK/venv-tct"
 
 # Batch size scaling for GPU
