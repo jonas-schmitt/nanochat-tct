@@ -73,7 +73,7 @@ find_latest_epoch() {
 # Order: most promising first (slightly higher than baseline), then lower, then very high
 for lr in 4e-4 5e-4 6e-4 2e-4 1e-4 8e-4 1e-3 1.5e-4 5e-5 1.5e-3 2e-3; do
     # Format LR for filename (1e-4 -> 1e4)
-    lr_str=$(echo "$lr" | tr '-' '')
+    lr_str=$(echo "$lr" | tr -d '-')
     exp_name="sweep_${SCHEMA}_${TOKENIZER}_${MODEL_SIZE}_lr${lr_str}"
     log_file="$LOG_DIR/${exp_name}.log"
 
