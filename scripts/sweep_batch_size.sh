@@ -10,7 +10,7 @@
 
 set -e
 
-EPOCHS=${1:-30}  # Default 30 epochs (enough to see trends)
+EPOCHS=${1:-15}  # Default 15 epochs (enough to see trends, 3x faster than 30)
 SCHEMA="kubernetes"
 TOKENIZER="tct"
 MODEL_SIZE="small"
