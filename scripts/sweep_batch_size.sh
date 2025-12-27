@@ -10,7 +10,7 @@
 
 set -e
 
-EPOCHS=${1:-20}  # Default 20 epochs (enough to see trends)
+EPOCHS=${1:-30}  # Default 30 epochs
 SCHEMA="kubernetes"
 TOKENIZER="tct"
 MODEL_SIZE="small"
@@ -42,14 +42,12 @@ echo
 
 # Sweep configurations:
 # Maximize micro batch size for GPU efficiency (batch=16 fits on RTX 4090 for small model)
-# - eff=16: batch=16, grad_accum=1
 # - eff=32: batch=16, grad_accum=2
 # - eff=64: batch=16, grad_accum=4
 # - eff=128: batch=16, grad_accum=8
 
-for eff_batch in 16 32 64 128; do
+for eff_batch in 32 64 128; do
     case $eff_batch in
-        16) BATCH=16; GRAD_ACCUM=1 ;;
         32) BATCH=16; GRAD_ACCUM=2 ;;
         64) BATCH=16; GRAD_ACCUM=4 ;;
         128) BATCH=16; GRAD_ACCUM=8 ;;
