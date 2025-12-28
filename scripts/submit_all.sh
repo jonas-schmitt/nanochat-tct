@@ -8,17 +8,20 @@
 # All jobs use A100 (default) and resume from checkpoints if available.
 #
 # Usage:
-#   bash scripts/submit_all.sh              # Submit all jobs
+#   bash scripts/submit_all.sh              # Submit all jobs (with resume)
+#   bash scripts/submit_all.sh --no-resume  # Submit without resume (fresh start)
 #   bash scripts/submit_all.sh --dry-run    # Show what would be submitted
 
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 DRY_RUN=""
+RESUME="resume"
 
 for arg in "$@"; do
     case $arg in
         --dry-run) DRY_RUN="--dry-run" ;;
+        --no-resume) RESUME="" ;;
     esac
 done
 
@@ -40,7 +43,7 @@ SIZES_SEPARATE="medium large"    # tct and utf8 separately
 submit_job() {
     local args="$1"
     echo "[SUBMIT] $args"
-    bash "$SCRIPT_DIR/submit.sh" $args resume $DRY_RUN
+    bash "$SCRIPT_DIR/submit.sh" $args $RESUME $DRY_RUN
     echo
 }
 
