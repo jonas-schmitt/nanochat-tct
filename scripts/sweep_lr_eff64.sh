@@ -1,14 +1,14 @@
 #!/bin/bash
-# Learning Rate Sweep for Hyperparameter Tuning
+# Learning Rate Sweep for eff_batch=64
 #
-# Tests 11 learning rates: 5e-5 to 2e-3 (baseline 3e-4 already done in eff64 sweep)
+# Tests 11 learning rates: 5e-5 to 2e-3
 # Uses kubernetes schema with small model, tct tokenizer, eff_batch=64, dropout=0.0
 # Estimated runtime: ~11 hours overnight
 #
 # Usage:
-#   bash scripts/sweep_lr.sh          # Fresh run
-#   bash scripts/sweep_lr.sh resume   # Resume from checkpoints
-#   bash scripts/sweep_lr.sh 50       # Run for 50 epochs
+#   bash scripts/sweep_lr_eff64.sh          # Fresh run
+#   bash scripts/sweep_lr_eff64.sh resume   # Resume from checkpoints
+#   bash scripts/sweep_lr_eff64.sh 50       # Run for 50 epochs
 
 set -e
 
@@ -44,17 +44,16 @@ mkdir -p "$LOG_DIR"
 cd "$CODE_DIR"
 
 echo "============================================================"
-echo "Learning Rate Sweep"
+echo "Learning Rate Sweep (eff_batch=64)"
 echo "============================================================"
 echo "Date: $(date)"
 echo "Schema: $SCHEMA"
 echo "Model: $MODEL_SIZE"
 echo "Tokenizer: $TOKENIZER"
 echo "Epochs: $EPOCHS"
-echo "Effective batch: $EFF_BATCH"
+echo "Effective batch: $EFF_BATCH (batch=$BATCH, grad_accum=$GRAD_ACCUM)"
 echo "Dropout: $DROPOUT"
-echo "Learning rates: 5e-5, 1e-4, 1.5e-4, 2e-4, 4e-4, 5e-4, 6e-4, 8e-4, 1e-3, 1.5e-3, 2e-3"
-echo "Note: 3e-4 baseline already in eff64 sweep"
+echo "Learning rates: 4e-4, 5e-4, 6e-4, 2e-4, 1e-4, 8e-4, 1e-3, 1.5e-4, 5e-5, 1.5e-3, 2e-3"
 echo "Estimated time: ~11 hours (11 LRs × ~1h each)"
 [ -n "$RESUME_MODE" ] && echo "Mode: RESUME"
 echo "GPU: $(nvidia-smi --query-gpu=name --format=csv,noheader 2>/dev/null || echo 'No GPU')"
@@ -74,7 +73,7 @@ find_latest_epoch() {
 for lr in 4e-4 5e-4 6e-4 2e-4 1e-4 8e-4 1e-3 1.5e-4 5e-5 1.5e-3 2e-3; do
     # Format LR for filename (1e-4 -> 1e4)
     lr_str=$(echo "$lr" | tr -d '-')
-    exp_name="sweep_${SCHEMA}_${TOKENIZER}_${MODEL_SIZE}_lr${lr_str}"
+    exp_name="sweep_${SCHEMA}_${TOKENIZER}_${MODEL_SIZE}_eff64_lr${lr_str}"
     log_file="$LOG_DIR/${exp_name}.log"
 
     # Skip if already completed
@@ -121,8 +120,5 @@ echo "Sweep Complete"
 echo "============================================================"
 echo
 echo "Compare results:"
-echo "  grep 'Min val loss' $LOG_DIR/sweep_*_lr*.log"
-echo
-echo "Baseline (3e-4):"
-echo "  grep 'Min val loss' $LOG_DIR/sweep_*_eff64.log"
+echo "  grep 'Min val loss' $LOG_DIR/sweep_*_eff64_lr*.log"
 echo
