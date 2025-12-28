@@ -82,11 +82,8 @@ echo "GPU: $GPU_NAME (${GPU_MEM}GB) - batch sizes auto-scaled"
 # =============================================================================
 
 get_epochs() {
-    case $1 in
-        kubernetes) echo 150 ;;
-        tsconfig) echo 50 ;;
-        eslintrc) echo 100 ;;
-    esac
+    # All schemas use 1000 epochs for production (matches schema_configs.py)
+    echo 1000
 }
 
 # Default sizes exclude small-deep (must be explicit)
