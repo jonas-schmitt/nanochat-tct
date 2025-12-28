@@ -75,11 +75,13 @@ if [ ${#TO_DELETE[@]} -eq 0 ]; then
     exit 0
 fi
 
-# Convert bytes to human readable
+# Convert bytes to human readable (pure bash, no bc)
 if [ $TOTAL_SIZE -ge 1073741824 ]; then
-    SIZE_HR="$(echo "scale=1; $TOTAL_SIZE/1073741824" | bc)G"
+    SIZE_HR="$((TOTAL_SIZE / 1073741824))G"
 elif [ $TOTAL_SIZE -ge 1048576 ]; then
-    SIZE_HR="$(echo "scale=1; $TOTAL_SIZE/1048576" | bc)M"
+    SIZE_HR="$((TOTAL_SIZE / 1048576))M"
+elif [ $TOTAL_SIZE -ge 1024 ]; then
+    SIZE_HR="$((TOTAL_SIZE / 1024))K"
 else
     SIZE_HR="${TOTAL_SIZE}B"
 fi
