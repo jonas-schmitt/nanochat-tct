@@ -161,11 +161,13 @@ COMMON_TRAINING = {
 }
 
 # Learning rate adjustments by model size (smaller for larger models)
+# Validated: small=4e-4 optimal from LR sweep (eff64, 30 epochs)
+# Scaling: ~params^(-0.5), with cosine decay for regularization
 LR_ADJUSTMENTS = {
-    "small": 3e-4,       # ~50M params
-    "small-deep": 3e-4,  # ~50M params (deeper, same LR)
-    "medium": 2e-4,      # ~125M params
-    "large": 1.5e-4,     # ~350M params
+    "small": 4e-4,       # ~50M params (validated)
+    "small-deep": 4e-4,  # ~50M params (deeper, same LR)
+    "medium": 3e-4,      # ~125M params (scaled)
+    "large": 2e-4,       # ~350M params (scaled)
 }
 
 # =============================================================================
