@@ -31,7 +31,7 @@ echo "============================================================"
 echo "Date: $(date)"
 echo "Epochs: tsconfig=50, eslintrc=100, kubernetes=200"
 echo "Checkpoint: every 5% of training"
-echo "GPU: A100 (default)"
+echo "GPU: small=A100, medium/large=A100_80"
 [ -n "$DRY_RUN" ] && echo "Mode: DRY RUN"
 echo "============================================================"
 echo
@@ -57,10 +57,10 @@ for schema in $SCHEMAS; do
         submit_job "$schema $size"
     done
 
-    # Medium/Large: tct and utf8 separately
+    # Medium/Large: tct and utf8 separately (A100_80 for more VRAM)
     for size in $SIZES_SEPARATE; do
-        submit_job "$schema $size tct"
-        submit_job "$schema $size utf8"
+        submit_job "$schema $size tct --gpu=a100_80"
+        submit_job "$schema $size utf8 --gpu=a100_80"
     done
 
     echo
