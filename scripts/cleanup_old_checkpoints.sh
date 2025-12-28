@@ -57,6 +57,7 @@ for run_dir in "$CHECKPOINT_DIR"/*/; do
 
     echo ">>> $run_name"
     echo "    Keeping: $latest_name"
+    [ -f "$run_dir/best.pt" ] && echo "    Keeping: best.pt"
 
     for ((i=0; i<${#epochs[@]}-1; i++)); do
         file="${epochs[i]}"
