@@ -31,14 +31,13 @@ echo "============================================================"
 echo "Date: $(date)"
 echo "Epochs: tsconfig=50, eslintrc=100, kubernetes=200"
 echo "Checkpoint: every 5% of training"
-echo "GPU: A100 (all sizes)"
+echo "GPU: small/medium=A100, large=A100_80"
 [ -n "$DRY_RUN" ] && echo "Mode: DRY RUN"
 echo "============================================================"
 echo
 
 SCHEMAS="kubernetes tsconfig eslintrc"
 SIZES_COMBINED="small"           # tct + utf8 together
-SIZES_SEPARATE="medium large"    # tct and utf8 separately
 
 submit_job() {
     local args="$1"
@@ -57,11 +56,13 @@ for schema in $SCHEMAS; do
         submit_job "$schema $size"
     done
 
-    # Medium/Large: tct and utf8 separately
-    for size in $SIZES_SEPARATE; do
-        submit_job "$schema $size tct"
-        submit_job "$schema $size utf8"
-    done
+    # Medium: tct and utf8 separately
+    submit_job "$schema medium tct"
+    submit_job "$schema medium utf8"
+
+    # Large: tct and utf8 separately (A100_80 for headroom)
+    submit_job "$schema large tct --gpu=a100_80"
+    submit_job "$schema large utf8 --gpu=a100_80"
 
     echo
 done
