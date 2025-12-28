@@ -42,6 +42,7 @@ from configs import (
     get_schema_config,
     get_model_config,
     create_dataloader,
+    create_reshuffled_dataloaders,
     get_epoch_steps,
     get_warmup_steps,
 )
@@ -68,6 +69,7 @@ resume_from_epoch = 0   # resume training from this epoch (0 = start fresh)
 eval_every_epoch = 1    # evaluate every N epochs
 save_every_pct = 5      # save checkpoint every N% of training
 num_eval_batches = 100  # number of batches for validation
+reshuffle_data = True   # reshuffle train+val data randomly (fixes sequential split)
 
 # CLI override
 config_keys = [k for k,v in globals().items() if not k.startswith('_') and isinstance(v, (int, float, bool, str, type(None)))]
@@ -200,26 +202,41 @@ optimizer = torch.optim.AdamW(
 
 # Initialize dataloaders
 print0("\nInitializing dataloaders...")
-train_loader = create_dataloader(
-    data_dir=data_path,
-    context_size=T,
-    batch_size=B,
-    split="train",
-    device=device,
-    shuffle=True,
-    verbose=master_process,
-)
-
-def build_val_loader():
-    return create_dataloader(
+if reshuffle_data:
+    print0("Reshuffling data (combining train+val, random split)...")
+    train_loader, val_loader_static = create_reshuffled_dataloaders(
         data_dir=data_path,
         context_size=T,
         batch_size=B,
-        split="val",
+        train_ratio=0.9,
         device=device,
-        shuffle=False,
-        verbose=False,
+        verbose=master_process,
+        seed=42,
     )
+
+    def build_val_loader():
+        return val_loader_static
+else:
+    train_loader = create_dataloader(
+        data_dir=data_path,
+        context_size=T,
+        batch_size=B,
+        split="train",
+        device=device,
+        shuffle=True,
+        verbose=master_process,
+    )
+
+    def build_val_loader():
+        return create_dataloader(
+            data_dir=data_path,
+            context_size=T,
+            batch_size=B,
+            split="val",
+            device=device,
+            shuffle=False,
+            verbose=False,
+        )
 
 # Create infinite iterator
 train_iter = itertools.cycle(train_loader)

@@ -24,7 +24,7 @@ SMALL_ARCH = {
     "d_model": 512,
     "n_layers": 10,
     "n_heads": 8,
-    "dropout": 0.0,  # No dropout for pretraining (GPT-3, LLaMA use 0)
+    "dropout": 0.1,  # Light dropout for regularization (prevents overfitting)
     "transformer_params": "~31M",
 }
 
@@ -33,7 +33,7 @@ SMALL_DEEP_ARCH = {
     "d_model": 384,
     "n_layers": 20,
     "n_heads": 6,
-    "dropout": 0.0,  # No dropout for pretraining
+    "dropout": 0.1,  # Light dropout for regularization
     "transformer_params": "~35M",
 }
 
@@ -41,7 +41,7 @@ MEDIUM_ARCH = {
     "d_model": 768,
     "n_layers": 13,
     "n_heads": 12,
-    "dropout": 0.0,  # No dropout for pretraining
+    "dropout": 0.1,  # Light dropout for regularization
     "transformer_params": "~92M",
 }
 
@@ -49,7 +49,7 @@ LARGE_ARCH = {
     "d_model": 1024,
     "n_layers": 24,
     "n_heads": 16,
-    "dropout": 0.0,  # No dropout for pretraining
+    "dropout": 0.1,  # Light dropout for regularization
     "transformer_params": "~302M",
 }
 
@@ -67,11 +67,11 @@ ARCHITECTURES = {
 # =============================================================================
 # Dynamic Batch Size Scaling
 # =============================================================================
-# Target effective batch: 64 (empirically optimal for kubernetes ~42M tokens)
-# Research shows CBS scales with data size, not model size
+# Target effective batch: 32 (more gradient noise for better generalization)
+# Research shows smaller batches can help prevent overfitting
 # Maximize micro batch for GPU efficiency, use grad_accum to reach target eff batch
 
-TARGET_EFFECTIVE_BATCH = 64
+TARGET_EFFECTIVE_BATCH = 32
 
 # Reference batch sizes: max micro batch that fits on 24GB VRAM (RTX 4090/3090)
 # These scale linearly with available VRAM

@@ -132,6 +132,119 @@ class JSONLDataset(Dataset):
         return inputs, targets
 
 
+def create_reshuffled_dataloaders(
+    data_dir: Path,
+    context_size: int,
+    batch_size: int,
+    train_ratio: float = 0.9,
+    max_len: Optional[int] = None,
+    device: str = "cuda",
+    num_workers: int = 0,
+    verbose: bool = True,
+    seed: int = 42,
+) -> tuple:
+    """
+    Load all data, shuffle randomly, and create train/val dataloaders.
+
+    This fixes the sequential split issue by reshuffling the entire dataset.
+
+    Args:
+        data_dir: Directory containing train.jsonl and validate.jsonl
+        context_size: Sequence length
+        batch_size: Batch size
+        train_ratio: Fraction for training (default 0.9)
+        max_len: Filter sequences longer than this
+        device: Device for tensors
+        num_workers: DataLoader workers
+        verbose: Print statistics
+        seed: Random seed for reproducibility
+
+    Returns:
+        Tuple of (train_loader, val_loader)
+    """
+    import random
+    data_dir = Path(data_dir)
+
+    # Load all sequences from both files
+    all_sequences = []
+
+    for jsonl_name in ["train.jsonl", "validate.jsonl"]:
+        jsonl_file = data_dir / jsonl_name
+        if jsonl_file.exists():
+            with open(jsonl_file, 'r') as f:
+                for line in f:
+                    tokens = json.loads(line)
+                    if max_len is None or len(tokens) <= max_len:
+                        all_sequences.append(torch.tensor(tokens, dtype=torch.long))
+
+    if verbose:
+        print(f"Loaded {len(all_sequences):,} total sequences from {data_dir.name}")
+
+    # Shuffle with fixed seed for reproducibility
+    random.seed(seed)
+    random.shuffle(all_sequences)
+
+    # Split
+    split_idx = int(len(all_sequences) * train_ratio)
+    train_sequences = all_sequences[:split_idx]
+    val_sequences = all_sequences[split_idx:]
+
+    if verbose:
+        print(f"  Reshuffled split: {len(train_sequences):,} train, {len(val_sequences):,} val")
+
+    # Create datasets directly from sequences
+    class InMemoryDataset(Dataset):
+        def __init__(self, sequences, context_size):
+            self.sequences = sequences
+            self.context_size = context_size
+
+        def __len__(self):
+            return len(self.sequences)
+
+        def __getitem__(self, idx):
+            tokens = self.sequences[idx]
+            if len(tokens) > self.context_size:
+                tokens = tokens[:self.context_size]
+            if len(tokens) < self.context_size + 1:
+                needed = self.context_size + 1 - len(tokens)
+                tokens = torch.cat([tokens, torch.full((needed,), PAD_TOKEN_ID, dtype=torch.long)])
+            inputs = tokens[:-1].clone()
+            targets = tokens[1:].clone()
+            mask = inputs == PAD_TOKEN_ID
+            targets[mask] = -1
+            inputs = inputs.to(dtype=torch.int32)
+            return inputs, targets
+
+    def collate_fn(batch):
+        inputs = torch.stack([item[0] for item in batch])
+        targets = torch.stack([item[1] for item in batch])
+        inputs = inputs.to(device=device, non_blocking=True)
+        targets = targets.to(device=device, dtype=torch.int64, non_blocking=True)
+        return inputs, targets
+
+    train_loader = DataLoader(
+        InMemoryDataset(train_sequences, context_size),
+        batch_size=batch_size,
+        shuffle=True,
+        num_workers=num_workers,
+        pin_memory=(device == "cuda"),
+        collate_fn=collate_fn,
+        drop_last=True,
+    )
+
+    val_loader = DataLoader(
+        InMemoryDataset(val_sequences, context_size),
+        batch_size=batch_size,
+        shuffle=False,
+        num_workers=num_workers,
+        pin_memory=(device == "cuda"),
+        collate_fn=collate_fn,
+        drop_last=True,
+    )
+
+    return train_loader, val_loader
+
+
 def create_dataloader(
     data_dir: Path,
     context_size: int,

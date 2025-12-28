@@ -27,18 +27,20 @@ from .model_configs import (
 def _import_dataloader():
     from .jsonl_dataloader import (
         create_dataloader,
+        create_reshuffled_dataloaders,
         get_epoch_steps,
         get_warmup_steps,
         PAD_TOKEN_ID,
     )
-    return create_dataloader, get_epoch_steps, get_warmup_steps, PAD_TOKEN_ID
+    return create_dataloader, create_reshuffled_dataloaders, get_epoch_steps, get_warmup_steps, PAD_TOKEN_ID
 
 
 # Re-export for convenience when torch is available
 def __getattr__(name):
-    if name in ("create_dataloader", "get_epoch_steps", "get_warmup_steps", "PAD_TOKEN_ID"):
-        create_dataloader, get_epoch_steps, get_warmup_steps, PAD_TOKEN_ID = _import_dataloader()
+    if name in ("create_dataloader", "create_reshuffled_dataloaders", "get_epoch_steps", "get_warmup_steps", "PAD_TOKEN_ID"):
+        create_dataloader, create_reshuffled_dataloaders, get_epoch_steps, get_warmup_steps, PAD_TOKEN_ID = _import_dataloader()
         globals()["create_dataloader"] = create_dataloader
+        globals()["create_reshuffled_dataloaders"] = create_reshuffled_dataloaders
         globals()["get_epoch_steps"] = get_epoch_steps
         globals()["get_warmup_steps"] = get_warmup_steps
         globals()["PAD_TOKEN_ID"] = PAD_TOKEN_ID
@@ -62,6 +64,7 @@ __all__ = [
     "TARGET_EFFECTIVE_BATCH",
     # Dataloader (requires torch)
     "create_dataloader",
+    "create_reshuffled_dataloaders",
     "get_epoch_steps",
     "get_warmup_steps",
     "PAD_TOKEN_ID",
