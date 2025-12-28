@@ -21,6 +21,7 @@ SCHEMAS=""
 FILTER_TOKENIZER=""
 FILTER_SIZES=""
 RESUME_MODE=""
+DROPOUT=""
 
 for arg in "$@"; do
     case $arg in
@@ -28,6 +29,8 @@ for arg in "$@"; do
         tct|utf8) FILTER_TOKENIZER="$arg" ;;
         small|small-deep|medium|large) FILTER_SIZES="$FILTER_SIZES $arg" ;;
         resume) RESUME_MODE="1" ;;
+        --dropout=*) DROPOUT="${arg#--dropout=}" ;;
+        dropout=*) DROPOUT="${arg#dropout=}" ;;
     esac
 done
 
@@ -36,18 +39,22 @@ SCHEMAS="${SCHEMAS# }"
 FILTER_SIZES="${FILTER_SIZES# }"
 
 if [ -z "$SCHEMAS" ]; then
-    echo "Usage: bash scripts/run.sh <schema>... [size]... [tokenizer] [resume]"
+    echo "Usage: bash scripts/run.sh <schema>... [size]... [tokenizer] [resume] [--dropout=N]"
     echo ""
     echo "Schemas: kubernetes, tsconfig, eslintrc"
     echo "Sizes: small, medium, large (default)"
     echo "        small-deep (must be explicit)"
     echo "Tokenizers: tct, utf8"
+    echo "Options:"
+    echo "  resume          Resume from latest checkpoint"
+    echo "  --dropout=0.1   Override dropout (default: from config, typically 0.1)"
     echo ""
     echo "Examples:"
     echo "  bash scripts/run.sh kubernetes"
     echo "  bash scripts/run.sh kubernetes tsconfig eslintrc    # Run all schemas"
     echo "  bash scripts/run.sh kubernetes small tct"
     echo "  bash scripts/run.sh kubernetes tsconfig resume"
+    echo "  bash scripts/run.sh kubernetes --dropout=0.2        # Higher dropout"
     exit 1
 fi
 
@@ -126,6 +133,7 @@ echo "Data: $DATA_DIR"
 echo "Schemas: $SCHEMAS"
 echo "Sizes: $SIZES"
 echo "Tokenizers: $TOKENIZERS"
+[ -n "$DROPOUT" ] && echo "Dropout: $DROPOUT"
 [ -n "$RESUME_MODE" ] && echo "Mode: RESUME"
 echo "============================================================"
 echo
@@ -167,12 +175,16 @@ for SCHEMA in $SCHEMAS; do
 
             echo "[START] $exp_name at $(date)"
 
+            DROPOUT_ARG=""
+            [ -n "$DROPOUT" ] && DROPOUT_ARG="--dropout=$DROPOUT"
+
             python -m scripts.train_unified \
                 --schema="$SCHEMA" \
                 --tokenizer="$tokenizer" \
                 --model_size="$size" \
                 --data_root="$DATA_DIR" \
                 $RESUME_ARG \
+                $DROPOUT_ARG \
                 2>&1 | tee -a "$log_file"
 
             echo "[DONE] $exp_name at $(date)"
