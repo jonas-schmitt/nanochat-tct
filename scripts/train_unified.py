@@ -66,7 +66,7 @@ dropout = None          # None => use config default, or 0.0-0.5
 learning_rate_override = None  # None => use config default, or e.g. 3e-4
 resume_from_epoch = 0   # resume training from this epoch (0 = start fresh)
 eval_every_epoch = 1    # evaluate every N epochs
-save_every_pct = 10     # save checkpoint every N% of training
+save_every_pct = 5      # save checkpoint every N% of training (every 50 epochs for 1000)
 num_eval_batches = 100  # number of batches for validation
 
 # CLI override
