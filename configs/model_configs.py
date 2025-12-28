@@ -24,7 +24,7 @@ SMALL_ARCH = {
     "d_model": 512,
     "n_layers": 10,
     "n_heads": 8,
-    "dropout": 0.0,  # No dropout (baseline - test shuffle fix first)
+    "dropout": 0.1,  # Light dropout for regularization
     "transformer_params": "~31M",
 }
 
@@ -33,7 +33,7 @@ SMALL_DEEP_ARCH = {
     "d_model": 384,
     "n_layers": 20,
     "n_heads": 6,
-    "dropout": 0.0,  # No dropout (baseline)
+    "dropout": 0.1,  # Light dropout for regularization
     "transformer_params": "~35M",
 }
 
@@ -41,7 +41,7 @@ MEDIUM_ARCH = {
     "d_model": 768,
     "n_layers": 13,
     "n_heads": 12,
-    "dropout": 0.0,  # No dropout (baseline)
+    "dropout": 0.1,  # Light dropout for regularization
     "transformer_params": "~92M",
 }
 
@@ -49,7 +49,7 @@ LARGE_ARCH = {
     "d_model": 1024,
     "n_layers": 24,
     "n_heads": 16,
-    "dropout": 0.0,  # No dropout (baseline)
+    "dropout": 0.1,  # Light dropout for regularization
     "transformer_params": "~302M",
 }
 
@@ -67,11 +67,11 @@ ARCHITECTURES = {
 # =============================================================================
 # Dynamic Batch Size Scaling
 # =============================================================================
-# Target effective batch: 64 (baseline - test shuffle fix first)
-# Can reduce to 32 if overfitting persists after shuffle fix
+# Target effective batch: 32 (smaller batch for better generalization)
+# Reduced from 64 to add gradient noise regularization
 # Maximize micro batch for GPU efficiency, use grad_accum to reach target eff batch
 
-TARGET_EFFECTIVE_BATCH = 64
+TARGET_EFFECTIVE_BATCH = 32
 
 # Reference batch sizes: max micro batch that fits on 24GB VRAM (RTX 4090/3090)
 # These scale linearly with available VRAM
@@ -161,13 +161,13 @@ COMMON_TRAINING = {
 }
 
 # Learning rate adjustments by model size (smaller for larger models)
-# Validated: small=4e-4 optimal from LR sweep (eff64, 30 epochs)
-# Scaling: ~params^(-0.5), with cosine decay for regularization
+# Scaled for eff_batch=32 (sqrt scaling from eff64 baseline)
+# Original eff64: small=4e-4, medium=3e-4, large=2e-4
 LR_ADJUSTMENTS = {
-    "small": 4e-4,       # ~50M params (validated)
-    "small-deep": 4e-4,  # ~50M params (deeper, same LR)
-    "medium": 3e-4,      # ~125M params (scaled)
-    "large": 2e-4,       # ~350M params (scaled)
+    "small": 3e-4,       # ~50M params (sqrt scaled from 4e-4)
+    "small-deep": 3e-4,  # ~50M params (deeper, same LR)
+    "medium": 2e-4,      # ~125M params (sqrt scaled from 3e-4)
+    "large": 1.5e-4,     # ~350M params (sqrt scaled from 2e-4)
 }
 
 # =============================================================================
