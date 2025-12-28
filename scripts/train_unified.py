@@ -67,9 +67,14 @@ dropout = None          # None => use config default, or 0.0-0.5
 learning_rate_override = None  # None => use config default, or e.g. 3e-4
 resume_from_epoch = 0   # resume training from this epoch (0 = start fresh)
 eval_every_epoch = 1    # evaluate every N epochs
-save_every_pct = 5      # save checkpoint every N% of training
+save_every_pct = None   # None => auto (2% on RunPod, 5% otherwise), or override
 num_eval_batches = 100  # number of batches for validation
 reshuffle_data = True   # reshuffle train+val data randomly (fixes sequential split)
+
+# Auto-detect RunPod for more frequent checkpoints (preemptible instances)
+is_runpod = os.environ.get("RUNPOD_POD_ID") is not None
+if save_every_pct is None:
+    save_every_pct = 2 if is_runpod else 5
 
 # CLI override
 config_keys = [k for k,v in globals().items() if not k.startswith('_') and isinstance(v, (int, float, bool, str, type(None)))]
@@ -147,7 +152,8 @@ print0(f"Epochs: {num_epochs}")
 print0(f"Steps per epoch: {steps_per_epoch}")
 print0(f"Total steps: {total_steps}")
 print0(f"Warmup steps: {warmup_steps}")
-print0(f"Save interval: every {save_interval} steps ({save_every_pct}%)")
+runpod_note = " (RunPod detected)" if is_runpod else ""
+print0(f"Save interval: every {save_interval} steps ({save_every_pct}%){runpod_note}")
 print0()
 
 # Initialize model
