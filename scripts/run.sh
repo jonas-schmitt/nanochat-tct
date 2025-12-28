@@ -150,6 +150,7 @@ for SCHEMA in $SCHEMAS; do
             [ -n "$FILTER_TOKENIZER" ] && [ "$tokenizer" != "$FILTER_TOKENIZER" ] && continue
 
             exp_name="${SCHEMA}_${tokenizer}_${size}"
+            [ -n "$DROPOUT" ] && exp_name="${exp_name}_drop${DROPOUT}"
             log_file="$LOG_DIR/${exp_name}.log"
 
             # Skip if already completed
@@ -176,7 +177,11 @@ for SCHEMA in $SCHEMAS; do
             echo "[START] $exp_name at $(date)"
 
             DROPOUT_ARG=""
-            [ -n "$DROPOUT" ] && DROPOUT_ARG="--dropout=$DROPOUT"
+            MODEL_TAG_ARG=""
+            if [ -n "$DROPOUT" ]; then
+                DROPOUT_ARG="--dropout=$DROPOUT"
+                MODEL_TAG_ARG="--model_tag=$exp_name"
+            fi
 
             python -m scripts.train_unified \
                 --schema="$SCHEMA" \
@@ -185,6 +190,7 @@ for SCHEMA in $SCHEMAS; do
                 --data_root="$DATA_DIR" \
                 $RESUME_ARG \
                 $DROPOUT_ARG \
+                $MODEL_TAG_ARG \
                 2>&1 | tee -a "$log_file"
 
             echo "[DONE] $exp_name at $(date)"
