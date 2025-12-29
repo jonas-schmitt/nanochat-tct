@@ -23,6 +23,7 @@ FILTER_SIZES=""
 RESUME_MODE=""
 DROPOUT=""
 LR_SCHEDULE=""
+EFF_BATCH=""
 
 for arg in "$@"; do
     case $arg in
@@ -34,6 +35,8 @@ for arg in "$@"; do
         dropout=*) DROPOUT="${arg#dropout=}" ;;
         --lr_schedule=*) LR_SCHEDULE="${arg#--lr_schedule=}" ;;
         constant) LR_SCHEDULE="constant" ;;
+        --eff_batch=*) EFF_BATCH="${arg#--eff_batch=}" ;;
+        --batch=*) EFF_BATCH="${arg#--batch=}" ;;
     esac
 done
 
@@ -53,6 +56,7 @@ if [ -z "$SCHEMAS" ]; then
     echo "  --dropout=0.1       Set dropout (default: 0.0)"
     echo "  --lr_schedule=X     LR schedule: constant (default) or cosine"
     echo "  constant            Shorthand for --lr_schedule=constant"
+    echo "  --eff_batch=N       Effective batch size (default: 32)"
     echo ""
     echo "Examples:"
     echo "  bash scripts/run.sh kubernetes"
@@ -61,6 +65,7 @@ if [ -z "$SCHEMAS" ]; then
     echo "  bash scripts/run.sh kubernetes tsconfig resume"
     echo "  bash scripts/run.sh kubernetes --dropout=0.2        # Higher dropout"
     echo "  bash scripts/run.sh kubernetes constant             # No LR decay"
+    echo "  bash scripts/run.sh kubernetes --eff_batch=64       # Larger batch"
     exit 1
 fi
 
@@ -141,6 +146,7 @@ echo "Sizes: $SIZES"
 echo "Tokenizers: $TOKENIZERS"
 [ -n "$DROPOUT" ] && echo "Dropout: $DROPOUT"
 [ -n "$LR_SCHEDULE" ] && echo "LR Schedule: $LR_SCHEDULE"
+[ -n "$EFF_BATCH" ] && echo "Effective batch: $EFF_BATCH"
 [ -n "$RESUME_MODE" ] && echo "Mode: RESUME"
 echo "============================================================"
 echo
@@ -159,6 +165,7 @@ for SCHEMA in $SCHEMAS; do
             exp_name="${SCHEMA}_${tokenizer}_${size}"
             [ -n "$DROPOUT" ] && exp_name="${exp_name}_drop${DROPOUT}"
             [ "$LR_SCHEDULE" = "constant" ] && exp_name="${exp_name}_constlr"
+            [ -n "$EFF_BATCH" ] && exp_name="${exp_name}_batch${EFF_BATCH}"
             log_file="$LOG_DIR/${exp_name}.log"
 
             # Skip if already completed
@@ -187,8 +194,9 @@ for SCHEMA in $SCHEMAS; do
             EXTRA_ARGS=""
             [ -n "$DROPOUT" ] && EXTRA_ARGS="$EXTRA_ARGS --dropout=$DROPOUT"
             [ -n "$LR_SCHEDULE" ] && EXTRA_ARGS="$EXTRA_ARGS --lr_schedule=$LR_SCHEDULE"
+            [ -n "$EFF_BATCH" ] && EXTRA_ARGS="$EXTRA_ARGS --eff_batch=$EFF_BATCH"
             # Use custom model_tag if we have custom settings
-            [ -n "$DROPOUT" ] || [ -n "$LR_SCHEDULE" ] && EXTRA_ARGS="$EXTRA_ARGS --model_tag=$exp_name"
+            [ -n "$DROPOUT" ] || [ -n "$LR_SCHEDULE" ] || [ -n "$EFF_BATCH" ] && EXTRA_ARGS="$EXTRA_ARGS --model_tag=$exp_name"
 
             python -m scripts.train_unified \
                 --schema="$SCHEMA" \
