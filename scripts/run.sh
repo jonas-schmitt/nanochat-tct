@@ -102,10 +102,10 @@ echo "GPU: $GPU_NAME (${GPU_MEM}GB) - batch sizes auto-scaled"
 get_epochs() {
     local schema=$1
     case $schema in
-        tsconfig)   echo 50 ;;    # Converges very fast (ppl 1.19 at epoch 3)
-        eslintrc)   echo 100 ;;   # Fast convergence (ppl 1.54 at epoch 32)
-        kubernetes) echo 250 ;;   # Larger dataset, more epochs needed
-        *)          echo 100 ;;   # Default
+        tsconfig)    echo 50 ;;    # Converges very fast (ppl 1.19 at epoch 3)
+        eslintrc)    echo 100 ;;   # Fast convergence (ppl 1.54 at epoch 32)
+        kubernetes*) echo 250 ;;   # All kubernetes variants: 250 epochs
+        *)           echo 100 ;;   # Default
     esac
 }
 
