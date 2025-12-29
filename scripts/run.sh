@@ -104,7 +104,7 @@ get_epochs() {
     case $schema in
         tsconfig)    echo 50 ;;    # Converges very fast (ppl 1.19 at epoch 3)
         eslintrc)    echo 100 ;;   # Fast convergence (ppl 1.54 at epoch 32)
-        kubernetes*) echo 250 ;;   # All kubernetes variants: 250 epochs
+        kubernetes*) echo 200 ;;   # All kubernetes variants: 200 epochs
         *)           echo 100 ;;   # Default
     esac
 }

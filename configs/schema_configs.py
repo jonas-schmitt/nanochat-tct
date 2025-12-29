@@ -92,7 +92,7 @@ SCHEMA_CONFIGS = {
     "kubernetes": {
         # Context: 2048 covers ~99% of sequences (P99=2622, some truncation)
         "context_size": 2048,
-        "default_epochs": 250,  # Larger dataset, more epochs needed
+        "default_epochs": 200,  # Larger dataset
 
         # Vocabulary sizes (includes pad token)
         "tct_vocab_size": 20_000,   # BPE-20k (19999) + pad
@@ -127,7 +127,7 @@ SCHEMA_CONFIGS = {
     "kubernetes-base": {
         # Context: 2048 covers 95% of sequences (P95=2078)
         "context_size": 2048,
-        "default_epochs": 250,  # Same as kubernetes
+        "default_epochs": 200,  # Same as kubernetes
 
         # Vocabulary sizes (TCT only for now)
         "tct_vocab_size": 258,      # Base encoding (257) + pad
@@ -162,7 +162,7 @@ SCHEMA_CONFIGS = {
     "kubernetes-bpe-1k": {
         # Context: 2048 covers 97.3% of sequences (P95=1006)
         "context_size": 2048,
-        "default_epochs": 250,  # Same as kubernetes
+        "default_epochs": 200,  # Same as kubernetes
 
         # Vocabulary sizes (TCT only for now)
         "tct_vocab_size": 1000,     # BPE-1k (999) + pad

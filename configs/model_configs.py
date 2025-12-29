@@ -26,7 +26,7 @@ SMALL_ARCH = {
     "n_layers": 16,
     "n_heads": 8,  # head_dim=64
     "ffn_mult": 4.0,  # Standard FFN multiplier
-    "dropout": 0.0,  # No dropout by default (use --dropout to override)
+    "dropout": 0.1,  # Default dropout for regularization
     "transformer_params": "~50M",
 }
 
@@ -36,7 +36,7 @@ SMALL_DEEP_ARCH = {
     "n_layers": 24,
     "n_heads": 6,  # head_dim=64
     "ffn_mult": 5.0,  # Wider FFN to hit ~50M target with smaller d_model
-    "dropout": 0.0,  # No dropout by default (use --dropout to override)
+    "dropout": 0.1,  # Default dropout for regularization
     "transformer_params": "~49M",
 }
 
@@ -45,7 +45,7 @@ MEDIUM_ARCH = {
     "n_layers": 16,
     "n_heads": 12,  # head_dim=64
     "ffn_mult": 4.5,  # Wider FFN to hit ~125M target
-    "dropout": 0.0,  # No dropout by default (use --dropout to override)
+    "dropout": 0.1,  # Default dropout for regularization
     "transformer_params": "~123M",
 }
 
@@ -54,7 +54,7 @@ LARGE_ARCH = {
     "n_layers": 24,
     "n_heads": 16,  # head_dim=64
     "ffn_mult": 5.0,  # Wider FFN to hit ~350M target
-    "dropout": 0.0,  # No dropout by default (use --dropout to override)
+    "dropout": 0.1,  # Default dropout for regularization
     "transformer_params": "~350M",
 }
 
@@ -72,11 +72,10 @@ ARCHITECTURES = {
 # =============================================================================
 # Dynamic Batch Size Scaling
 # =============================================================================
-# Target effective batch: 32 (smaller batch for better generalization)
-# Reduced from 64 to add gradient noise regularization
+# Target effective batch: 64 (standard batch size)
 # Maximize micro batch for GPU efficiency, use grad_accum to reach target eff batch
 
-TARGET_EFFECTIVE_BATCH = 32
+TARGET_EFFECTIVE_BATCH = 64
 
 # Reference batch sizes: max micro batch that fits on 24GB VRAM (RTX 4090/3090)
 # These scale linearly with available VRAM (computed in compute_batch_config)
@@ -156,6 +155,7 @@ def compute_batch_config(model_size: str, context_size: int, gpu_memory_gb: floa
 # Common training hyperparameters (all configs)
 COMMON_TRAINING = {
     "learning_rate": 3e-4,  # Will be slightly reduced for large model
+    "lr_schedule": "cosine",  # Cosine decay with warmup
     "weight_decay": 0.1,
     "beta1": 0.9,
     "beta2": 0.95,
@@ -166,13 +166,11 @@ COMMON_TRAINING = {
 }
 
 # Learning rate adjustments by model size (smaller for larger models)
-# Scaled for eff_batch=32 (sqrt scaling from eff64 baseline)
-# Original eff64: small=4e-4, medium=3e-4, large=2e-4
 LR_ADJUSTMENTS = {
-    "small": 3e-4,       # ~50M params (sqrt scaled from 4e-4)
-    "small-deep": 3e-4,  # ~50M params (deeper, same LR)
-    "medium": 2e-4,      # ~125M params (sqrt scaled from 3e-4)
-    "large": 1.5e-4,     # ~350M params (sqrt scaled from 2e-4)
+    "small": 4e-4,       # ~50M params
+    "small-deep": 4e-4,  # ~50M params (deeper, same LR)
+    "medium": 3e-4,      # ~125M params
+    "large": 2e-4,       # ~350M params
 }
 
 # =============================================================================
