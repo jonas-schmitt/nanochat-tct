@@ -27,7 +27,7 @@ EFF_BATCH=""
 
 for arg in "$@"; do
     case $arg in
-        kubernetes|kubernetes-base|tsconfig|eslintrc) SCHEMAS="$SCHEMAS $arg" ;;
+        kubernetes|kubernetes-base|kubernetes-bpe-1k|tsconfig|eslintrc) SCHEMAS="$SCHEMAS $arg" ;;
         tct|utf8) FILTER_TOKENIZER="$arg" ;;
         small|small-deep|medium|large) FILTER_SIZES="$FILTER_SIZES $arg" ;;
         resume) RESUME_MODE="1" ;;
@@ -47,7 +47,7 @@ FILTER_SIZES="${FILTER_SIZES# }"
 if [ -z "$SCHEMAS" ]; then
     echo "Usage: bash scripts/run.sh <schema>... [size]... [tokenizer] [resume] [--dropout=N]"
     echo ""
-    echo "Schemas: kubernetes, kubernetes-base, tsconfig, eslintrc"
+    echo "Schemas: kubernetes, kubernetes-base, kubernetes-bpe-1k, tsconfig, eslintrc"
     echo "Sizes: small, medium, large (default)"
     echo "        small-deep (must be explicit)"
     echo "Tokenizers: tct, utf8"
