@@ -123,9 +123,9 @@ def compute_batch_config(model_size: str, context_size: int, gpu_memory_gb: floa
     else:
         ref_batch = REFERENCE_BATCH_SIZES[context_size].get(model_size, 4)
 
-    # Scale batch size proportionally to GPU memory
+    # Scale batch size proportionally to GPU memory (round to avoid truncation issues)
     scale_factor = gpu_memory_gb / REFERENCE_VRAM_GB
-    max_batch = max(1, int(ref_batch * scale_factor))
+    max_batch = max(1, round(ref_batch * scale_factor))
 
     # Find largest power-of-2 batch size that:
     # 1. Fits in GPU memory (≤ max_batch)
