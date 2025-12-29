@@ -51,7 +51,7 @@ if [ -z "$SCHEMAS" ]; then
     echo "Options:"
     echo "  resume              Resume from latest checkpoint"
     echo "  --dropout=0.1       Set dropout (default: 0.0)"
-    echo "  --lr_schedule=X     LR schedule: cosine (default) or constant"
+    echo "  --lr_schedule=X     LR schedule: constant (default) or cosine"
     echo "  constant            Shorthand for --lr_schedule=constant"
     echo ""
     echo "Examples:"
