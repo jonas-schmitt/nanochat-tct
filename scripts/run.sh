@@ -47,7 +47,7 @@ if [ -z "$SCHEMAS" ]; then
     echo "Tokenizers: tct, utf8"
     echo "Options:"
     echo "  resume          Resume from latest checkpoint"
-    echo "  --dropout=0.1   Override dropout (default: from config, typically 0.1)"
+    echo "  --dropout=0.1   Set dropout (default: 0.0)"
     echo ""
     echo "Examples:"
     echo "  bash scripts/run.sh kubernetes"
