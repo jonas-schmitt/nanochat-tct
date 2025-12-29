@@ -3,15 +3,16 @@ Schema-agnostic model configurations for TCT experiments.
 
 All schemas use context_size=2048.
 
-Four preset architectures:
-- Small:      d_model=512, 10 layers (~50M params)
-- Small-deep: d_model=384, 20 layers (~50M params, deeper)
-- Medium:     d_model=768, 13 layers (~125M params)
-- Large:      d_model=1024, 24 layers (~350M params)
+Four preset architectures (sized for ~50M/125M/350M with vocab=1000):
+- Small:      d_model=512, 16 layers, FFN 4x   (~52M params)
+- Small-deep: d_model=384, 24 layers, FFN 5x   (~51M params, narrower & deeper)
+- Medium:     d_model=768, 16 layers, FFN 4.5x (~126M params)
+- Large:      d_model=1024, 24 layers, FFN 5x  (~357M params)
 
-The SAME architecture is used for both TCT and UTF8 tokenizers.
-- TCT: Smaller vocab → fewer embedding params
-- UTF8: Larger vocab → more embedding params (same transformer capacity)
+The SAME architecture is used for ALL schemas and tokenizers.
+Reference: kubernetes-bpe-1k (vocab=1000)
+- Low vocab schemas (258-1000): ~50M/125M/350M as designed
+- High vocab schemas (20k+): More params from larger embeddings
 """
 
 from typing import Dict, Any
@@ -22,35 +23,39 @@ from typing import Dict, Any
 
 SMALL_ARCH = {
     "d_model": 512,
-    "n_layers": 10,
-    "n_heads": 8,
+    "n_layers": 16,
+    "n_heads": 8,  # head_dim=64
+    "ffn_mult": 4.0,  # Standard FFN multiplier
     "dropout": 0.0,  # No dropout by default (use --dropout to override)
-    "transformer_params": "~31M",
+    "transformer_params": "~50M",
 }
 
 # Small-deep: Same ~50M params but narrower & deeper (better for complex patterns)
 SMALL_DEEP_ARCH = {
     "d_model": 384,
-    "n_layers": 20,
-    "n_heads": 6,
+    "n_layers": 24,
+    "n_heads": 6,  # head_dim=64
+    "ffn_mult": 5.0,  # Wider FFN to hit ~50M target with smaller d_model
     "dropout": 0.0,  # No dropout by default (use --dropout to override)
-    "transformer_params": "~35M",
+    "transformer_params": "~49M",
 }
 
 MEDIUM_ARCH = {
     "d_model": 768,
-    "n_layers": 13,
-    "n_heads": 12,
+    "n_layers": 16,
+    "n_heads": 12,  # head_dim=64
+    "ffn_mult": 4.5,  # Wider FFN to hit ~125M target
     "dropout": 0.0,  # No dropout by default (use --dropout to override)
-    "transformer_params": "~92M",
+    "transformer_params": "~123M",
 }
 
 LARGE_ARCH = {
     "d_model": 1024,
     "n_layers": 24,
-    "n_heads": 16,
+    "n_heads": 16,  # head_dim=64
+    "ffn_mult": 5.0,  # Wider FFN to hit ~350M target
     "dropout": 0.0,  # No dropout by default (use --dropout to override)
-    "transformer_params": "~302M",
+    "transformer_params": "~350M",
 }
 
 ARCHITECTURES = {
@@ -74,14 +79,14 @@ ARCHITECTURES = {
 TARGET_EFFECTIVE_BATCH = 32
 
 # Reference batch sizes: max micro batch that fits on 24GB VRAM (RTX 4090/3090)
-# These scale linearly with available VRAM
+# These scale linearly with available VRAM (computed in compute_batch_config)
 REFERENCE_VRAM_GB = 24
 REFERENCE_BATCH_SIZES = {
     2048: {
-        "small": 16,       # ~50M model
-        "small-deep": 16,  # ~50M model (deeper)
-        "medium": 8,       # ~125M model
-        "large": 4,        # ~350M model
+        "small": 16,       # d=512, L=16, FFN 4x, ~52M model
+        "small-deep": 16,  # d=384, L=24, FFN 5x, ~51M model (deeper)
+        "medium": 8,       # d=768, L=16, FFN 4.5x, ~126M model
+        "large": 4,        # d=1024, L=24, FFN 5x, ~357M model
     },
 }
 
@@ -179,25 +184,25 @@ MODEL_CONFIGS = {
         **SMALL_ARCH,
         **COMMON_TRAINING,
         "learning_rate": LR_ADJUSTMENTS["small"],
-        "description": "Small model (~50M with 20k vocab), fastest training",
+        "description": "Small model (~52M with vocab=1k), fastest training",
     },
     "small-deep": {
         **SMALL_DEEP_ARCH,
         **COMMON_TRAINING,
         "learning_rate": LR_ADJUSTMENTS["small-deep"],
-        "description": "Small-deep model (~50M with 20k vocab), narrower but deeper",
+        "description": "Small-deep model (~50M with vocab=1k), narrower but deeper",
     },
     "medium": {
         **MEDIUM_ARCH,
         **COMMON_TRAINING,
         "learning_rate": LR_ADJUSTMENTS["medium"],
-        "description": "Medium model (~60M with 20k vocab), good quality/speed balance",
+        "description": "Medium model (~126M with vocab=1k), good quality/speed balance",
     },
     "large": {
         **LARGE_ARCH,
         **COMMON_TRAINING,
         "learning_rate": LR_ADJUSTMENTS["large"],
-        "description": "Large model (~138M with 20k vocab), best quality",
+        "description": "Large model (~357M with vocab=1k), best quality",
     },
 }
 
@@ -217,6 +222,7 @@ def estimate_params(model_size: str, vocab_size: int, context_size: int = 2048) 
     arch = ARCHITECTURES[model_size]
     d_model = arch["d_model"]
     n_layers = arch["n_layers"]
+    ffn_mult = arch.get("ffn_mult", 4.0)  # Default to standard 4x
 
     # Token embedding: vocab_size × d_model
     token_embedding = vocab_size * d_model
@@ -227,17 +233,20 @@ def estimate_params(model_size: str, vocab_size: int, context_size: int = 2048) 
     # Output projection (separate from embedding): d_model × vocab_size
     output_projection = d_model * vocab_size
 
-    # Per-layer params: attention (4 × d_model²) + FFN (8 × d_model²)
-    # Standard: 12 × d_model² per layer
-    # SwiGLU: similar total with different structure
-    params_per_layer = 12 * d_model * d_model
+    # Per-layer params: attention (4 × d_model²) + FFN (2 × ffn_mult × d_model²)
+    # With ffn_mult=4: 4 + 8 = 12 × d_model² per layer (standard)
+    # With ffn_mult=4.5: 4 + 9 = 13 × d_model² per layer
+    # With ffn_mult=5: 4 + 10 = 14 × d_model² per layer
+    attention_params = 4 * d_model * d_model
+    ffn_params = 2 * ffn_mult * d_model * d_model
+    params_per_layer = attention_params + ffn_params
     transformer_params = n_layers * params_per_layer
 
     # Layer norms and biases (small contribution)
     norm_params = n_layers * 2 * d_model + 2 * d_model
 
     total = token_embedding + position_embedding + output_projection + transformer_params + norm_params
-    return total
+    return int(total)
 
 
 def get_model_config(
@@ -304,11 +313,12 @@ def print_model_summary():
     print()
 
     # Architecture table
-    print(f"{'Size':<10} {'d_model':<10} {'Layers':<10} {'Heads':<10} {'Transformer Params':<20}")
-    print("-" * 60)
+    print(f"{'Size':<10} {'d_model':<10} {'Layers':<10} {'Heads':<10} {'FFN':<8} {'Transformer Params':<20}")
+    print("-" * 70)
     for name, arch in ARCHITECTURES.items():
-        swiglu = " (SwiGLU)" if arch.get("use_swiglu") else ""
-        print(f"{name:<10} {arch['d_model']:<10} {arch['n_layers']:<10} {arch['n_heads']:<10} {arch['transformer_params']}{swiglu}")
+        ffn_mult = arch.get("ffn_mult", 4.0)
+        ffn_str = f"{ffn_mult}x"
+        print(f"{name:<10} {arch['d_model']:<10} {arch['n_layers']:<10} {arch['n_heads']:<10} {ffn_str:<8} {arch['transformer_params']}")
 
     print()
 
