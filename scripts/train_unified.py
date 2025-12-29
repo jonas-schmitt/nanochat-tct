@@ -125,7 +125,22 @@ elif eff_batch is not None:
     grad_accum = max(1, eff_batch // B)
 else:
     grad_accum = model_cfg["gradient_accumulation"]
-learning_rate = learning_rate_override if learning_rate_override is not None else model_cfg["learning_rate"]
+
+# Learning rate with automatic batch size scaling (sqrt rule)
+# Base LRs calibrated for batch 32: small=3e-4, medium=2e-4, large=1.5e-4
+# Scales with sqrt(batch/32)
+REFERENCE_BATCH = 32
+actual_eff_batch = B * grad_accum * ddp_world_size
+base_lr = model_cfg["learning_rate"]  # Model-specific base LR
+if learning_rate_override is not None:
+    learning_rate = learning_rate_override
+elif actual_eff_batch != REFERENCE_BATCH:
+    # Scale LR with sqrt of batch ratio
+    import math
+    scale = math.sqrt(actual_eff_batch / REFERENCE_BATCH)
+    learning_rate = base_lr * scale
+else:
+    learning_rate = base_lr
 weight_decay = model_cfg["weight_decay"]
 beta1 = model_cfg["beta1"]
 beta2 = model_cfg["beta2"]
@@ -153,7 +168,8 @@ print0(f"Gradient accumulation: {grad_accum}")
 print0(f"Effective batch size: {B * grad_accum * ddp_world_size}")
 lr_sched_effective = lr_schedule if lr_schedule else model_cfg.get("lr_schedule", "constant")
 lr_sched_desc = "constant" if lr_sched_effective == "constant" else f"cosine decay to {learning_rate * 0.1:.1e}"
-print0(f"Learning rate: {learning_rate} ({lr_sched_desc})")
+lr_scaled_note = f" (scaled from {base_lr:.1e} for batch {actual_eff_batch})" if actual_eff_batch != REFERENCE_BATCH and learning_rate_override is None else ""
+print0(f"Learning rate: {learning_rate:.4e} ({lr_sched_desc}){lr_scaled_note}")
 print0()
 print0(f"Epochs: {num_epochs}")
 print0(f"Steps per epoch: {steps_per_epoch}")
