@@ -22,6 +22,7 @@ FILTER_TOKENIZER=""
 FILTER_SIZES=""
 RESUME_MODE=""
 DROPOUT=""
+LR_SCHEDULE=""
 
 for arg in "$@"; do
     case $arg in
@@ -31,6 +32,8 @@ for arg in "$@"; do
         resume) RESUME_MODE="1" ;;
         --dropout=*) DROPOUT="${arg#--dropout=}" ;;
         dropout=*) DROPOUT="${arg#dropout=}" ;;
+        --lr_schedule=*) LR_SCHEDULE="${arg#--lr_schedule=}" ;;
+        constant) LR_SCHEDULE="constant" ;;
     esac
 done
 
@@ -46,8 +49,10 @@ if [ -z "$SCHEMAS" ]; then
     echo "        small-deep (must be explicit)"
     echo "Tokenizers: tct, utf8"
     echo "Options:"
-    echo "  resume          Resume from latest checkpoint"
-    echo "  --dropout=0.1   Set dropout (default: 0.0)"
+    echo "  resume              Resume from latest checkpoint"
+    echo "  --dropout=0.1       Set dropout (default: 0.0)"
+    echo "  --lr_schedule=X     LR schedule: cosine (default) or constant"
+    echo "  constant            Shorthand for --lr_schedule=constant"
     echo ""
     echo "Examples:"
     echo "  bash scripts/run.sh kubernetes"
@@ -55,6 +60,7 @@ if [ -z "$SCHEMAS" ]; then
     echo "  bash scripts/run.sh kubernetes small tct"
     echo "  bash scripts/run.sh kubernetes tsconfig resume"
     echo "  bash scripts/run.sh kubernetes --dropout=0.2        # Higher dropout"
+    echo "  bash scripts/run.sh kubernetes constant             # No LR decay"
     exit 1
 fi
 
@@ -134,6 +140,7 @@ echo "Schemas: $SCHEMAS"
 echo "Sizes: $SIZES"
 echo "Tokenizers: $TOKENIZERS"
 [ -n "$DROPOUT" ] && echo "Dropout: $DROPOUT"
+[ -n "$LR_SCHEDULE" ] && echo "LR Schedule: $LR_SCHEDULE"
 [ -n "$RESUME_MODE" ] && echo "Mode: RESUME"
 echo "============================================================"
 echo
@@ -151,6 +158,7 @@ for SCHEMA in $SCHEMAS; do
 
             exp_name="${SCHEMA}_${tokenizer}_${size}"
             [ -n "$DROPOUT" ] && exp_name="${exp_name}_drop${DROPOUT}"
+            [ "$LR_SCHEDULE" = "constant" ] && exp_name="${exp_name}_constlr"
             log_file="$LOG_DIR/${exp_name}.log"
 
             # Skip if already completed
@@ -176,12 +184,11 @@ for SCHEMA in $SCHEMAS; do
 
             echo "[START] $exp_name at $(date)"
 
-            DROPOUT_ARG=""
-            MODEL_TAG_ARG=""
-            if [ -n "$DROPOUT" ]; then
-                DROPOUT_ARG="--dropout=$DROPOUT"
-                MODEL_TAG_ARG="--model_tag=$exp_name"
-            fi
+            EXTRA_ARGS=""
+            [ -n "$DROPOUT" ] && EXTRA_ARGS="$EXTRA_ARGS --dropout=$DROPOUT"
+            [ -n "$LR_SCHEDULE" ] && EXTRA_ARGS="$EXTRA_ARGS --lr_schedule=$LR_SCHEDULE"
+            # Use custom model_tag if we have custom settings
+            [ -n "$DROPOUT" ] || [ -n "$LR_SCHEDULE" ] && EXTRA_ARGS="$EXTRA_ARGS --model_tag=$exp_name"
 
             python -m scripts.train_unified \
                 --schema="$SCHEMA" \
@@ -189,8 +196,7 @@ for SCHEMA in $SCHEMAS; do
                 --model_size="$size" \
                 --data_root="$DATA_DIR" \
                 $RESUME_ARG \
-                $DROPOUT_ARG \
-                $MODEL_TAG_ARG \
+                $EXTRA_ARGS \
                 2>&1 | tee -a "$log_file"
 
             echo "[DONE] $exp_name at $(date)"
