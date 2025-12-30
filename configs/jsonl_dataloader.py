@@ -136,7 +136,7 @@ def create_reshuffled_dataloaders(
     data_dir: Path,
     context_size: int,
     batch_size: int,
-    train_ratio: float = 0.9,
+    train_ratio: float = 0.95,
     max_len: Optional[int] = None,
     device: str = "cuda",
     num_workers: int = 0,
@@ -152,7 +152,7 @@ def create_reshuffled_dataloaders(
         data_dir: Directory containing train.jsonl and validate.jsonl
         context_size: Sequence length
         batch_size: Batch size
-        train_ratio: Fraction for training (default 0.9)
+        train_ratio: Fraction for training (default 0.95)
         max_len: Filter sequences longer than this
         device: Device for tensors
         num_workers: DataLoader workers
