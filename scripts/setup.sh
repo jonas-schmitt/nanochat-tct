@@ -86,11 +86,11 @@ case $PLATFORM in
         module purge 2>/dev/null || true
         module load cuda 2>/dev/null || true
 
-        # Try to load Python 3.12 module, fall back to conda
-        if module load python/3.12 2>/dev/null; then
+        # Try to load Python 3.12 module (prefer conda variant for venv compatibility)
+        if module load python/3.12-conda 2>/dev/null; then
+            echo "Loaded Python 3.12-conda module"
+        elif module load python/3.12 2>/dev/null; then
             echo "Loaded Python 3.12 module"
-        elif module load python/3.12-anaconda 2>/dev/null; then
-            echo "Loaded Python 3.12-anaconda module"
         else
             echo "Python 3.12 module not available, will use conda"
             module load python 2>/dev/null || true
@@ -195,7 +195,8 @@ else
                 runpod)
                     uv venv --python 3.12 "$VENV_DIR" || python3.12 -m venv "$VENV_DIR"
                     ;;
-                hpc)
+                nhr|hpc)
+                    # Use the Python from loaded module
                     uv venv --python python3 "$VENV_DIR" || python3 -m venv "$VENV_DIR"
                     ;;
                 local)
@@ -289,7 +290,7 @@ extract_if_missing() {
 
     echo "  [>>] $name (extracting...)"
     mkdir -p "$target"
-    tar -xJf "$archive" -C "$DATA_DIR"
+    tar --no-same-owner -xJf "$archive" -C "$DATA_DIR"
 
     if [ -f "$target/all.jsonl" ]; then
         echo "       Done: $(du -sh "$target" | cut -f1)"

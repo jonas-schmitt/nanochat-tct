@@ -185,7 +185,7 @@ for dataset in $DATASETS; do
             echo "  [DRY RUN] Would extract $dataset"
         else
             echo "  [>>] Extracting $dataset..."
-            tar -xJf "$archive" -C "$DATA_DIR"
+            tar --no-same-owner -xJf "$archive" -C "$DATA_DIR"
             echo "       Done: $(du -sh "$target" | cut -f1)"
         fi
     else
