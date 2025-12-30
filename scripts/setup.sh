@@ -260,13 +260,49 @@ fi
 echo "Done."
 
 # =============================================================================
-# Setup data directories
+# Setup data directories and extract archives if needed
 # =============================================================================
 
 echo "[6/6] Setting up data..."
 mkdir -p "$DATA_DIR"
 mkdir -p "$CODE_DIR/checkpoints"
 mkdir -p "$CODE_DIR/logs"
+
+# Required datasets (must match schema_configs.py)
+DATASETS="tsconfig-tct-base tsconfig-utf8-base-matched eslintrc-tct-bpe-500 eslintrc-utf8-bpe-500 kubernetes-tct-bpe-1k kubernetes-utf8-bpe-1k"
+
+# Check and extract missing datasets
+extract_if_missing() {
+    local name="$1"
+    local archive="$CODE_DIR/data/${name}.tar.xz"
+    local target="$DATA_DIR/$name"
+
+    if [ -d "$target" ] && [ -f "$target/all.jsonl" ]; then
+        echo "  [OK] $name (exists)"
+        return 0
+    fi
+
+    if [ ! -f "$archive" ]; then
+        echo "  [!!] $name (archive not found: $archive)"
+        return 1
+    fi
+
+    echo "  [>>] $name (extracting...)"
+    mkdir -p "$target"
+    tar -xJf "$archive" -C "$DATA_DIR"
+
+    if [ -f "$target/all.jsonl" ]; then
+        echo "       Done: $(du -sh "$target" | cut -f1)"
+    else
+        echo "       ERROR: extraction failed"
+        return 1
+    fi
+}
+
+echo "Checking/extracting datasets to $DATA_DIR..."
+for dataset in $DATASETS; do
+    extract_if_missing "$dataset"
+done
 echo "Done."
 
 # =============================================================================
@@ -285,8 +321,8 @@ echo
 
 # Check datasets
 echo "Datasets in $DATA_DIR:"
-for dir in tsconfig-tct-base tsconfig-utf8-base-matched eslintrc-tct-bpe-500 eslintrc-utf8-bpe-500 kubernetes-tct-bpe kubernetes-utf8-bpe; do
-    if [ -d "$DATA_DIR/$dir" ]; then
+for dir in $DATASETS; do
+    if [ -d "$DATA_DIR/$dir" ] && [ -f "$DATA_DIR/$dir/all.jsonl" ]; then
         echo "  [OK] $dir"
     else
         echo "  [--] $dir"
