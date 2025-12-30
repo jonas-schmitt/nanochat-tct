@@ -76,9 +76,9 @@ TARGET_EFFECTIVE_BATCH = 64
 REFERENCE_VRAM_GB = 24
 REFERENCE_BATCH_SIZES = {
     2048: {
-        "small": 8,    # d=512, L=16, SwiGLU 2.5x, ~50M model
-        "medium": 4,   # d=768, L=16, SwiGLU 3.0x, ~126M model
-        "large": 2,    # d=1024, L=24, SwiGLU 3.25x, ~350M model
+        "small": 16,   # d=512, L=16, SwiGLU 2.5x, ~50M model
+        "medium": 8,   # d=768, L=16, SwiGLU 3.0x, ~126M model
+        "large": 4,    # d=1024, L=24, SwiGLU 3.25x, ~350M model
     },
 }
 
