@@ -57,7 +57,7 @@ SCHEMA_CONFIGS = {
     "eslintrc": {
         # Context: 2048 covers all sequences (P99=1858)
         "context_size": 2048,
-        "default_epochs": 100,  # Fast convergence (ppl 1.54 at epoch 32)
+        "default_epochs": 75,   # Fast convergence
 
         # Vocabulary sizes (includes pad token)
         "tct_vocab_size": 500,      # BPE-500 (499) + pad
@@ -92,7 +92,7 @@ SCHEMA_CONFIGS = {
     "kubernetes": {
         # Context: 2048 covers 97.3% of sequences (P95=1006)
         "context_size": 2048,
-        "default_epochs": 200,  # Larger dataset
+        "default_epochs": 100,  # Larger dataset
 
         # Vocabulary sizes (includes pad token)
         "tct_vocab_size": 1000,     # BPE-1k (999) + pad
