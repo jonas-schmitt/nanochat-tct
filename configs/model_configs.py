@@ -4,9 +4,12 @@ Schema-agnostic model configurations for TCT experiments.
 All schemas use context_size=2048.
 
 Three preset architectures (sized for ~50M/125M/350M with vocab=1000):
-- Small:  d_model=512, 16 layers, FFN 4x   (~52M params)
-- Medium: d_model=768, 16 layers, FFN 4.5x (~126M params)
-- Large:  d_model=1024, 24 layers, FFN 5x  (~357M params)
+- Small:  d_model=512, 16 layers, SwiGLU 2.5x  (~50M params)
+- Medium: d_model=768, 16 layers, SwiGLU 3.0x  (~126M params)
+- Large:  d_model=1024, 24 layers, SwiGLU 3.25x (~350M params)
+
+SwiGLU: Gated linear unit with 3 FFN matrices (gate, up, down) instead of 2.
+Used by LLaMA, Mistral, etc. for better performance.
 
 The SAME architecture is used for ALL schemas and tokenizers.
 Reference: kubernetes (vocab=1000)
@@ -24,7 +27,8 @@ SMALL_ARCH = {
     "d_model": 512,
     "n_layers": 16,
     "n_heads": 8,  # head_dim=64
-    "ffn_mult": 4.0,  # Standard FFN multiplier
+    "ffn_mult": 2.5,  # SwiGLU multiplier to hit ~50M target
+    "use_swiglu": True,
     "dropout": 0.1,  # Default dropout for regularization
     "transformer_params": "~50M",
 }
@@ -33,16 +37,18 @@ MEDIUM_ARCH = {
     "d_model": 768,
     "n_layers": 16,
     "n_heads": 12,  # head_dim=64
-    "ffn_mult": 4.5,  # Wider FFN to hit ~125M target
+    "ffn_mult": 3.0,  # SwiGLU multiplier to hit ~125M target
+    "use_swiglu": True,
     "dropout": 0.1,  # Default dropout for regularization
-    "transformer_params": "~123M",
+    "transformer_params": "~126M",
 }
 
 LARGE_ARCH = {
     "d_model": 1024,
     "n_layers": 24,
     "n_heads": 16,  # head_dim=64
-    "ffn_mult": 5.0,  # Wider FFN to hit ~350M target
+    "ffn_mult": 3.25,  # SwiGLU multiplier to hit ~350M target
+    "use_swiglu": True,
     "dropout": 0.1,  # Default dropout for regularization
     "transformer_params": "~350M",
 }
@@ -70,9 +76,9 @@ TARGET_EFFECTIVE_BATCH = 64
 REFERENCE_VRAM_GB = 24
 REFERENCE_BATCH_SIZES = {
     2048: {
-        "small": 16,   # d=512, L=16, FFN 4x, ~52M model
-        "medium": 8,   # d=768, L=16, FFN 4.5x, ~126M model
-        "large": 4,    # d=1024, L=24, FFN 5x, ~357M model
+        "small": 16,   # d=512, L=16, SwiGLU 2.5x, ~50M model
+        "medium": 8,   # d=768, L=16, SwiGLU 3.0x, ~126M model
+        "large": 4,    # d=1024, L=24, SwiGLU 3.25x, ~350M model
     },
 }
 
@@ -200,7 +206,8 @@ def estimate_params(model_size: str, vocab_size: int, context_size: int = 2048) 
     arch = ARCHITECTURES[model_size]
     d_model = arch["d_model"]
     n_layers = arch["n_layers"]
-    ffn_mult = arch.get("ffn_mult", 4.0)  # Default to standard 4x
+    ffn_mult = arch.get("ffn_mult", 4.0)
+    use_swiglu = arch.get("use_swiglu", False)
 
     # Token embedding: vocab_size × d_model
     token_embedding = vocab_size * d_model
@@ -211,12 +218,12 @@ def estimate_params(model_size: str, vocab_size: int, context_size: int = 2048) 
     # Output projection (separate from embedding): d_model × vocab_size
     output_projection = d_model * vocab_size
 
-    # Per-layer params: attention (4 × d_model²) + FFN (2 × ffn_mult × d_model²)
-    # With ffn_mult=4: 4 + 8 = 12 × d_model² per layer (standard)
-    # With ffn_mult=4.5: 4 + 9 = 13 × d_model² per layer
-    # With ffn_mult=5: 4 + 10 = 14 × d_model² per layer
+    # Per-layer params: attention (4 × d_model²) + FFN
+    # Standard FFN: 2 × ffn_mult × d_model² (up + down projections)
+    # SwiGLU FFN: 3 × ffn_mult × d_model² (gate + up + down projections)
     attention_params = 4 * d_model * d_model
-    ffn_params = 2 * ffn_mult * d_model * d_model
+    ffn_matrices = 3 if use_swiglu else 2
+    ffn_params = ffn_matrices * ffn_mult * d_model * d_model
     params_per_layer = attention_params + ffn_params
     transformer_params = n_layers * params_per_layer
 
@@ -291,12 +298,13 @@ def print_model_summary():
     print()
 
     # Architecture table
-    print(f"{'Size':<10} {'d_model':<10} {'Layers':<10} {'Heads':<10} {'FFN':<8} {'Transformer Params':<20}")
+    print(f"{'Size':<10} {'d_model':<10} {'Layers':<10} {'Heads':<10} {'FFN':<12} {'Params':<15}")
     print("-" * 70)
     for name, arch in ARCHITECTURES.items():
         ffn_mult = arch.get("ffn_mult", 4.0)
-        ffn_str = f"{ffn_mult}x"
-        print(f"{name:<10} {arch['d_model']:<10} {arch['n_layers']:<10} {arch['n_heads']:<10} {ffn_str:<8} {arch['transformer_params']}")
+        use_swiglu = arch.get("use_swiglu", False)
+        ffn_str = f"SwiGLU {ffn_mult}x" if use_swiglu else f"{ffn_mult}x"
+        print(f"{name:<10} {arch['d_model']:<10} {arch['n_layers']:<10} {arch['n_heads']:<10} {ffn_str:<12} {arch['transformer_params']}")
 
     print()
 
