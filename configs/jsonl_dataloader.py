@@ -165,20 +165,32 @@ def create_reshuffled_dataloaders(
     import random
     data_dir = Path(data_dir)
 
-    # Load all sequences from both files
+    # Load all sequences - prefer all.jsonl if available, otherwise combine train+val
     all_sequences = []
+    all_jsonl = data_dir / "all.jsonl"
 
-    for jsonl_name in ["train.jsonl", "validate.jsonl"]:
-        jsonl_file = data_dir / jsonl_name
-        if jsonl_file.exists():
-            with open(jsonl_file, 'r') as f:
-                for line in f:
-                    tokens = json.loads(line)
-                    if max_len is None or len(tokens) <= max_len:
-                        all_sequences.append(torch.tensor(tokens, dtype=torch.long))
+    if all_jsonl.exists():
+        # Use all.jsonl directly
+        with open(all_jsonl, 'r') as f:
+            for line in f:
+                tokens = json.loads(line)
+                if max_len is None or len(tokens) <= max_len:
+                    all_sequences.append(torch.tensor(tokens, dtype=torch.long))
+        source = "all.jsonl"
+    else:
+        # Fallback: combine train.jsonl and validate.jsonl
+        for jsonl_name in ["train.jsonl", "validate.jsonl"]:
+            jsonl_file = data_dir / jsonl_name
+            if jsonl_file.exists():
+                with open(jsonl_file, 'r') as f:
+                    for line in f:
+                        tokens = json.loads(line)
+                        if max_len is None or len(tokens) <= max_len:
+                            all_sequences.append(torch.tensor(tokens, dtype=torch.long))
+        source = "train.jsonl + validate.jsonl"
 
     if verbose:
-        print(f"Loaded {len(all_sequences):,} total sequences from {data_dir.name}")
+        print(f"Loaded {len(all_sequences):,} total sequences from {data_dir.name} ({source})")
 
     # Shuffle with fixed seed for reproducibility
     random.seed(seed)

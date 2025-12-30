@@ -62,9 +62,9 @@ warmup_fraction = 0.05  # warmup as fraction of first epoch
 grad_clip = 1.0         # gradient clipping
 device_batch_size = None  # None => use config default
 gradient_accumulation_override = None  # None => use config default
-eff_batch = None          # None => use config default (32), or override effective batch size
-lr_schedule = "constant"  # "constant" (default) or "cosine"
-dropout = None          # None => use config default, or 0.0-0.5
+eff_batch = None          # None => use config default (64), or override effective batch size
+lr_schedule = None        # None => use config default (cosine), or "constant"/"cosine"
+dropout = None          # None => use config default (0.1), or 0.0-0.5
 learning_rate_override = None  # None => use config default, or e.g. 3e-4
 resume_from_epoch = 0   # resume training from this epoch (0 = start fresh)
 eval_every_epoch = 1    # evaluate every N epochs
@@ -127,9 +127,9 @@ else:
     grad_accum = model_cfg["gradient_accumulation"]
 
 # Learning rate with automatic batch size scaling (sqrt rule)
-# Base LRs calibrated for batch 32: small=3e-4, medium=2e-4, large=1.5e-4
-# Scales with sqrt(batch/32)
-REFERENCE_BATCH = 32
+# Base LRs calibrated for batch 64: small=4e-4, medium=3e-4, large=2e-4
+# Scales with sqrt(actual_batch/64) if batch differs from reference
+REFERENCE_BATCH = 64  # LR values in config are calibrated for this batch size
 actual_eff_batch = B * grad_accum * ddp_world_size
 base_lr = model_cfg["learning_rate"]  # Model-specific base LR
 if learning_rate_override is not None:
