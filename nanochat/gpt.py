@@ -18,6 +18,7 @@ from dataclasses import dataclass
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from torch.utils.checkpoint import checkpoint
 
 from nanochat.common import get_dist_info, print0
 from nanochat.muon import Muon, DistMuon
@@ -32,6 +33,9 @@ class GPTConfig:
     n_kv_head: int = 6 # number of key/value heads (GQA)
     n_embd: int = 768
     dropout: float = 0.0  # dropout probability (0.0 = no dropout)
+    use_swiglu: bool = False  # use SwiGLU activation (LLaMA/Mistral style)
+    ffn_mult: float = 4.0  # FFN hidden dimension multiplier
+    gradient_checkpointing: bool = False  # trade compute for memory
 
 
 def norm(x):
@@ -114,10 +118,12 @@ class CausalSelfAttention(nn.Module):
 
 
 class MLP(nn.Module):
+    """Standard MLP with ReLU² activation."""
     def __init__(self, config):
         super().__init__()
-        self.c_fc = nn.Linear(config.n_embd, 4 * config.n_embd, bias=False)
-        self.c_proj = nn.Linear(4 * config.n_embd, config.n_embd, bias=False)
+        hidden_dim = int(config.ffn_mult * config.n_embd)
+        self.c_fc = nn.Linear(config.n_embd, hidden_dim, bias=False)
+        self.c_proj = nn.Linear(hidden_dim, config.n_embd, bias=False)
         self.dropout = nn.Dropout(config.dropout)
 
     def forward(self, x):
@@ -128,11 +134,31 @@ class MLP(nn.Module):
         return x
 
 
+class SwiGLUMLP(nn.Module):
+    """SwiGLU MLP (LLaMA/Mistral style) - better quality, 50% more FFN params."""
+    def __init__(self, config):
+        super().__init__()
+        hidden_dim = int(config.ffn_mult * config.n_embd)
+        self.w_gate = nn.Linear(config.n_embd, hidden_dim, bias=False)
+        self.w_up = nn.Linear(config.n_embd, hidden_dim, bias=False)
+        self.w_down = nn.Linear(hidden_dim, config.n_embd, bias=False)
+        self.dropout = nn.Dropout(config.dropout)
+
+    def forward(self, x):
+        # SwiGLU: (silu(gate) * up) @ down
+        gate = F.silu(self.w_gate(x))
+        up = self.w_up(x)
+        x = gate * up
+        x = self.w_down(x)
+        x = self.dropout(x)
+        return x
+
+
 class Block(nn.Module):
     def __init__(self, config, layer_idx):
         super().__init__()
         self.attn = CausalSelfAttention(config, layer_idx)
-        self.mlp = MLP(config)
+        self.mlp = SwiGLUMLP(config) if config.use_swiglu else MLP(config)
 
     def forward(self, x, cos_sin, kv_cache):
         x = x + self.attn(norm(x), cos_sin, kv_cache)
@@ -163,9 +189,11 @@ class GPT(nn.Module):
         self.apply(self._init_weights)
         # zero out classifier weights
         torch.nn.init.zeros_(self.lm_head.weight)
-        # zero out c_proj weights in all blocks
+        # zero out output projection weights in all blocks
         for block in self.transformer.h:
-            torch.nn.init.zeros_(block.mlp.c_proj.weight)
+            # Handle both MLP types: standard uses c_proj, SwiGLU uses w_down
+            mlp_out = getattr(block.mlp, 'w_down', None) or block.mlp.c_proj
+            torch.nn.init.zeros_(mlp_out.weight)
             torch.nn.init.zeros_(block.attn.c_proj.weight)
         # init the rotary embeddings
         head_dim = self.config.n_embd // self.config.n_head
@@ -260,8 +288,13 @@ class GPT(nn.Module):
         # Forward the trunk of the Transformer
         x = self.transformer.wte(idx)
         x = norm(x)
+        # Apply gradient checkpointing during training if enabled (saves memory, ~30% slower)
+        use_checkpoint = self.config.gradient_checkpointing and self.training and kv_cache is None
         for block in self.transformer.h:
-            x = block(x, cos_sin, kv_cache)
+            if use_checkpoint:
+                x = checkpoint(block, x, cos_sin, kv_cache, use_reentrant=False)
+            else:
+                x = block(x, cos_sin, kv_cache)
         x = norm(x)
 
         # Forward the lm_head (compute logits)

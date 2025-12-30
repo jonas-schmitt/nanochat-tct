@@ -188,6 +188,9 @@ model_config_kwargs = dict(
     n_kv_head=model_cfg["n_heads"],
     n_embd=model_cfg["d_model"],
     dropout=dropout_effective,
+    use_swiglu=model_cfg.get("use_swiglu", False),
+    ffn_mult=model_cfg.get("ffn_mult", 4.0),
+    gradient_checkpointing=False,  # Enable if OOM with SwiGLU
 )
 
 with torch.device("meta"):
