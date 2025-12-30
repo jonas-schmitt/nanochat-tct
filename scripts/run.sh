@@ -77,7 +77,7 @@ if [ -z "$CODE_DIR" ]; then
         DATA_DIR="/workspace/data"
     elif [ -n "$WORK" ]; then
         CODE_DIR="$WORK/nanochat-tct"
-        DATA_DIR="$WORK/data/tct"
+        DATA_DIR="$WORK/data"  # Sibling of nanochat-tct (not /tct subdir)
     else
         CODE_DIR="$(cd "$(dirname "$0")/.." && pwd)"
         DATA_DIR="$HOME/Desktop/data"

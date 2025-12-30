@@ -46,13 +46,13 @@ case $PLATFORM in
         ;;
     nhr)
         WORKSPACE="${WORK:-$HOME}"
-        DATA_DIR="$WORKSPACE/data/tct"
+        DATA_DIR="$WORKSPACE/data"  # Sibling of nanochat-tct
         CODE_DIR="$WORKSPACE/nanochat-tct"
         VENV_DIR="$WORKSPACE/venv-tct"
         ;;
     hpc)
         WORKSPACE="${SCRATCH:-$HOME}"
-        DATA_DIR="$WORKSPACE/data/tct"
+        DATA_DIR="$WORKSPACE/data"  # Sibling of nanochat-tct
         CODE_DIR="$WORKSPACE/nanochat-tct"
         VENV_DIR="$WORKSPACE/venv-tct"
         ;;

@@ -15,6 +15,7 @@
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+CODE_DIR="$(dirname "$SCRIPT_DIR")"
 DRY_RUN=""
 RESUME="resume"
 
@@ -25,15 +26,81 @@ for arg in "$@"; do
     esac
 done
 
+# =============================================================================
+# Detect platform and set DATA_DIR
+# =============================================================================
+
+detect_platform() {
+    if [ -d "/workspace" ] && [ -w "/workspace" ]; then
+        echo "runpod"
+    elif [ -n "$WORK" ] && [ -d "$WORK" ]; then
+        echo "nhr"
+    else
+        echo "local"
+    fi
+}
+
+PLATFORM=$(detect_platform)
+
+case $PLATFORM in
+    runpod)
+        DATA_DIR="/workspace/data"
+        ;;
+    nhr)
+        DATA_DIR="${WORK:-$HOME}/data"
+        ;;
+    local)
+        DATA_DIR="$HOME/Desktop/data"
+        ;;
+esac
+
 echo "============================================================"
 echo "Submitting All Training Jobs"
 echo "============================================================"
 echo "Date: $(date)"
+echo "Platform: $PLATFORM"
+echo "Data dir: $DATA_DIR"
 echo "Epochs: tsconfig=50, eslintrc=75, kubernetes=100"
 echo "Checkpoint: every 5% of training"
 echo "GPU: small/medium=A100, large=A100_80"
 [ -n "$DRY_RUN" ] && echo "Mode: DRY RUN"
 echo "============================================================"
+echo
+
+# =============================================================================
+# Check and extract training data if missing
+# =============================================================================
+
+DATASETS="tsconfig-tct-base tsconfig-utf8-base-matched eslintrc-tct-bpe-500 eslintrc-utf8-bpe-500 kubernetes-tct-bpe-1k kubernetes-utf8-bpe-1k"
+
+mkdir -p "$DATA_DIR"
+
+MISSING=0
+for dataset in $DATASETS; do
+    archive="$CODE_DIR/data/${dataset}.tar.xz"
+    target="$DATA_DIR/$dataset"
+
+    if [ -d "$target" ] && [ -f "$target/all.jsonl" ]; then
+        echo "  [OK] $dataset"
+    elif [ -f "$archive" ]; then
+        if [ -n "$DRY_RUN" ]; then
+            echo "  [DRY RUN] Would extract $dataset"
+        else
+            echo "  [>>] Extracting $dataset..."
+            tar -xJf "$archive" -C "$DATA_DIR"
+            echo "       Done: $(du -sh "$target" | cut -f1)"
+        fi
+    else
+        echo "  [!!] MISSING: $dataset (no archive)"
+        MISSING=1
+    fi
+done
+
+if [ "$MISSING" = "1" ]; then
+    echo
+    echo "ERROR: Some datasets are missing. Run setup.sh first or check data archives."
+    exit 1
+fi
 echo
 
 SCHEMAS="kubernetes tsconfig eslintrc"
