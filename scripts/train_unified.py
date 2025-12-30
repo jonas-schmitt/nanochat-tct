@@ -190,7 +190,7 @@ model_config_kwargs = dict(
     dropout=dropout_effective,
     use_swiglu=model_cfg.get("use_swiglu", False),
     ffn_mult=model_cfg.get("ffn_mult", 4.0),
-    gradient_checkpointing=False,  # Enable if OOM with SwiGLU
+    gradient_checkpointing=True,  # Trade ~30% compute for memory savings
 )
 
 with torch.device("meta"):
