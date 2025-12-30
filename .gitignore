@@ -29,7 +29,9 @@ CLAUDE.md
 # RunPod upload staging (large files)
 runpod-upload/
 
-# Archives (never commit)
+# Archives (never commit, except training data)
 *.tar.gz
 *.tar
 *.zip
+# Exception: training data archives ARE committed
+!data/*.tar.xz
