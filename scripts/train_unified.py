@@ -180,12 +180,9 @@ print0(f"Save interval: every {save_interval} steps ({save_every_pct}%){runpod_n
 print0()
 
 # Initialize model
-# Auto-enable gradient checkpointing when dropout > 0 (dropout + torch.compile needs more memory)
-use_grad_checkpoint = dropout_effective > 0
-if use_grad_checkpoint:
-    print0(f"Gradient checkpointing: ENABLED (dropout={dropout_effective} requires extra memory)")
-else:
-    print0("Gradient checkpointing: disabled")
+# Always enable gradient checkpointing - torch.compile needs extra memory for compilation graphs
+use_grad_checkpoint = True
+print0("Gradient checkpointing: ENABLED (required for torch.compile memory efficiency)")
 
 model_config_kwargs = dict(
     sequence_len=T,
