@@ -192,17 +192,23 @@ def create_reshuffled_dataloaders(
     if verbose:
         print(f"Loaded {len(all_sequences):,} total sequences from {data_dir.name} ({source})")
 
-    # Shuffle with fixed seed for reproducibility
+    # Shuffle indices with fixed seed for reproducibility
+    # This ensures TCT and UTF8 get the same train/val split (same document indices)
+    # IMPORTANT: Requires all.jsonl to have same documents in same order for both tokenizers
+    n = len(all_sequences)
+    indices = list(range(n))
     random.seed(seed)
-    random.shuffle(all_sequences)
+    random.shuffle(indices)
 
-    # Split
-    split_idx = int(len(all_sequences) * train_ratio)
-    train_sequences = all_sequences[:split_idx]
-    val_sequences = all_sequences[split_idx:]
+    # Split by indices
+    split_idx = int(n * train_ratio)
+    train_indices = set(indices[:split_idx])
+
+    train_sequences = [all_sequences[i] for i in range(n) if i in train_indices]
+    val_sequences = [all_sequences[i] for i in range(n) if i not in train_indices]
 
     if verbose:
-        print(f"  Reshuffled split: {len(train_sequences):,} train, {len(val_sequences):,} val")
+        print(f"  Reshuffled split: {len(train_sequences):,} train, {len(val_sequences):,} val (seed={seed})")
 
     # Create datasets directly from sequences
     class InMemoryDataset(Dataset):
