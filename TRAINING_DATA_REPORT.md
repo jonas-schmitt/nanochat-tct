@@ -13,7 +13,7 @@ This report documents the training data prepared for TCT (Type-Constrained Token
 | Parameter | Value |
 |-----------|-------|
 | Context Length | 2048 (all schemas) |
-| Train/Validate Split | 90% / 10% |
+| Train/Validate Split | 95% / 5% |
 | Model Size | Small (~50M params) |
 
 ## Recommended Datasets

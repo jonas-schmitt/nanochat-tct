@@ -278,7 +278,7 @@ def run_demo(num_examples: int = 5, pause: float = 5.0, curated: bool = True):
 
     out(f"{BOLD}Loading sequences...{RESET}")
     all_seqs = torch.load("/home/josch/Desktop/data/.cache/tokenized_k8s_split90_254908files.pt")
-    val_seqs = all_seqs[int(len(all_seqs) * 0.9):]
+    val_seqs = all_seqs[int(len(all_seqs) * 0.95):]
     out(f"{GREEN}✓ {len(val_seqs)} validation sequences{RESET}")
 
     # Collect examples
