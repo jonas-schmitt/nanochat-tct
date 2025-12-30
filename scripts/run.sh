@@ -27,9 +27,9 @@ EFF_BATCH=""
 
 for arg in "$@"; do
     case $arg in
-        kubernetes|kubernetes-base|kubernetes-bpe-1k|tsconfig|eslintrc) SCHEMAS="$SCHEMAS $arg" ;;
+        kubernetes|tsconfig|eslintrc) SCHEMAS="$SCHEMAS $arg" ;;
         tct|utf8) FILTER_TOKENIZER="$arg" ;;
-        small|small-deep|medium|large) FILTER_SIZES="$FILTER_SIZES $arg" ;;
+        small|medium|large) FILTER_SIZES="$FILTER_SIZES $arg" ;;
         resume) RESUME_MODE="1" ;;
         --dropout=*) DROPOUT="${arg#--dropout=}" ;;
         dropout=*) DROPOUT="${arg#dropout=}" ;;
@@ -45,18 +45,17 @@ SCHEMAS="${SCHEMAS# }"
 FILTER_SIZES="${FILTER_SIZES# }"
 
 if [ -z "$SCHEMAS" ]; then
-    echo "Usage: bash scripts/run.sh <schema>... [size]... [tokenizer] [resume] [--dropout=N]"
+    echo "Usage: bash scripts/run.sh <schema>... [size]... [tokenizer] [resume] [options]"
     echo ""
-    echo "Schemas: kubernetes, kubernetes-base, kubernetes-bpe-1k, tsconfig, eslintrc"
-    echo "Sizes: small, medium, large (default)"
-    echo "        small-deep (must be explicit)"
+    echo "Schemas: kubernetes, tsconfig, eslintrc"
+    echo "Sizes: small, medium, large"
     echo "Tokenizers: tct, utf8"
     echo "Options:"
     echo "  resume              Resume from latest checkpoint"
-    echo "  --dropout=0.1       Set dropout (default: 0.0)"
-    echo "  --lr_schedule=X     LR schedule: constant (default) or cosine"
+    echo "  --dropout=0.1       Set dropout (default: 0.1)"
+    echo "  --lr_schedule=X     LR schedule: cosine (default) or constant"
     echo "  constant            Shorthand for --lr_schedule=constant"
-    echo "  --eff_batch=N       Effective batch size (default: 32)"
+    echo "  --eff_batch=N       Effective batch size (default: 64)"
     echo ""
     echo "Examples:"
     echo "  bash scripts/run.sh kubernetes"
@@ -65,7 +64,6 @@ if [ -z "$SCHEMAS" ]; then
     echo "  bash scripts/run.sh kubernetes tsconfig resume"
     echo "  bash scripts/run.sh kubernetes --dropout=0.2        # Higher dropout"
     echo "  bash scripts/run.sh kubernetes constant             # No LR decay"
-    echo "  bash scripts/run.sh kubernetes --eff_batch=64       # Larger batch"
     exit 1
 fi
 
@@ -104,12 +102,11 @@ get_epochs() {
     case $schema in
         tsconfig)    echo 50 ;;    # Converges very fast (ppl 1.19 at epoch 3)
         eslintrc)    echo 100 ;;   # Fast convergence (ppl 1.54 at epoch 32)
-        kubernetes*) echo 200 ;;   # All kubernetes variants: 200 epochs
+        kubernetes)  echo 200 ;;   # Larger dataset
         *)           echo 100 ;;   # Default
     esac
 }
 
-# Default sizes exclude small-deep (must be explicit)
 DEFAULT_SIZES="small medium large"
 TOKENIZERS="${TOKENIZERS:-tct utf8}"
 

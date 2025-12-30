@@ -87,86 +87,16 @@ SCHEMA_CONFIGS = {
     },
 
     # =========================================================================
-    # KUBERNETES - BPE-20k, complex manifests
+    # KUBERNETES - BPE-1k, good balance of compression and coverage
     # =========================================================================
     "kubernetes": {
-        # Context: 2048 covers ~99% of sequences (P99=2622, some truncation)
+        # Context: 2048 covers 97.3% of sequences (P95=1006)
         "context_size": 2048,
         "default_epochs": 200,  # Larger dataset
 
         # Vocabulary sizes (includes pad token)
-        "tct_vocab_size": 20_000,   # BPE-20k (19999) + pad
-        "utf8_vocab_size": 23_887,  # UTF8 BPE (23886) + pad
-
-        # Training data statistics
-        "train_files": 221_794,
-        "validate_files": 24_644,
-        "total_files": 246_438,
-        "train_tokens_tct": 42_000_000,
-        "train_tokens_utf8": 42_000_000,
-        "avg_tokens": 189,
-
-        # Percentiles
-        "p50": 37,
-        "p90": 205,
-        "p95": 418,
-        "p99": 2622,
-
-        # Data directories
-        "data_dir_tct": "kubernetes-tct-bpe",
-        "data_dir_utf8": "kubernetes-utf8-bpe",
-
-        # Schema info
-        "complexity": "high",
-        "description": "Kubernetes manifest files (BPE-20k)",
-    },
-
-    # =========================================================================
-    # KUBERNETES-BASE - Base encoding (no BPE), longer sequences
-    # =========================================================================
-    "kubernetes-base": {
-        # Context: 2048 covers 95% of sequences (P95=2078)
-        "context_size": 2048,
-        "default_epochs": 200,  # Same as kubernetes
-
-        # Vocabulary sizes (TCT only for now)
-        "tct_vocab_size": 258,      # Base encoding (257) + pad
-        "utf8_vocab_size": 258,     # Placeholder (not used)
-
-        # Training data statistics (measured from first 50k sequences)
-        "train_files": 221_795,
-        "validate_files": 24_644,
-        "total_files": 246_439,
-        "train_tokens_tct": 284_000_000,  # 1279 avg * 221k files
-        "train_tokens_utf8": 284_000_000,
-        "avg_tokens": 1279,
-
-        # Percentiles (measured)
-        "p50": 221,
-        "p90": 1190,
-        "p95": 2078,
-        "p99": 16997,
-
-        # Data directories (TCT only)
-        "data_dir_tct": "kubernetes-tct-base",
-        "data_dir_utf8": None,  # Not available yet
-
-        # Schema info
-        "complexity": "high",
-        "description": "Kubernetes manifests (base encoding, 6x longer sequences)",
-    },
-
-    # =========================================================================
-    # KUBERNETES-BPE-1K - Light BPE compression, good balance
-    # =========================================================================
-    "kubernetes-bpe-1k": {
-        # Context: 2048 covers 97.3% of sequences (P95=1006)
-        "context_size": 2048,
-        "default_epochs": 200,  # Same as kubernetes
-
-        # Vocabulary sizes (TCT only for now)
         "tct_vocab_size": 1000,     # BPE-1k (999) + pad
-        "utf8_vocab_size": 1000,    # Placeholder (not used)
+        "utf8_vocab_size": 1527,    # UTF8 BPE (256 base + 1270 merges + 1 pad)
 
         # Training data statistics
         "train_files": 221_795,
@@ -182,13 +112,13 @@ SCHEMA_CONFIGS = {
         "p95": 1006,
         "p99": 7271,
 
-        # Data directories (TCT only)
+        # Data directories
         "data_dir_tct": "kubernetes-tct-bpe-1k",
-        "data_dir_utf8": None,  # Not available yet
+        "data_dir_utf8": "kubernetes-utf8-bpe-1k",
 
         # Schema info
         "complexity": "high",
-        "description": "Kubernetes manifests (BPE-1k, 25% util, 97% coverage)",
+        "description": "Kubernetes manifest files (BPE-1k, 25% util, 97% coverage)",
     },
 }
 

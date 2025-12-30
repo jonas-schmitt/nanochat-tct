@@ -3,14 +3,13 @@ Schema-agnostic model configurations for TCT experiments.
 
 All schemas use context_size=2048.
 
-Four preset architectures (sized for ~50M/125M/350M with vocab=1000):
-- Small:      d_model=512, 16 layers, FFN 4x   (~52M params)
-- Small-deep: d_model=384, 24 layers, FFN 5x   (~51M params, narrower & deeper)
-- Medium:     d_model=768, 16 layers, FFN 4.5x (~126M params)
-- Large:      d_model=1024, 24 layers, FFN 5x  (~357M params)
+Three preset architectures (sized for ~50M/125M/350M with vocab=1000):
+- Small:  d_model=512, 16 layers, FFN 4x   (~52M params)
+- Medium: d_model=768, 16 layers, FFN 4.5x (~126M params)
+- Large:  d_model=1024, 24 layers, FFN 5x  (~357M params)
 
 The SAME architecture is used for ALL schemas and tokenizers.
-Reference: kubernetes-bpe-1k (vocab=1000)
+Reference: kubernetes (vocab=1000)
 - Low vocab schemas (258-1000): ~50M/125M/350M as designed
 - High vocab schemas (20k+): More params from larger embeddings
 """
@@ -28,16 +27,6 @@ SMALL_ARCH = {
     "ffn_mult": 4.0,  # Standard FFN multiplier
     "dropout": 0.1,  # Default dropout for regularization
     "transformer_params": "~50M",
-}
-
-# Small-deep: Same ~50M params but narrower & deeper (better for complex patterns)
-SMALL_DEEP_ARCH = {
-    "d_model": 384,
-    "n_layers": 24,
-    "n_heads": 6,  # head_dim=64
-    "ffn_mult": 5.0,  # Wider FFN to hit ~50M target with smaller d_model
-    "dropout": 0.1,  # Default dropout for regularization
-    "transformer_params": "~49M",
 }
 
 MEDIUM_ARCH = {
@@ -60,7 +49,6 @@ LARGE_ARCH = {
 
 ARCHITECTURES = {
     "small": SMALL_ARCH,
-    "small-deep": SMALL_DEEP_ARCH,
     "medium": MEDIUM_ARCH,
     "large": LARGE_ARCH,
 }
@@ -82,10 +70,9 @@ TARGET_EFFECTIVE_BATCH = 64
 REFERENCE_VRAM_GB = 24
 REFERENCE_BATCH_SIZES = {
     2048: {
-        "small": 16,       # d=512, L=16, FFN 4x, ~52M model
-        "small-deep": 16,  # d=384, L=24, FFN 5x, ~51M model (deeper)
-        "medium": 8,       # d=768, L=16, FFN 4.5x, ~126M model
-        "large": 4,        # d=1024, L=24, FFN 5x, ~357M model
+        "small": 16,   # d=512, L=16, FFN 4x, ~52M model
+        "medium": 8,   # d=768, L=16, FFN 4.5x, ~126M model
+        "large": 4,    # d=1024, L=24, FFN 5x, ~357M model
     },
 }
 
@@ -167,10 +154,9 @@ COMMON_TRAINING = {
 
 # Learning rate adjustments by model size (smaller for larger models)
 LR_ADJUSTMENTS = {
-    "small": 4e-4,       # ~50M params
-    "small-deep": 4e-4,  # ~50M params (deeper, same LR)
-    "medium": 3e-4,      # ~125M params
-    "large": 2e-4,       # ~350M params
+    "small": 4e-4,   # ~50M params
+    "medium": 3e-4,  # ~125M params
+    "large": 2e-4,   # ~350M params
 }
 
 # =============================================================================
@@ -183,12 +169,6 @@ MODEL_CONFIGS = {
         **COMMON_TRAINING,
         "learning_rate": LR_ADJUSTMENTS["small"],
         "description": "Small model (~52M with vocab=1k), fastest training",
-    },
-    "small-deep": {
-        **SMALL_DEEP_ARCH,
-        **COMMON_TRAINING,
-        "learning_rate": LR_ADJUSTMENTS["small-deep"],
-        "description": "Small-deep model (~50M with vocab=1k), narrower but deeper",
     },
     "medium": {
         **MEDIUM_ARCH,
@@ -346,7 +326,7 @@ def print_model_summary():
         ("A100-80", 80),
     ]
 
-    print("Batch Sizes by GPU (context=2048, target eff_batch=32):")
+    print("Batch Sizes by GPU (context=2048, target eff_batch=64):")
     print("-" * 85)
     print(f"{'Model':<12}", end="")
     for gpu_name, _ in target_gpus:
@@ -358,7 +338,7 @@ def print_model_summary():
     print()
     print("-" * 85)
 
-    for size in ["small", "small-deep", "medium", "large"]:
+    for size in ["small", "medium", "large"]:
         print(f"{size:<12}", end="")
         for gpu_name, vram in target_gpus:
             cfg = compute_batch_config(size, 2048, gpu_memory_gb=vram)
