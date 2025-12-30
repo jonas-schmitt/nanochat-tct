@@ -5,11 +5,14 @@ All schemas use context_size=2048.
 
 Three preset architectures (sized for ~50M/125M/350M with vocab=1000):
 - Small:  d_model=512, 16 layers, SwiGLU 2.5x  (~50M params)
-- Medium: d_model=768, 16 layers, SwiGLU 3.0x  (~126M params)
+- Medium: d_model=768, 16 layers, SwiGLU 3.0x  (~125M params)
 - Large:  d_model=1024, 24 layers, SwiGLU 3.25x (~350M params)
 
 SwiGLU: Gated linear unit with 3 FFN matrices (gate, up, down) instead of 2.
 Used by LLaMA, Mistral, etc. for better performance.
+
+Dropout is disabled by default (0.0). When dropout > 0, gradient checkpointing
+is automatically enabled to handle the extra memory from dropout masks.
 
 The SAME architecture is used for ALL schemas and tokenizers.
 Reference: kubernetes (vocab=1000)
@@ -29,7 +32,7 @@ SMALL_ARCH = {
     "n_heads": 8,  # head_dim=64
     "ffn_mult": 2.5,  # SwiGLU multiplier to hit ~50M target
     "use_swiglu": True,
-    "dropout": 0.1,  # Default dropout for regularization
+    "dropout": 0.0,  # Disabled by default (enable triggers grad checkpointing)
     "transformer_params": "~50M",
 }
 
@@ -39,8 +42,8 @@ MEDIUM_ARCH = {
     "n_heads": 12,  # head_dim=64
     "ffn_mult": 3.0,  # SwiGLU multiplier to hit ~125M target
     "use_swiglu": True,
-    "dropout": 0.1,  # Default dropout for regularization
-    "transformer_params": "~126M",
+    "dropout": 0.0,  # Disabled by default (enable triggers grad checkpointing)
+    "transformer_params": "~125M",
 }
 
 LARGE_ARCH = {
@@ -49,7 +52,7 @@ LARGE_ARCH = {
     "n_heads": 16,  # head_dim=64
     "ffn_mult": 3.25,  # SwiGLU multiplier to hit ~350M target
     "use_swiglu": True,
-    "dropout": 0.1,  # Default dropout for regularization
+    "dropout": 0.0,  # Disabled by default (enable triggers grad checkpointing)
     "transformer_params": "~350M",
 }
 

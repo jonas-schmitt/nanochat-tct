@@ -180,6 +180,13 @@ print0(f"Save interval: every {save_interval} steps ({save_every_pct}%){runpod_n
 print0()
 
 # Initialize model
+# Auto-enable gradient checkpointing when dropout > 0 (dropout + torch.compile needs more memory)
+use_grad_checkpoint = dropout_effective > 0
+if use_grad_checkpoint:
+    print0(f"Gradient checkpointing: ENABLED (dropout={dropout_effective} requires extra memory)")
+else:
+    print0("Gradient checkpointing: disabled")
+
 model_config_kwargs = dict(
     sequence_len=T,
     vocab_size=vocab_size,
@@ -190,7 +197,7 @@ model_config_kwargs = dict(
     dropout=dropout_effective,
     use_swiglu=model_cfg.get("use_swiglu", False),
     ffn_mult=model_cfg.get("ffn_mult", 4.0),
-    gradient_checkpointing=True,  # Trade ~30% compute for memory savings
+    gradient_checkpointing=use_grad_checkpoint,
 )
 
 with torch.device("meta"):
