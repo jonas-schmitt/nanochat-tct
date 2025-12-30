@@ -200,12 +200,13 @@ def create_reshuffled_dataloaders(
     random.seed(seed)
     random.shuffle(indices)
 
-    # Split by indices
+    # Split by shuffled indices (maintains random order within train/val)
     split_idx = int(n * train_ratio)
-    train_indices = set(indices[:split_idx])
+    train_indices = indices[:split_idx]
+    val_indices = indices[split_idx:]
 
-    train_sequences = [all_sequences[i] for i in range(n) if i in train_indices]
-    val_sequences = [all_sequences[i] for i in range(n) if i not in train_indices]
+    train_sequences = [all_sequences[i] for i in train_indices]
+    val_sequences = [all_sequences[i] for i in val_indices]
 
     if verbose:
         print(f"  Reshuffled split: {len(train_sequences):,} train, {len(val_sequences):,} val (seed={seed})")
