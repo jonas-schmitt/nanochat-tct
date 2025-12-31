@@ -22,7 +22,8 @@ Configuration loaded from configs/ module:
 
 import os
 # Memory management settings - must be set before importing torch
-os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True,garbage_collection_threshold:0.8"
+# Note: PYTORCH_CUDA_ALLOC_CONF is deprecated, use PYTORCH_ALLOC_CONF
+os.environ["PYTORCH_ALLOC_CONF"] = "expandable_segments:True,garbage_collection_threshold:0.8"
 # Clear inductor cache on startup to avoid stale compiled graphs causing OOM
 os.environ["TORCHINDUCTOR_CACHE_DIR"] = "/tmp/torchinductor_cache"
 
@@ -36,6 +37,21 @@ from pathlib import Path
 from contextlib import nullcontext
 
 import torch
+
+# Aggressive GPU cleanup at startup - clear any stale allocations from previous runs
+if torch.cuda.is_available():
+    # Check initial GPU state
+    free_mem, total_mem = torch.cuda.mem_get_info()
+    print(f"[STARTUP] GPU memory: {free_mem/1e9:.2f}GB free / {total_mem/1e9:.2f}GB total")
+    if free_mem < total_mem * 0.5:
+        print(f"[WARNING] Less than 50% GPU memory free at startup!")
+    torch.cuda.empty_cache()
+    torch.cuda.reset_peak_memory_stats()
+    gc.collect()
+    # Check again after cleanup
+    free_mem2, _ = torch.cuda.mem_get_info()
+    if free_mem2 > free_mem:
+        print(f"[STARTUP] Freed {(free_mem2-free_mem)/1e9:.2f}GB via cleanup")
 
 # Add project root to path
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -76,6 +92,7 @@ save_every_pct = None   # None => auto (2% on RunPod, 5% otherwise), or override
 num_eval_batches = 100  # number of batches for validation
 reshuffle_data = True   # reshuffle train+val data randomly (fixes sequential split)
 gradient_checkpointing = False  # trade compute for memory (enable with --gradient_checkpointing=True)
+use_torch_compile = True        # disable with --use_torch_compile=False for debugging OOM
 
 # Auto-detect RunPod for more frequent checkpoints (preemptible instances)
 is_runpod = os.environ.get("RUNPOD_POD_ID") is not None
@@ -248,9 +265,12 @@ if device_type == "cuda":
             print0(f"Warning: Could not clear inductor cache: {e}")
 
 orig_model = model
-print0("Compiling model with torch.compile...")
-model = torch.compile(model, dynamic=False)
-print0("Model compilation complete")
+if use_torch_compile:
+    print0("Compiling model with torch.compile...")
+    model = torch.compile(model, dynamic=False)
+    print0("Model compilation complete")
+else:
+    print0("torch.compile DISABLED (use --use_torch_compile=True to enable)")
 
 num_params = sum(p.numel() for p in model.parameters())
 print0(f"Number of parameters: {num_params:,}")
