@@ -24,6 +24,7 @@ RESUME_MODE=""
 DROPOUT=""
 LR_SCHEDULE=""
 EFF_BATCH=""
+GRAD_CKPT=""
 
 for arg in "$@"; do
     case $arg in
@@ -37,6 +38,7 @@ for arg in "$@"; do
         constant) LR_SCHEDULE="constant" ;;
         --eff_batch=*) EFF_BATCH="${arg#--eff_batch=}" ;;
         --batch=*) EFF_BATCH="${arg#--batch=}" ;;
+        --gradient_checkpointing|--grad_ckpt) GRAD_CKPT="True" ;;
     esac
 done
 
@@ -56,6 +58,7 @@ if [ -z "$SCHEMAS" ]; then
     echo "  --lr_schedule=X     LR schedule: cosine (default) or constant"
     echo "  constant            Shorthand for --lr_schedule=constant"
     echo "  --eff_batch=N       Effective batch size (default: 64)"
+    echo "  --grad_ckpt         Enable gradient checkpointing (saves memory, ~4% slower)"
     echo ""
     echo "Examples:"
     echo "  bash scripts/run.sh kubernetes"
@@ -192,6 +195,7 @@ for SCHEMA in $SCHEMAS; do
             [ -n "$DROPOUT" ] && EXTRA_ARGS="$EXTRA_ARGS --dropout=$DROPOUT"
             [ -n "$LR_SCHEDULE" ] && EXTRA_ARGS="$EXTRA_ARGS --lr_schedule=$LR_SCHEDULE"
             [ -n "$EFF_BATCH" ] && EXTRA_ARGS="$EXTRA_ARGS --eff_batch=$EFF_BATCH"
+            [ -n "$GRAD_CKPT" ] && EXTRA_ARGS="$EXTRA_ARGS --gradient_checkpointing=$GRAD_CKPT"
             # Use custom model_tag if we have custom settings
             [ -n "$DROPOUT" ] || [ -n "$LR_SCHEDULE" ] || [ -n "$EFF_BATCH" ] && EXTRA_ARGS="$EXTRA_ARGS --model_tag=$exp_name"
 

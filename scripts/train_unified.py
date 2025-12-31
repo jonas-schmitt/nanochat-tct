@@ -75,6 +75,7 @@ eval_every_epoch = 1    # evaluate every N epochs
 save_every_pct = None   # None => auto (2% on RunPod, 5% otherwise), or override
 num_eval_batches = 100  # number of batches for validation
 reshuffle_data = True   # reshuffle train+val data randomly (fixes sequential split)
+gradient_checkpointing = False  # trade compute for memory (enable with --gradient_checkpointing=True)
 
 # Auto-detect RunPod for more frequent checkpoints (preemptible instances)
 is_runpod = os.environ.get("RUNPOD_POD_ID") is not None
@@ -184,9 +185,13 @@ print0(f"Save interval: every {save_interval} steps ({save_every_pct}%){runpod_n
 print0()
 
 # Initialize model
-# Always enable gradient checkpointing - torch.compile needs extra memory for compilation graphs
-use_grad_checkpoint = True
-print0("Gradient checkpointing: ENABLED (required for torch.compile memory efficiency)")
+# Gradient checkpointing: trades ~4% speed for ~50% memory savings
+# Disabled by default for speed; enable with --gradient_checkpointing=True if OOM during training
+use_grad_checkpoint = gradient_checkpointing
+if use_grad_checkpoint:
+    print0("Gradient checkpointing: ENABLED (saves memory, ~4% slower)")
+else:
+    print0("Gradient checkpointing: disabled (use --gradient_checkpointing=True if OOM)")
 
 model_config_kwargs = dict(
     sequence_len=T,
