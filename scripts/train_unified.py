@@ -291,7 +291,7 @@ if reshuffle_data:
         data_dir=data_path,
         context_size=T,
         batch_size=B,
-        train_ratio=0.9,
+        train_ratio=0.95,
         device=device,
         verbose=master_process,
         seed=42,
