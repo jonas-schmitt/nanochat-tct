@@ -84,7 +84,7 @@ device_batch_size = None  # None => use config default
 gradient_accumulation_override = None  # None => use config default
 eff_batch = None          # None => use config default (64), or override effective batch size
 lr_schedule = None        # None => use config default (cosine), or "constant"/"cosine"
-dropout = None          # None => use config default (0.0), or 0.0-0.5
+dropout = 0.1           # default 0.1 prevents overfitting, or 0.0-0.5
 learning_rate_override = None  # None => use config default, or e.g. 3e-4
 resume_from_epoch = 0   # resume training from this epoch (0 = start fresh)
 eval_every_epoch = 1    # evaluate every N epochs
