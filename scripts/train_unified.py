@@ -21,9 +21,13 @@ Configuration loaded from configs/ module:
 """
 
 import os
-os.environ["PYTORCH_ALLOC_CONF"] = "expandable_segments:True"
+# Memory management settings - must be set before importing torch
+os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True,garbage_collection_threshold:0.8"
+# Clear inductor cache on startup to avoid stale compiled graphs causing OOM
+os.environ["TORCHINDUCTOR_CACHE_DIR"] = "/tmp/torchinductor_cache"
 
 import gc
+import shutil
 import json
 import sys
 import time
@@ -222,8 +226,26 @@ if resume_from_epoch > 0:
         print0(f"Checkpoint not found: {checkpoint_path}")
         sys.exit(1)
 
+# Aggressive memory cleanup before torch.compile to prevent OOM during graph compilation
+# This is critical for stable runs, especially on resume
+gc.collect()
+if device_type == "cuda":
+    torch.cuda.empty_cache()
+    torch.cuda.reset_peak_memory_stats()
+    torch.cuda.synchronize()
+    # Clear stale inductor cache that might cause memory issues
+    inductor_cache = Path("/tmp/torchinductor_cache")
+    if inductor_cache.exists():
+        try:
+            shutil.rmtree(inductor_cache)
+            print0("Cleared torch inductor cache")
+        except Exception as e:
+            print0(f"Warning: Could not clear inductor cache: {e}")
+
 orig_model = model
+print0("Compiling model with torch.compile...")
 model = torch.compile(model, dynamic=False)
+print0("Model compilation complete")
 
 num_params = sum(p.numel() for p in model.parameters())
 print0(f"Number of parameters: {num_params:,}")
