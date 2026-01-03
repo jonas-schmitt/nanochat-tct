@@ -192,6 +192,14 @@ def create_reshuffled_dataloaders(
     if verbose:
         print(f"Loaded {len(all_sequences):,} total sequences from {data_dir.name} ({source})")
 
+    # Check for empty dataset
+    if len(all_sequences) == 0:
+        raise ValueError(
+            f"No sequences loaded from {data_dir}. "
+            f"Expected 'all.jsonl' or 'train.jsonl'+'validate.jsonl' in {data_dir}. "
+            f"Files found: {list(data_dir.glob('*.jsonl'))}"
+        )
+
     # Shuffle indices with fixed seed for reproducibility
     # This ensures TCT and UTF8 get the same train/val split (same document indices)
     # IMPORTANT: Requires all.jsonl to have same documents in same order for both tokenizers

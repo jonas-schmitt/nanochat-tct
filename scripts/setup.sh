@@ -37,34 +37,26 @@ detect_platform() {
 PLATFORM=$(detect_platform)
 echo "Detected platform: $PLATFORM"
 
+# CODE_DIR is always computed from script location - works regardless of where repo is cloned
+CODE_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+# DATA_DIR is always sibling of CODE_DIR - consistent across all platforms
+DATA_DIR="$(dirname "$CODE_DIR")/data"
+
 case $PLATFORM in
     runpod)
-        WORKSPACE="/workspace"
-        DATA_DIR="$WORKSPACE/data"
-        CODE_DIR="$WORKSPACE/nanochat-tct"
-        VENV_DIR="$WORKSPACE/venv"
+        VENV_DIR="/workspace/venv"
         ;;
     nhr)
-        WORKSPACE="${WORK:-$HOME}"
-        DATA_DIR="$WORKSPACE/data"  # Sibling of nanochat-tct
-        CODE_DIR="$WORKSPACE/nanochat-tct"
-        VENV_DIR="$WORKSPACE/venv-tct"
+        VENV_DIR="${WORK:-$(dirname "$CODE_DIR")}/venv-tct"
         ;;
     hpc)
-        WORKSPACE="${SCRATCH:-$HOME}"
-        DATA_DIR="$WORKSPACE/data"  # Sibling of nanochat-tct
-        CODE_DIR="$WORKSPACE/nanochat-tct"
-        VENV_DIR="$WORKSPACE/venv-tct"
+        VENV_DIR="${SCRATCH:-$(dirname "$CODE_DIR")}/venv-tct"
         ;;
     local)
-        WORKSPACE="$HOME"
-        DATA_DIR="$HOME/Desktop/data"
-        CODE_DIR="$(cd "$(dirname "$0")/.." && pwd)"
         VENV_DIR="$CODE_DIR/.venv"
         ;;
 esac
 
-echo "Workspace: $WORKSPACE"
 echo "Code dir:  $CODE_DIR"
 echo "Data dir:  $DATA_DIR"
 echo "Venv dir:  $VENV_DIR"

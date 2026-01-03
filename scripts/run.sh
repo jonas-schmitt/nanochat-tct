@@ -71,20 +71,17 @@ if [ -z "$SCHEMAS" ]; then
 fi
 
 # =============================================================================
-# Auto-detect paths
+# Auto-detect paths - CODE_DIR and DATA_DIR can be set by environment
 # =============================================================================
 
+# CODE_DIR: use environment if set, otherwise compute from script location
 if [ -z "$CODE_DIR" ]; then
-    if [ -d "/workspace/nanochat-tct" ]; then
-        CODE_DIR="/workspace/nanochat-tct"
-        DATA_DIR="/workspace/data"
-    elif [ -n "$WORK" ]; then
-        CODE_DIR="$WORK/nanochat-tct"
-        DATA_DIR="$WORK/data"  # Sibling of nanochat-tct (not /tct subdir)
-    else
-        CODE_DIR="$(cd "$(dirname "$0")/.." && pwd)"
-        DATA_DIR="$HOME/Desktop/data"
-    fi
+    CODE_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+fi
+
+# DATA_DIR: use environment if set, otherwise sibling of CODE_DIR
+if [ -z "$DATA_DIR" ]; then
+    DATA_DIR="$(dirname "$CODE_DIR")/data"
 fi
 
 LOG_DIR="${LOG_DIR:-$CODE_DIR/logs}"

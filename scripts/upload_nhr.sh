@@ -119,7 +119,7 @@ case $CLUSTER in
     alex|tinygpu) ;;
     *) die "Invalid cluster: $CLUSTER" "Valid options: alex, tinygpu" ;;
 esac
-REMOTE_DATA="\$WORK/data/tct"
+REMOTE_DATA="\$WORK/data"
 
 # Dataset directories per schema (must match schema_configs.py)
 declare -A TCT_DIRS
@@ -131,8 +131,8 @@ UTF8_DIRS[tsconfig]="tsconfig-utf8-base-matched"
 TCT_DIRS[eslintrc]="eslintrc-tct-bpe-500"
 UTF8_DIRS[eslintrc]="eslintrc-utf8-bpe-500"
 
-TCT_DIRS[kubernetes]="kubernetes-tct-bpe"
-UTF8_DIRS[kubernetes]="kubernetes-utf8-bpe"
+TCT_DIRS[kubernetes]="kubernetes-tct-bpe-1k"
+UTF8_DIRS[kubernetes]="kubernetes-utf8-bpe-1k"
 
 # =============================================================================
 # Verify local data exists

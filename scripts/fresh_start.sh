@@ -16,7 +16,6 @@
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-CODE_DIR="$(dirname "$SCRIPT_DIR")"
 
 FORCE=""
 DRY_RUN=""
@@ -54,30 +53,28 @@ detect_platform() {
 
 PLATFORM=$(detect_platform)
 
+# CODE_DIR and DATA_DIR are always computed from script location
+# This ensures consistency regardless of where repo is cloned
+CODE_DIR="$(dirname "$SCRIPT_DIR")"
+DATA_DIR="$(dirname "$CODE_DIR")/data"
+
 case $PLATFORM in
     runpod)
-        WORKSPACE="/workspace"
-        VENV_DIR="$WORKSPACE/venv"
-        DATA_DIR="$WORKSPACE/data"
+        VENV_DIR="/workspace/venv"
         ;;
     nhr)
-        WORKSPACE="${WORK:-$HOME}"
-        VENV_DIR="$WORKSPACE/venv-tct"
-        DATA_DIR="$WORKSPACE/data"
-        # Check for conda environment as fallback
-        CONDA_ENV_DIR="$WORKSPACE/software/conda/envs/tct-py312"
+        VENV_DIR="${WORK:-$(dirname "$CODE_DIR")}/venv-tct"
+        CONDA_ENV_DIR="${WORK:-$(dirname "$CODE_DIR")}/software/conda/envs/tct-py312"
         ;;
     local)
-        WORKSPACE="$HOME"
         VENV_DIR="$CODE_DIR/.venv"
-        DATA_DIR="$HOME/Desktop/data"
         ;;
 esac
 
 echo "Platform:  $PLATFORM"
-echo "Workspace: $WORKSPACE"
+echo "Code dir:  $CODE_DIR"
+echo "Data dir:  $DATA_DIR"
 echo "Venv:      $VENV_DIR"
-echo "Data:      $DATA_DIR"
 echo
 
 # =============================================================================

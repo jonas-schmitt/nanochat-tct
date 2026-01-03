@@ -232,15 +232,33 @@ model.init_weights()
 
 # Resume from checkpoint if specified
 start_step = 0
+resumed_checkpoint = None  # Will hold checkpoint data for optimizer/state restoration
+resumed_min_val_loss = float("inf")
+resumed_smooth_train_loss = 0
+
 if resume_from_epoch > 0:
     checkpoint_dir = Path("checkpoints") / (model_tag if model_tag else f"{schema}_{tokenizer}_{model_size}")
     checkpoint_path = checkpoint_dir / f"epoch_{resume_from_epoch:03d}.pt"
     if checkpoint_path.exists():
         print0(f"Resuming from checkpoint: {checkpoint_path}")
-        state_dict = torch.load(checkpoint_path, map_location=device)
-        model.load_state_dict(state_dict)
-        start_step = resume_from_epoch * steps_per_epoch
-        del state_dict
+        checkpoint_data = torch.load(checkpoint_path, map_location=device)
+
+        # Handle both old format (just state_dict) and new format (full checkpoint)
+        if "model_state_dict" in checkpoint_data:
+            # New format with optimizer state
+            model.load_state_dict(checkpoint_data["model_state_dict"])
+            start_step = checkpoint_data.get("step", resume_from_epoch * steps_per_epoch)
+            resumed_min_val_loss = checkpoint_data.get("min_val_loss", float("inf"))
+            resumed_smooth_train_loss = checkpoint_data.get("smooth_train_loss", 0)
+            resumed_checkpoint = checkpoint_data  # Save for optimizer restoration later
+            print0(f"  Restored step {start_step}, min_val_loss {resumed_min_val_loss:.4f}")
+        else:
+            # Old format (just model weights)
+            model.load_state_dict(checkpoint_data)
+            start_step = resume_from_epoch * steps_per_epoch
+            print0(f"  Old checkpoint format (no optimizer state)")
+
+        # Don't delete checkpoint_data yet - we need it for optimizer state
         gc.collect()
         if device_type == "cuda":
             torch.cuda.empty_cache()
@@ -282,6 +300,17 @@ optimizer = torch.optim.AdamW(
     betas=(beta1, beta2),
     weight_decay=weight_decay,
 )
+
+# Restore optimizer state if resuming with new checkpoint format
+if resumed_checkpoint is not None and "optimizer_state_dict" in resumed_checkpoint:
+    print0("Restoring optimizer state...")
+    optimizer.load_state_dict(resumed_checkpoint["optimizer_state_dict"])
+    print0("  Optimizer state restored (momentum/velocity preserved)")
+    # Clean up checkpoint data now that we're done with it
+    del resumed_checkpoint
+    gc.collect()
+    if device_type == "cuda":
+        torch.cuda.empty_cache()
 
 # Initialize dataloaders
 print0("\nInitializing dataloaders...")
@@ -346,8 +375,8 @@ def get_lr(step):
     progress = (step - warmup_steps) / max(1, total_steps - warmup_steps)
     return min_lr + 0.5 * (learning_rate - min_lr) * (1 + math.cos(math.pi * progress))
 
-# Checkpoint saving
-def save_checkpoint(step, epoch, val_loss, is_best=False):
+# Checkpoint saving - includes optimizer state for proper resume
+def save_checkpoint(step, epoch, val_loss, min_val_loss_current, smooth_train_loss_current, is_best=False):
     if not master_process:
         return
 
@@ -355,11 +384,20 @@ def save_checkpoint(step, epoch, val_loss, is_best=False):
     checkpoint_dir = Path("checkpoints") / output_dirname
     checkpoint_dir.mkdir(parents=True, exist_ok=True)
 
-    # Save epoch checkpoint
+    # Save full training state (model + optimizer + training state)
     checkpoint_path = checkpoint_dir / f"epoch_{epoch:03d}.pt"
-    torch.save(orig_model.state_dict(), checkpoint_path)
+    checkpoint_data = {
+        "model_state_dict": orig_model.state_dict(),
+        "optimizer_state_dict": optimizer.state_dict(),
+        "step": step,
+        "epoch": epoch,
+        "val_loss": val_loss,
+        "min_val_loss": min_val_loss_current,
+        "smooth_train_loss": smooth_train_loss_current,
+    }
+    torch.save(checkpoint_data, checkpoint_path)
 
-    # Save best model
+    # Save best model (weights only for inference)
     if is_best:
         best_path = checkpoint_dir / "best.pt"
         torch.save(orig_model.state_dict(), best_path)
@@ -414,12 +452,16 @@ def evaluate():
 # -----------------------------------------------------------------------------
 # Training loop
 print0("=" * 80)
-print0("STARTING TRAINING")
+if resume_from_epoch > 0:
+    print0(f"RESUMING TRAINING from epoch {resume_from_epoch} (step {start_step})")
+else:
+    print0("STARTING TRAINING")
 print0("=" * 80)
 print0()
 
-min_val_loss = float("inf")
-smooth_train_loss = 0
+# Use resumed values if available, otherwise start fresh
+min_val_loss = resumed_min_val_loss
+smooth_train_loss = resumed_smooth_train_loss
 ema_beta = 0.9
 total_training_time = 0
 
@@ -440,8 +482,14 @@ for step in range(start_step, total_steps + 1):
 
     # Checkpointing
     if master_process and (last_step or (step > 0 and step % save_interval == 0)):
-        save_checkpoint(step, current_epoch, val_loss if 'val_loss' in locals() else 0.0,
-                       is_best=val_loss < min_val_loss if 'val_loss' in locals() else False)
+        save_checkpoint(
+            step=step,
+            epoch=current_epoch,
+            val_loss=val_loss if 'val_loss' in locals() else 0.0,
+            min_val_loss_current=min_val_loss,
+            smooth_train_loss_current=smooth_train_loss,
+            is_best=val_loss < min_val_loss if 'val_loss' in locals() else False
+        )
 
     if last_step:
         break

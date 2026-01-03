@@ -193,11 +193,34 @@ for arg in $RUN_ARGS; do
 done
 
 # =============================================================================
-# Generate sbatch script
+# Paths - use CODE_DIR as anchor, data is sibling directory
 # =============================================================================
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 CODE_DIR="$(dirname "$SCRIPT_DIR")"
+# Data is always sibling of nanochat-tct, works on all platforms
+DATA_DIR="$(dirname "$CODE_DIR")/data"
+
+# Platform detection (for info only)
+detect_platform() {
+    if [ -d "/workspace" ] && [ -w "/workspace" ]; then
+        echo "runpod"
+    elif [ -n "$WORK" ] && [ -d "$WORK" ]; then
+        echo "nhr"
+    else
+        echo "local"
+    fi
+}
+PLATFORM=$(detect_platform)
+
+log_verbose "Platform: $PLATFORM"
+log_verbose "Code dir: $CODE_DIR"
+log_verbose "Data dir: $DATA_DIR"
+
+# =============================================================================
+# Generate sbatch script
+# =============================================================================
+
 JOB_SCRIPT=$(mktemp /tmp/tct_job_XXXXXX.sh)
 
 cat > "$JOB_SCRIPT" << EOF
@@ -232,23 +255,59 @@ echo
 module purge
 module load cuda 2>/dev/null || true
 
-# Try Python 3.12 module first, fall back to conda
+# Try Python 3.12 module (prefer conda variant for venv compatibility)
 USE_CONDA=""
-if module load python/3.12 2>/dev/null; then
+if module load python/3.12-conda 2>/dev/null; then
+    echo "Using Python 3.12-conda module"
+elif module load python/3.12 2>/dev/null; then
     echo "Using Python 3.12 module"
-elif module load python/3.12-anaconda 2>/dev/null; then
-    echo "Using Python 3.12-anaconda module"
 else
     echo "Python 3.12 module not available, using conda"
     module load python 2>/dev/null || true
     USE_CONDA="1"
 fi
 
-# Set paths (use paths from submit.sh)
+# Set paths - DATA_DIR is sibling of CODE_DIR (set at submission time)
 export CODE_DIR="$CODE_DIR"
-export DATA_DIR="$CODE_DIR/../data"
-export WORK="\${WORK:-$(dirname "$CODE_DIR")}"
-export VENV_DIR="\$WORK/venv-tct"
+export DATA_DIR="$DATA_DIR"
+export VENV_DIR="\${WORK:-\$(dirname "$CODE_DIR")}/venv-tct"
+
+echo "CODE_DIR: \$CODE_DIR"
+echo "DATA_DIR: \$DATA_DIR"
+echo "VENV_DIR: \$VENV_DIR"
+
+# Verify data exists (should have been extracted by submit_all.sh)
+DATASETS="tsconfig-tct-base tsconfig-utf8-base-matched eslintrc-tct-bpe-500 eslintrc-utf8-bpe-500 kubernetes-tct-bpe-1k kubernetes-utf8-bpe-1k"
+echo "Verifying datasets..."
+MISSING=0
+for dataset in \$DATASETS; do
+    if [ -d "\$DATA_DIR/\$dataset" ] && [ -f "\$DATA_DIR/\$dataset/all.jsonl" ]; then
+        echo "  [OK] \$dataset"
+    else
+        echo "  [!!] \$dataset MISSING"
+        MISSING=1
+    fi
+done
+if [ "\$MISSING" = "1" ]; then
+    echo "ERROR: Some datasets are missing from \$DATA_DIR"
+    echo "Run 'bash scripts/submit_all.sh' to extract data first"
+    exit 1
+fi
+
+# Stage to node-local TMPDIR on NHR for fast I/O
+if [ -n "\$TMPDIR" ] && [ -d "\$TMPDIR" ]; then
+    STAGED_DATA_DIR="\$TMPDIR/data"
+    echo "Staging data from \$DATA_DIR to \$STAGED_DATA_DIR..."
+    mkdir -p "\$STAGED_DATA_DIR"
+    for dataset in \$DATASETS; do
+        if [ -d "\$DATA_DIR/\$dataset" ] && [ ! -d "\$STAGED_DATA_DIR/\$dataset" ]; then
+            echo "  Copying \$dataset..."
+            cp -r "\$DATA_DIR/\$dataset" "\$STAGED_DATA_DIR/"
+        fi
+    done
+    echo "Data staging complete: \$(du -sh "\$STAGED_DATA_DIR" | cut -f1)"
+    export DATA_DIR="\$STAGED_DATA_DIR"
+fi
 
 # Batch size scaling for GPU
 export TCT_BATCH_MULTIPLIER=$BATCH_MULTIPLIER
@@ -339,6 +398,7 @@ echo "GPU:        $GPU_TYPE (${GPU_MEM}GB)"
 echo "Time:       $TIME_LIMIT"
 echo "Batch mult: ${BATCH_MULTIPLIER}x"
 echo "Job name:   $JOB_NAME"
+echo "Data dir:   $DATA_DIR"
 echo "Run args:   ${RUN_ARGS:-<setup only>}"
 [ -n "$VERBOSE" ] && echo "Verbose:    enabled"
 echo "============================================================"

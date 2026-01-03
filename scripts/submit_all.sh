@@ -20,6 +20,9 @@ set -e
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 CODE_DIR="$(dirname "$SCRIPT_DIR")"
+# Data is always sibling of nanochat-tct - works on all platforms
+DATA_DIR="$(dirname "$CODE_DIR")/data"
+
 DRY_RUN=""
 RESUME="resume"
 RUN_SETUP=""
@@ -34,10 +37,7 @@ for arg in "$@"; do
     esac
 done
 
-# =============================================================================
-# Platform detection and paths
-# =============================================================================
-
+# Platform detection (for info only)
 detect_platform() {
     if [ -d "/workspace" ] && [ -w "/workspace" ]; then
         echo "runpod"
@@ -47,26 +47,19 @@ detect_platform() {
         echo "local"
     fi
 }
-
 PLATFORM=$(detect_platform)
 
+# Venv location depends on platform
 case $PLATFORM in
     runpod)
-        WORKSPACE="/workspace"
-        VENV_DIR="$WORKSPACE/venv"
-        DATA_DIR="$WORKSPACE/data"
+        VENV_DIR="/workspace/venv"
         ;;
     nhr)
-        WORKSPACE="${WORK:-$HOME}"
-        VENV_DIR="$WORKSPACE/venv-tct"
-        DATA_DIR="$WORKSPACE/data"
-        # Check for conda environment as fallback
-        CONDA_ENV_DIR="$WORKSPACE/software/conda/envs/tct-py312"
+        VENV_DIR="${WORK:-$(dirname "$CODE_DIR")}/venv-tct"
+        CONDA_ENV_DIR="${WORK:-$(dirname "$CODE_DIR")}/software/conda/envs/tct-py312"
         ;;
     local)
-        WORKSPACE="$HOME"
         VENV_DIR="$CODE_DIR/.venv"
-        DATA_DIR="$HOME/Desktop/data"
         ;;
 esac
 
@@ -75,7 +68,7 @@ echo "Submitting All Training Jobs"
 echo "============================================================"
 echo "Date: $(date)"
 echo "Platform: $PLATFORM"
-echo "Workspace: $WORKSPACE"
+echo "Code dir: $CODE_DIR"
 echo "Data dir: $DATA_DIR"
 echo "Epochs: tsconfig=50, eslintrc=75, kubernetes=100"
 echo "Checkpoint: every 5% of training"
@@ -94,6 +87,7 @@ if [ "$PLATFORM" != "local" ] && [ -z "$NO_PULL" ]; then
     if [ -n "$DRY_RUN" ]; then
         echo "[DRY RUN] Would run: git pull"
     else
+        cd "$CODE_DIR"
         git pull || echo "  [WARN] git pull failed (continuing anyway)"
     fi
     echo
@@ -123,7 +117,7 @@ fi
 # Check data archives exist
 ARCHIVE_COUNT=$(ls "$CODE_DIR/data/"*.tar.xz 2>/dev/null | wc -l)
 if [ "$ARCHIVE_COUNT" -gt 0 ]; then
-    echo "  [OK] Found $ARCHIVE_COUNT dataset archives"
+    echo "  [OK] Found $ARCHIVE_COUNT dataset archives in $CODE_DIR/data/"
 else
     echo "  [!!] No dataset archives in $CODE_DIR/data/"
     SETUP_OK=0
@@ -140,6 +134,7 @@ if [ "$SETUP_OK" = "0" ]; then
             echo "[DRY RUN] Would run: bash scripts/setup.sh"
         else
             # Source setup.sh to inherit any module/environment changes
+            cd "$CODE_DIR"
             source "$SCRIPT_DIR/setup.sh"
         fi
         echo
@@ -166,7 +161,7 @@ fi
 # Extract training data if missing
 # =============================================================================
 
-echo ">>> Checking training data"
+echo ">>> Checking/extracting training data to $DATA_DIR"
 echo
 
 DATASETS="tsconfig-tct-base tsconfig-utf8-base-matched eslintrc-tct-bpe-500 eslintrc-utf8-bpe-500 kubernetes-tct-bpe-1k kubernetes-utf8-bpe-1k"
