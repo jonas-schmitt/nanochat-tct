@@ -255,23 +255,18 @@ echo
 module purge
 module load cuda 2>/dev/null || true
 
-# Try multiple Python module options (in order of preference)
+# Load Python 3.12 module (try conda variant first, then regular)
 PYTHON_LOADED=""
-for pymod in "python/3.12" "python/3.11" "python/3.10" "python"; do
+for pymod in "python/3.12-conda" "python/3.12"; do
     if module load "\$pymod" 2>/dev/null; then
-        echo "Loaded Python module: \$pymod"
+        echo "Loaded module: \$pymod"
         PYTHON_LOADED="\$pymod"
         break
     fi
 done
 
 if [ -z "\$PYTHON_LOADED" ]; then
-    echo "WARNING: No Python module loaded, trying system Python"
-fi
-
-# Verify Python is available
-if ! command -v python3 &>/dev/null; then
-    echo "ERROR: python3 not found"
+    echo "ERROR: Python 3.12 module not found"
     echo "Available Python modules:"
     module avail python 2>&1 | head -20
     exit 1

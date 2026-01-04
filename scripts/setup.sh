@@ -78,9 +78,9 @@ case $PLATFORM in
         module purge 2>/dev/null || true
         module load cuda 2>/dev/null || true
 
-        # Try multiple Python module options (in order of preference)
+        # Load Python 3.12 module (try conda variant first, then regular)
         PYTHON_LOADED=""
-        for pymod in "python/3.12" "python/3.11" "python/3.10" "python"; do
+        for pymod in "python/3.12-conda" "python/3.12"; do
             if module load "$pymod" 2>/dev/null; then
                 echo "Loaded module: $pymod"
                 PYTHON_LOADED="$pymod"
@@ -89,7 +89,10 @@ case $PLATFORM in
         done
 
         if [ -z "$PYTHON_LOADED" ]; then
-            echo "WARNING: No Python module loaded, trying system Python"
+            echo "ERROR: Python 3.12 module not found"
+            echo "Available Python modules:"
+            module avail python 2>&1 | head -20
+            exit 1
         fi
 
         echo "Loaded modules:"
