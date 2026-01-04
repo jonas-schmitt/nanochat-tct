@@ -6,7 +6,7 @@
 # 2. Extracts training data if needed
 # 3. Submits all training jobs
 #
-# Submits medium and large models for each schema/tokenizer with dropout=0.1
+# Submits medium and large models for each schema/tokenizer with dropout=0.2
 #
 # Usage:
 #   bash scripts/submit_all.sh              # Submit all jobs (resume from checkpoints)
@@ -200,7 +200,7 @@ echo
 # =============================================================================
 
 SCHEMAS="kubernetes tsconfig eslintrc"
-DROPOUT="0.1"  # Default dropout for medium/large models
+DROPOUT="0.2"  # Default dropout for medium/large models
 
 submit_job() {
     local args="$1"
