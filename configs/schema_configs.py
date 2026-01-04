@@ -3,17 +3,37 @@ Schema-specific configurations for TCT experiments.
 
 Each schema has:
 - context_size: 2048 for all (standardized)
-- vocab sizes: For both TCT and UTF8 tokenizers
+- vocab sizes: Read dynamically from data metadata.json (+ 1 for pad token)
 - training data statistics
 - data directory paths
 
 Data from TRAINING_DATA_REPORT.md (2025-12-25)
 """
 
+import json
 from pathlib import Path
 
 # Default data root (can be overridden)
 DEFAULT_DATA_ROOT = Path.home() / "Desktop" / "data"
+
+
+def _read_vocab_size_from_data(data_dir: Path) -> int | None:
+    """Read vocab size from data metadata.json, adding 1 for pad token.
+
+    The metadata stores base_vocab_size (max token + 1), and we add 1 for
+    the pad token (token 0) that training uses.
+    """
+    metadata_path = data_dir / "metadata.json"
+    if not metadata_path.exists():
+        return None
+    try:
+        with open(metadata_path) as f:
+            metadata = json.load(f)
+        # metadata stores base_vocab_size = max_token + 1
+        # We add 1 for the pad token used in training
+        return metadata.get("base_vocab_size", 0) + 1
+    except (json.JSONDecodeError, KeyError):
+        return None
 
 SCHEMA_CONFIGS = {
     # =========================================================================
@@ -127,6 +147,9 @@ def get_schema_config(schema: str, data_root: Path = None) -> dict:
     """
     Get schema configuration with resolved data paths.
 
+    Vocab sizes are read dynamically from data metadata.json when the data exists,
+    ensuring the model vocab matches the actual tokenized data.
+
     Args:
         schema: Schema name ("tsconfig", "eslintrc", "kubernetes")
         data_root: Optional data root directory (default: ~/Desktop/data)
@@ -147,6 +170,22 @@ def get_schema_config(schema: str, data_root: Path = None) -> dict:
     # Resolve data paths
     config["data_path_tct"] = data_root / config["data_dir_tct"] if config.get("data_dir_tct") else None
     config["data_path_utf8"] = data_root / config["data_dir_utf8"] if config.get("data_dir_utf8") else None
+
+    # Override vocab sizes from data metadata when available
+    # This ensures model vocab matches actual tokenized data
+    if config["data_path_tct"]:
+        actual_vocab = _read_vocab_size_from_data(config["data_path_tct"])
+        if actual_vocab is not None:
+            if actual_vocab != config["tct_vocab_size"]:
+                print(f"[INFO] {schema} TCT vocab from metadata: {actual_vocab} (config had {config['tct_vocab_size']})")
+            config["tct_vocab_size"] = actual_vocab
+
+    if config["data_path_utf8"]:
+        actual_vocab = _read_vocab_size_from_data(config["data_path_utf8"])
+        if actual_vocab is not None:
+            if actual_vocab != config["utf8_vocab_size"]:
+                print(f"[INFO] {schema} UTF8 vocab from metadata: {actual_vocab} (config had {config['utf8_vocab_size']})")
+            config["utf8_vocab_size"] = actual_vocab
 
     return config
 
