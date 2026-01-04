@@ -332,12 +332,25 @@ $( [ -n "$BATCH_BOOST" ] && echo "export TCT_BATCH_SIZE_BOOST=$BATCH_BOOST" )
 
 cd "\$CODE_DIR"
 
-# Activate virtual environment
+# Activate Python environment (try venv first, fall back to conda)
+CONDA_ENV_NAME="tct-py312"
+CONDA_ENV_DIR="\${WORK}/software/conda/envs/\$CONDA_ENV_NAME"
+
 if [ -f "\$VENV_DIR/bin/activate" ]; then
     echo "Activating venv: \$VENV_DIR"
     source "\$VENV_DIR/bin/activate"
+elif [ -d "\$CONDA_ENV_DIR" ]; then
+    echo "Activating conda env: \$CONDA_ENV_NAME"
+    source "\$(conda info --base)/etc/profile.d/conda.sh"
+    conda activate "\$CONDA_ENV_NAME"
+elif command -v conda &>/dev/null && conda env list 2>/dev/null | grep -q "^\${CONDA_ENV_NAME} "; then
+    echo "Activating conda env: \$CONDA_ENV_NAME"
+    source "\$(conda info --base)/etc/profile.d/conda.sh"
+    conda activate "\$CONDA_ENV_NAME"
 else
-    echo "ERROR: Virtual environment not found at \$VENV_DIR"
+    echo "ERROR: No Python environment found"
+    echo "  Checked venv: \$VENV_DIR"
+    echo "  Checked conda: \$CONDA_ENV_DIR"
     echo ""
     echo "Run setup first:"
     echo "  srun --partition=a100 --gres=gpu:1 --time=01:00:00 --pty bash -l"

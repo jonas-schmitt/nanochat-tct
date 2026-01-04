@@ -174,35 +174,64 @@ else
     fi
 fi
 
-# Create virtual environment (per NHR docs: use venv, not conda)
-if [ ! -d "$VENV_DIR" ]; then
+# Create Python environment (try venv first, fall back to conda on NHR)
+if [ ! -d "$VENV_DIR" ] || [ ! -f "$VENV_DIR/bin/activate" ]; then
     echo "Creating virtual environment at $VENV_DIR..."
+    VENV_CREATED=""
+
     if [ -n "$USE_UV" ]; then
         case $PLATFORM in
             runpod)
-                uv venv --python 3.12 "$VENV_DIR" || python3.12 -m venv "$VENV_DIR"
+                uv venv --python 3.12 "$VENV_DIR" && VENV_CREATED="1"
                 ;;
             nhr|hpc)
-                # Use the Python from loaded module
-                uv venv --python python3 "$VENV_DIR" || python3 -m venv "$VENV_DIR"
+                uv venv --python python3 "$VENV_DIR" && VENV_CREATED="1"
                 ;;
             local)
-                uv venv "$VENV_DIR" || python3 -m venv "$VENV_DIR"
+                uv venv "$VENV_DIR" && VENV_CREATED="1"
                 ;;
         esac
-    else
-        python3 -m venv "$VENV_DIR"
+    fi
+
+    # Try python3 -m venv if uv failed
+    if [ -z "$VENV_CREATED" ]; then
+        python3 -m venv "$VENV_DIR" && VENV_CREATED="1"
+    fi
+
+    # NHR fallback: use conda if venv creation failed
+    if [ -z "$VENV_CREATED" ] && [ "$PLATFORM" = "nhr" ]; then
+        echo "Venv creation failed, falling back to conda..."
+        CONDA_ENV_NAME="tct-py312"
+        CONDA_ENV_DIR="$WORK/software/conda/envs/$CONDA_ENV_NAME"
+
+        # Configure conda directories
+        mkdir -p "$WORK/software/conda/pkgs"
+        mkdir -p "$WORK/software/conda/envs"
+        conda config --add pkgs_dirs "$WORK/software/conda/pkgs" 2>/dev/null || true
+        conda config --add envs_dirs "$WORK/software/conda/envs" 2>/dev/null || true
+
+        if ! conda env list | grep -q "^${CONDA_ENV_NAME} "; then
+            echo "Creating conda environment: $CONDA_ENV_NAME"
+            conda create -y -n "$CONDA_ENV_NAME" python=3.12
+        fi
+
+        echo "Activating conda environment: $CONDA_ENV_NAME"
+        source "$(conda info --base)/etc/profile.d/conda.sh"
+        conda activate "$CONDA_ENV_NAME"
+        USE_CONDA="1"
     fi
 else
     echo "Virtual environment already exists at $VENV_DIR"
 fi
 
-if [ ! -f "$VENV_DIR/bin/activate" ]; then
-    echo "ERROR: Failed to create virtual environment at $VENV_DIR"
-    exit 1
+# Activate environment
+if [ -z "$USE_CONDA" ]; then
+    if [ ! -f "$VENV_DIR/bin/activate" ]; then
+        echo "ERROR: Failed to create virtual environment at $VENV_DIR"
+        exit 1
+    fi
+    source "$VENV_DIR/bin/activate"
 fi
-
-source "$VENV_DIR/bin/activate"
 
 echo "Python: $(python --version)"
 echo "Done."

@@ -54,6 +54,7 @@ case $PLATFORM in
         ;;
     nhr)
         VENV_DIR="${WORK:-$(dirname "$CODE_DIR")}/venv-tct"
+        CONDA_ENV_DIR="${WORK:-$(dirname "$CODE_DIR")}/software/conda/envs/tct-py312"
         ;;
     local)
         VENV_DIR="$CODE_DIR/.venv"
@@ -99,12 +100,15 @@ echo
 
 SETUP_OK=1
 
-# Check for venv
+# Check for venv or conda
 if [ -f "$VENV_DIR/bin/activate" ]; then
     echo "  [OK] Virtual environment: $VENV_DIR"
+elif [ -n "$CONDA_ENV_DIR" ] && [ -d "$CONDA_ENV_DIR" ]; then
+    echo "  [OK] Conda environment: $CONDA_ENV_DIR"
 else
     echo "  [!!] No Python environment found"
     echo "       Expected venv at: $VENV_DIR"
+    [ -n "$CONDA_ENV_DIR" ] && echo "       Or conda at: $CONDA_ENV_DIR"
     SETUP_OK=0
 fi
 
