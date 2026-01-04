@@ -6,11 +6,11 @@
 # 2. Extracts training data if needed
 # 3. Submits all training jobs
 #
-# Submits medium and large models for each schema/tokenizer with dropout=0.2
+# Submits medium and large models for each schema/tokenizer with dropout=0.1
 #
 # Usage:
-#   bash scripts/submit_all.sh              # Submit all jobs (fresh start)
-#   bash scripts/submit_all.sh --resume     # Resume from checkpoints
+#   bash scripts/submit_all.sh              # Submit all jobs (resume from checkpoints)
+#   bash scripts/submit_all.sh --no-resume  # Start fresh (no resume)
 #   bash scripts/submit_all.sh --dry-run    # Show what would be submitted
 #   bash scripts/submit_all.sh --setup      # Run setup first if needed
 
@@ -22,14 +22,14 @@ CODE_DIR="$(dirname "$SCRIPT_DIR")"
 DATA_DIR="$(dirname "$CODE_DIR")/data"
 
 DRY_RUN=""
-RESUME=""  # Default: start fresh (no resume)
+RESUME="resume"  # Default: resume from checkpoints
 RUN_SETUP=""
 NO_PULL=""
 
 for arg in "$@"; do
     case $arg in
         --dry-run) DRY_RUN="--dry-run" ;;
-        --resume) RESUME="resume" ;;
+        --no-resume) RESUME="" ;;
         --setup) RUN_SETUP="1" ;;
         --no-pull) NO_PULL="1" ;;
     esac
@@ -200,7 +200,7 @@ echo
 # =============================================================================
 
 SCHEMAS="kubernetes tsconfig eslintrc"
-DROPOUT="0.2"  # Default dropout for medium/large models
+DROPOUT="0.1"  # Default dropout for medium/large models
 
 submit_job() {
     local args="$1"
