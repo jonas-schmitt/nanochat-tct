@@ -74,29 +74,35 @@ case $PLATFORM in
         apt-get update -qq && apt-get install -y -qq git wget curl htop tmux python3.12 python3.12-venv python3.12-dev 2>/dev/null || true
         ;;
     nhr)
-        # Load modules
+        # Load modules (per NHR docs: https://doc.nhr.fau.de/environment/python-env/)
         module purge 2>/dev/null || true
         module load cuda 2>/dev/null || true
 
-        # Try to load Python 3.12 module (prefer conda variant for venv compatibility)
-        if module load python/3.12-conda 2>/dev/null; then
-            echo "Loaded Python 3.12-conda module"
-        elif module load python/3.12 2>/dev/null; then
-            echo "Loaded Python 3.12 module"
-        else
-            echo "Python 3.12 module not available, will use conda"
-            module load python 2>/dev/null || true
-            NHR_USE_CONDA="1"
+        # Try multiple Python module options (in order of preference)
+        PYTHON_LOADED=""
+        for pymod in "python/3.12" "python/3.11" "python/3.10" "python"; do
+            if module load "$pymod" 2>/dev/null; then
+                echo "Loaded module: $pymod"
+                PYTHON_LOADED="$pymod"
+                break
+            fi
+        done
 
-            # Configure conda to use $WORK (not $HOME - quota issues)
-            mkdir -p "$WORK/software/conda/pkgs"
-            mkdir -p "$WORK/software/conda/envs"
-            conda config --add pkgs_dirs "$WORK/software/conda/pkgs" 2>/dev/null || true
-            conda config --add envs_dirs "$WORK/software/conda/envs" 2>/dev/null || true
+        if [ -z "$PYTHON_LOADED" ]; then
+            echo "WARNING: No Python module loaded, trying system Python"
         fi
 
         echo "Loaded modules:"
         module list 2>&1 | head -10
+
+        # Verify Python is available
+        if ! command -v python3 &>/dev/null; then
+            echo "ERROR: python3 not found after loading modules"
+            echo "Available Python modules:"
+            module avail python 2>&1 | head -20
+            exit 1
+        fi
+        echo "Python: $(python3 --version)"
 
         # Configure paths to use $WORK (not $HOME - quota issues)
         export PYTHONUSERBASE="$WORK/software/private"
@@ -165,48 +171,35 @@ else
     fi
 fi
 
-# Create environment
-if [ -n "$NHR_USE_CONDA" ]; then
-    # NHR: Use conda for Python 3.12
-    CONDA_ENV_NAME="tct-py312"
-    if ! conda env list | grep -q "^${CONDA_ENV_NAME} "; then
-        echo "Creating conda environment with Python 3.12..."
-        conda create -y -n "$CONDA_ENV_NAME" python=3.12
+# Create virtual environment (per NHR docs: use venv, not conda)
+if [ ! -d "$VENV_DIR" ]; then
+    echo "Creating virtual environment at $VENV_DIR..."
+    if [ -n "$USE_UV" ]; then
+        case $PLATFORM in
+            runpod)
+                uv venv --python 3.12 "$VENV_DIR" || python3.12 -m venv "$VENV_DIR"
+                ;;
+            nhr|hpc)
+                # Use the Python from loaded module
+                uv venv --python python3 "$VENV_DIR" || python3 -m venv "$VENV_DIR"
+                ;;
+            local)
+                uv venv "$VENV_DIR" || python3 -m venv "$VENV_DIR"
+                ;;
+        esac
+    else
+        python3 -m venv "$VENV_DIR"
     fi
-    echo "Activating conda environment: $CONDA_ENV_NAME"
-    source "$(conda info --base)/etc/profile.d/conda.sh"
-    conda activate "$CONDA_ENV_NAME"
-    # Set VENV_DIR to conda env for consistency
-    VENV_DIR="$(conda info --base)/envs/$CONDA_ENV_NAME"
 else
-    # Other platforms: Use venv
-    if [ ! -d "$VENV_DIR" ]; then
-        echo "Creating virtual environment..."
-        if [ -n "$USE_UV" ]; then
-            case $PLATFORM in
-                runpod)
-                    uv venv --python 3.12 "$VENV_DIR" || python3.12 -m venv "$VENV_DIR"
-                    ;;
-                nhr|hpc)
-                    # Use the Python from loaded module
-                    uv venv --python python3 "$VENV_DIR" || python3 -m venv "$VENV_DIR"
-                    ;;
-                local)
-                    uv venv "$VENV_DIR" || python3 -m venv "$VENV_DIR"
-                    ;;
-            esac
-        else
-            python3 -m venv "$VENV_DIR"
-        fi
-    fi
-
-    if [ ! -f "$VENV_DIR/bin/activate" ]; then
-        echo "ERROR: Failed to create virtual environment at $VENV_DIR"
-        exit 1
-    fi
-
-    source "$VENV_DIR/bin/activate"
+    echo "Virtual environment already exists at $VENV_DIR"
 fi
+
+if [ ! -f "$VENV_DIR/bin/activate" ]; then
+    echo "ERROR: Failed to create virtual environment at $VENV_DIR"
+    exit 1
+fi
+
+source "$VENV_DIR/bin/activate"
 
 echo "Python: $(python --version)"
 echo "Done."

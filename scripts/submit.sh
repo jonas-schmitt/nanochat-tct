@@ -251,21 +251,32 @@ echo "Start:      \$(date)"
 echo "============================================================"
 echo
 
-# Load modules
+# Load modules (per NHR docs: https://doc.nhr.fau.de/environment/python-env/)
 module purge
 module load cuda 2>/dev/null || true
 
-# Try Python 3.12 module (prefer conda variant for venv compatibility)
-USE_CONDA=""
-if module load python/3.12-conda 2>/dev/null; then
-    echo "Using Python 3.12-conda module"
-elif module load python/3.12 2>/dev/null; then
-    echo "Using Python 3.12 module"
-else
-    echo "Python 3.12 module not available, using conda"
-    module load python 2>/dev/null || true
-    USE_CONDA="1"
+# Try multiple Python module options (in order of preference)
+PYTHON_LOADED=""
+for pymod in "python/3.12" "python/3.11" "python/3.10" "python"; do
+    if module load "\$pymod" 2>/dev/null; then
+        echo "Loaded Python module: \$pymod"
+        PYTHON_LOADED="\$pymod"
+        break
+    fi
+done
+
+if [ -z "\$PYTHON_LOADED" ]; then
+    echo "WARNING: No Python module loaded, trying system Python"
 fi
+
+# Verify Python is available
+if ! command -v python3 &>/dev/null; then
+    echo "ERROR: python3 not found"
+    echo "Available Python modules:"
+    module avail python 2>&1 | head -20
+    exit 1
+fi
+echo "Python: \$(python3 --version)"
 
 # Set paths - DATA_DIR is sibling of CODE_DIR (set at submission time)
 export CODE_DIR="$CODE_DIR"
@@ -326,29 +337,19 @@ $( [ -n "$BATCH_BOOST" ] && echo "export TCT_BATCH_SIZE_BOOST=$BATCH_BOOST" )
 
 cd "\$CODE_DIR"
 
-# Activate environment (try venv first, then conda)
-CONDA_ENV_NAME="tct-py312"
-CONDA_ENV_DIR="\${WORK:-\$(dirname "\$CODE_DIR")}/software/conda/envs/\$CONDA_ENV_NAME"
-
+# Activate virtual environment
 if [ -f "\$VENV_DIR/bin/activate" ]; then
-    # Venv exists
     echo "Activating venv: \$VENV_DIR"
     source "\$VENV_DIR/bin/activate"
-elif [ -d "\$CONDA_ENV_DIR" ]; then
-    # Conda environment exists
-    echo "Activating conda env: \$CONDA_ENV_NAME"
-    source "\$(conda info --base)/etc/profile.d/conda.sh"
-    conda activate "\$CONDA_ENV_NAME"
-elif command -v conda &>/dev/null && conda env list 2>/dev/null | grep -q "^\${CONDA_ENV_NAME} "; then
-    # Conda env exists (search by name)
-    echo "Activating conda env: \$CONDA_ENV_NAME"
-    source "\$(conda info --base)/etc/profile.d/conda.sh"
-    conda activate "\$CONDA_ENV_NAME"
 else
-    echo "ERROR: No Python environment found"
-    echo "  Checked venv: \$VENV_DIR"
-    echo "  Checked conda: \$CONDA_ENV_DIR"
-    echo "Run setup first: bash scripts/submit.sh --setup --gpu=$GPU_TYPE"
+    echo "ERROR: Virtual environment not found at \$VENV_DIR"
+    echo ""
+    echo "Run setup first:"
+    echo "  srun --partition=a100 --gres=gpu:1 --time=01:00:00 --pty bash -l"
+    echo "  bash scripts/setup.sh"
+    echo ""
+    echo "Or use fresh_start.sh which runs setup automatically:"
+    echo "  bash scripts/fresh_start.sh"
     exit 1
 fi
 
