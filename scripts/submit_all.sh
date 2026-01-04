@@ -6,7 +6,8 @@
 # 2. Extracts training data if needed
 # 3. Submits all training jobs
 #
-# Submits medium and large models for each schema/tokenizer with dropout=0.2
+# Submits ALL model sizes (small/medium/large) for ALL schemas and tokenizers
+# Total: 3 schemas × 2 tokenizers × 3 sizes = 18 experiments with dropout=0.2
 #
 # Usage:
 #   bash scripts/submit_all.sh              # Submit all jobs (resume from checkpoints)
@@ -74,7 +75,9 @@ echo "Commit: $CURRENT_COMMIT"
 echo "Resume: $([ -n "$RESUME" ] && echo "YES (from checkpoints)" || echo "NO (fresh start)")"
 echo "Epochs: tsconfig=50, eslintrc=75, kubernetes=100"
 echo "Checkpoint: every 5% of training"
+echo "Models: small, medium, large (all schemas, TCT + UTF8)"
 echo "GPU: small/medium=A100, large=A100_80"
+echo "Total jobs: 18 (3 schemas × 2 tokenizers × 3 sizes)"
 [ -n "$DRY_RUN" ] && echo "Mode: DRY RUN"
 echo "============================================================"
 echo
@@ -213,22 +216,21 @@ submit_job() {
     echo
 }
 
-# Submit jobs for each schema
+# Submit jobs for each schema (all model sizes, all tokenizers)
+# Total: 3 schemas × 2 tokenizers × 3 sizes = 18 experiments
 for schema in $SCHEMAS; do
     echo ">>> Schema: $schema"
     echo
 
-    # Small: only kubernetes (tsconfig/eslintrc small commented out for now)
-    if [ "$schema" = "kubernetes" ]; then
-        submit_job "$schema small tct --dropout=$DROPOUT"
-        submit_job "$schema small utf8 --dropout=$DROPOUT"
-    fi
+    # Small: tct and utf8
+    submit_job "$schema small tct --dropout=$DROPOUT"
+    submit_job "$schema small utf8 --dropout=$DROPOUT"
 
-    # Medium: tct and utf8 separately
+    # Medium: tct and utf8
     submit_job "$schema medium tct --dropout=$DROPOUT"
     submit_job "$schema medium utf8 --dropout=$DROPOUT"
 
-    # Large: tct and utf8 separately (A100_80 for headroom)
+    # Large: tct and utf8 (A100_80 for memory headroom)
     submit_job "$schema large tct --gpu=a100_80 --dropout=$DROPOUT"
     submit_job "$schema large utf8 --gpu=a100_80 --dropout=$DROPOUT"
 
