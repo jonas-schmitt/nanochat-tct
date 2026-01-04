@@ -46,33 +46,58 @@ detect_platform() {
 
 PLATFORM=$(detect_platform)
 
-# Set paths based on platform
+# Set paths based on platform (consistent with setup.sh/submit.sh)
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+CODE_DIR="$(dirname "$SCRIPT_DIR")"
+DATA_DIR="$(dirname "$CODE_DIR")/data"
+
 case $PLATFORM in
     slurm|nhr)
-        WORKSPACE="${WORK:-$HOME}"
-        CODE_DIR="$WORKSPACE/nanochat-tct"
-        DATA_DIR="$WORKSPACE/data/tct"
-        VENV_DIR="$WORKSPACE/venv-tct"
-        # Load modules
+        VENV_DIR="${WORK:-$(dirname "$CODE_DIR")}/venv-tct"
+        CONDA_ENV_DIR="${WORK:-$(dirname "$CODE_DIR")}/software/conda/envs/tct-py312"
+
+        # Load modules (per NHR docs)
+        echo "Loading modules..."
         module purge 2>/dev/null || true
-        module load python cuda 2>/dev/null || true
+        module load cuda 2>/dev/null || echo "  cuda module not available"
+
+        # Load Python 3.12 module
+        PYTHON_LOADED=""
+        for pymod in "python/3.12-conda" "python/3.12"; do
+            if module load "$pymod" 2>&1; then
+                PYTHON_LOADED="$pymod"
+                echo "  Loaded: $pymod"
+                break
+            fi
+        done
+
+        if [ -z "$PYTHON_LOADED" ]; then
+            echo "ERROR: Python 3.12 module not found"
+            module avail python 2>&1
+            exit 1
+        fi
         ;;
     runpod)
-        WORKSPACE="/workspace"
-        CODE_DIR="$WORKSPACE/nanochat-tct"
-        DATA_DIR="$WORKSPACE/data"
-        VENV_DIR="$WORKSPACE/venv"
+        VENV_DIR="/workspace/venv"
         ;;
     local)
-        CODE_DIR="$(cd "$(dirname "$0")/.." && pwd)"
-        DATA_DIR="$HOME/Desktop/data"
         VENV_DIR="$CODE_DIR/.venv"
         ;;
 esac
 
-# Activate virtual environment
+# Activate Python environment (try venv first, fall back to conda)
 if [ -f "$VENV_DIR/bin/activate" ]; then
+    echo "Activating venv: $VENV_DIR"
     source "$VENV_DIR/bin/activate"
+elif [ -n "$CONDA_ENV_DIR" ] && [ -d "$CONDA_ENV_DIR" ]; then
+    echo "Activating conda env: $CONDA_ENV_DIR"
+    source "$(conda info --base)/etc/profile.d/conda.sh"
+    conda activate tct-py312
+else
+    echo "ERROR: No Python environment found"
+    echo "  Checked venv: $VENV_DIR"
+    [ -n "$CONDA_ENV_DIR" ] && echo "  Checked conda: $CONDA_ENV_DIR"
+    exit 1
 fi
 
 cd "$CODE_DIR"

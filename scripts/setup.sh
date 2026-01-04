@@ -209,13 +209,14 @@ if [ ! -d "$VENV_DIR" ] || [ ! -f "$VENV_DIR/bin/activate" ]; then
     if [ -z "$VENV_CREATED" ] && [ "$PLATFORM" = "nhr" ]; then
         echo "Venv creation failed, falling back to conda..."
         CONDA_ENV_NAME="tct-py312"
-        CONDA_ENV_DIR="$WORK/software/conda/envs/$CONDA_ENV_NAME"
+        CONDA_BASE="${WORK:-$(dirname "$CODE_DIR")}/software/conda"
+        CONDA_ENV_DIR="$CONDA_BASE/envs/$CONDA_ENV_NAME"
 
         # Configure conda directories
-        mkdir -p "$WORK/software/conda/pkgs"
-        mkdir -p "$WORK/software/conda/envs"
-        conda config --add pkgs_dirs "$WORK/software/conda/pkgs" 2>/dev/null || true
-        conda config --add envs_dirs "$WORK/software/conda/envs" 2>/dev/null || true
+        mkdir -p "$CONDA_BASE/pkgs"
+        mkdir -p "$CONDA_BASE/envs"
+        conda config --add pkgs_dirs "$CONDA_BASE/pkgs" 2>/dev/null || true
+        conda config --add envs_dirs "$CONDA_BASE/envs" 2>/dev/null || true
 
         if ! conda env list | grep -q "^${CONDA_ENV_NAME} "; then
             echo "Creating conda environment: $CONDA_ENV_NAME"

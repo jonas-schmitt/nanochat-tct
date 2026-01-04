@@ -352,7 +352,7 @@ cd "\$CODE_DIR"
 
 # Activate Python environment (try venv first, fall back to conda)
 CONDA_ENV_NAME="tct-py312"
-CONDA_ENV_DIR="\${WORK}/software/conda/envs/\$CONDA_ENV_NAME"
+CONDA_ENV_DIR="\${WORK:-\$(dirname "\$CODE_DIR")}/software/conda/envs/\$CONDA_ENV_NAME"
 
 if [ -f "\$VENV_DIR/bin/activate" ]; then
     echo "Activating venv: \$VENV_DIR"
