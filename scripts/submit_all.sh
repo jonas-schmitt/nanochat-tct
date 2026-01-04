@@ -6,13 +6,11 @@
 # 2. Extracts training data if needed
 # 3. Submits all training jobs
 #
-# Submits separate jobs for each schema/size/tokenizer combination:
-# - small: tct + utf8 together (faster, they fit in one job)
-# - medium/large: tct and utf8 separately (longer runs)
+# Submits medium and large models for each schema/tokenizer with dropout=0.2
 #
 # Usage:
-#   bash scripts/submit_all.sh              # Submit all jobs (with resume)
-#   bash scripts/submit_all.sh --no-resume  # Submit without resume (fresh start)
+#   bash scripts/submit_all.sh              # Submit all jobs (fresh start)
+#   bash scripts/submit_all.sh --resume     # Resume from checkpoints
 #   bash scripts/submit_all.sh --dry-run    # Show what would be submitted
 #   bash scripts/submit_all.sh --setup      # Run setup first if needed
 
@@ -24,14 +22,14 @@ CODE_DIR="$(dirname "$SCRIPT_DIR")"
 DATA_DIR="$(dirname "$CODE_DIR")/data"
 
 DRY_RUN=""
-RESUME="resume"
+RESUME=""  # Default: start fresh (no resume)
 RUN_SETUP=""
 NO_PULL=""
 
 for arg in "$@"; do
     case $arg in
         --dry-run) DRY_RUN="--dry-run" ;;
-        --no-resume) RESUME="" ;;
+        --resume) RESUME="resume" ;;
         --setup) RUN_SETUP="1" ;;
         --no-pull) NO_PULL="1" ;;
     esac
@@ -202,7 +200,7 @@ echo
 # =============================================================================
 
 SCHEMAS="kubernetes tsconfig eslintrc"
-SIZES_COMBINED="small"           # tct + utf8 together
+DROPOUT="0.2"  # Default dropout for medium/large models
 
 submit_job() {
     local args="$1"
@@ -211,23 +209,18 @@ submit_job() {
     echo
 }
 
-# Submit jobs for each schema
+# Submit jobs for each schema (medium and large only, with dropout=0.2)
 for schema in $SCHEMAS; do
     echo ">>> Schema: $schema"
     echo
 
-    # Small: tct + utf8 together
-    for size in $SIZES_COMBINED; do
-        submit_job "$schema $size"
-    done
-
     # Medium: tct and utf8 separately
-    submit_job "$schema medium tct"
-    submit_job "$schema medium utf8"
+    submit_job "$schema medium tct --dropout=$DROPOUT"
+    submit_job "$schema medium utf8 --dropout=$DROPOUT"
 
     # Large: tct and utf8 separately (A100_80 for headroom)
-    submit_job "$schema large tct --gpu=a100_80"
-    submit_job "$schema large utf8 --gpu=a100_80"
+    submit_job "$schema large tct --gpu=a100_80 --dropout=$DROPOUT"
+    submit_job "$schema large utf8 --gpu=a100_80 --dropout=$DROPOUT"
 
     echo
 done
