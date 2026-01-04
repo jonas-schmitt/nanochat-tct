@@ -7,10 +7,13 @@ Each sequence is an independent training example with no cross-sequence context.
 Key Features:
 - Works for all schemas (tsconfig, eslintrc, kubernetes)
 - Works for both tokenizers (TCT-BPE, UTF8-BPE)
-- PAD token is always 0
+- PAD token is vocab_size - 1 (read from metadata.json)
 - Each batch contains B independent sequences (no concatenation)
-- Inputs padded with 0 (PAD), targets padded with -1 (ignored in loss)
+- Inputs padded with PAD, targets padded with -1 (ignored in loss)
 - Compatible with nanochat's training loop
+
+IMPORTANT: PAD token must be the LAST token in vocab (vocab_size - 1), NOT 0!
+Token 0 is a valid data token (e.g., start-of-object in TCT).
 """
 
 import json
@@ -20,8 +23,22 @@ from typing import Optional, Tuple, Iterator
 import torch
 from torch.utils.data import Dataset, DataLoader, IterableDataset
 
-# PAD token is always 0 in the new format
-PAD_TOKEN_ID = 0
+
+def get_pad_token_id(data_dir: Path) -> int:
+    """Get pad token ID from metadata (vocab_size - 1).
+
+    The pad token is always the last token in the vocabulary.
+    This is read from metadata.json which stores base_vocab_size.
+    """
+    metadata_path = data_dir / "metadata.json"
+    if metadata_path.exists():
+        with open(metadata_path) as f:
+            metadata = json.load(f)
+        # base_vocab_size is the actual vocab, pad token is the last one
+        base_vocab = metadata.get("base_vocab_size", 256)
+        return base_vocab  # This is vocab_size - 1 (0-indexed)
+    # Fallback for old format
+    return 256
 
 
 class JSONLDataset(Dataset):
@@ -36,6 +53,7 @@ class JSONLDataset(Dataset):
         self,
         jsonl_file: Path,
         context_size: int,
+        pad_token_id: int,
         max_len: Optional[int] = None,
         verbose: bool = True,
     ):
@@ -45,10 +63,12 @@ class JSONLDataset(Dataset):
         Args:
             jsonl_file: Path to JSONL file (train.jsonl or validate.jsonl)
             context_size: Maximum sequence length (truncate if longer, pad if shorter)
+            pad_token_id: Token ID used for padding (should be vocab_size - 1)
             max_len: Filter out sequences longer than this (None = no filtering)
             verbose: Print loading statistics
         """
         self.context_size = context_size
+        self.pad_token_id = pad_token_id
         self.max_len = max_len
         self.verbose = verbose
 
@@ -104,7 +124,7 @@ class JSONLDataset(Dataset):
         Get a single sequence as input/target pair for teacher forcing.
 
         Returns:
-            inputs: [context_size] tensor, padded with 0
+            inputs: [context_size] tensor, padded with pad_token_id
             targets: [context_size] tensor, padded with -1 (ignored in loss)
         """
         tokens = self.sequences[idx]
@@ -116,14 +136,14 @@ class JSONLDataset(Dataset):
         # Need context_size + 1 tokens for teacher forcing
         if len(tokens) < self.context_size + 1:
             needed = self.context_size + 1 - len(tokens)
-            tokens = torch.cat([tokens, torch.full((needed,), PAD_TOKEN_ID, dtype=torch.long)])
+            tokens = torch.cat([tokens, torch.full((needed,), self.pad_token_id, dtype=torch.long)])
 
         # Teacher forcing: shift by 1
         inputs = tokens[:-1].clone()   # First context_size tokens
         targets = tokens[1:].clone()   # Last context_size tokens
 
         # Replace padding in targets with -1 (ignored in loss via ignore_index)
-        mask = inputs == PAD_TOKEN_ID
+        mask = inputs == self.pad_token_id
         targets[mask] = -1
 
         # Convert inputs to int32 (model expects this)
@@ -164,6 +184,11 @@ def create_reshuffled_dataloaders(
     """
     import random
     data_dir = Path(data_dir)
+
+    # Get the correct pad token from metadata
+    pad_token_id = get_pad_token_id(data_dir)
+    if verbose:
+        print(f"  Pad token: {pad_token_id}")
 
     # Load all sequences - prefer all.jsonl if available, otherwise combine train+val
     all_sequences = []
@@ -221,9 +246,10 @@ def create_reshuffled_dataloaders(
 
     # Create datasets directly from sequences
     class InMemoryDataset(Dataset):
-        def __init__(self, sequences, context_size):
+        def __init__(self, sequences, context_size, pad_id):
             self.sequences = sequences
             self.context_size = context_size
+            self.pad_token_id = pad_id
 
         def __len__(self):
             return len(self.sequences)
@@ -234,10 +260,10 @@ def create_reshuffled_dataloaders(
                 tokens = tokens[:self.context_size]
             if len(tokens) < self.context_size + 1:
                 needed = self.context_size + 1 - len(tokens)
-                tokens = torch.cat([tokens, torch.full((needed,), PAD_TOKEN_ID, dtype=torch.long)])
+                tokens = torch.cat([tokens, torch.full((needed,), self.pad_token_id, dtype=torch.long)])
             inputs = tokens[:-1].clone()
             targets = tokens[1:].clone()
-            mask = inputs == PAD_TOKEN_ID
+            mask = inputs == self.pad_token_id
             targets[mask] = -1
             inputs = inputs.to(dtype=torch.int32)
             return inputs, targets
@@ -250,7 +276,7 @@ def create_reshuffled_dataloaders(
         return inputs, targets
 
     train_loader = DataLoader(
-        InMemoryDataset(train_sequences, context_size),
+        InMemoryDataset(train_sequences, context_size, pad_token_id),
         batch_size=batch_size,
         shuffle=True,
         num_workers=num_workers,
@@ -260,7 +286,7 @@ def create_reshuffled_dataloaders(
     )
 
     val_loader = DataLoader(
-        InMemoryDataset(val_sequences, context_size),
+        InMemoryDataset(val_sequences, context_size, pad_token_id),
         batch_size=batch_size,
         shuffle=False,
         num_workers=num_workers,
@@ -323,6 +349,9 @@ def create_dataloader(
     if not jsonl_file.exists():
         raise FileNotFoundError(f"JSONL file not found: {jsonl_file}")
 
+    # Get the correct pad token from metadata
+    pad_token_id = get_pad_token_id(data_dir)
+
     # Load metadata if available
     metadata_file = data_dir / "metadata.json"
     if metadata_file.exists() and verbose:
@@ -334,11 +363,13 @@ def create_dataloader(
         base_vocab = metadata.get('base_vocab_size', 0)
         full_vocab = base_vocab + 1 if base_vocab else '?'  # +1 for pad token
         print(f"  Vocab: {full_vocab:,}")
+        print(f"  Pad token: {pad_token_id}")
 
     # Create dataset
     dataset = JSONLDataset(
         jsonl_file,
         context_size=context_size,
+        pad_token_id=pad_token_id,
         max_len=max_len,
         verbose=verbose,
     )

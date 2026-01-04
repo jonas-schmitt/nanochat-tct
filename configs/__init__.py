@@ -30,20 +30,20 @@ def _import_dataloader():
         create_reshuffled_dataloaders,
         get_epoch_steps,
         get_warmup_steps,
-        PAD_TOKEN_ID,
+        get_pad_token_id,
     )
-    return create_dataloader, create_reshuffled_dataloaders, get_epoch_steps, get_warmup_steps, PAD_TOKEN_ID
+    return create_dataloader, create_reshuffled_dataloaders, get_epoch_steps, get_warmup_steps, get_pad_token_id
 
 
 # Re-export for convenience when torch is available
 def __getattr__(name):
-    if name in ("create_dataloader", "create_reshuffled_dataloaders", "get_epoch_steps", "get_warmup_steps", "PAD_TOKEN_ID"):
-        create_dataloader, create_reshuffled_dataloaders, get_epoch_steps, get_warmup_steps, PAD_TOKEN_ID = _import_dataloader()
+    if name in ("create_dataloader", "create_reshuffled_dataloaders", "get_epoch_steps", "get_warmup_steps", "get_pad_token_id"):
+        create_dataloader, create_reshuffled_dataloaders, get_epoch_steps, get_warmup_steps, get_pad_token_id = _import_dataloader()
         globals()["create_dataloader"] = create_dataloader
         globals()["create_reshuffled_dataloaders"] = create_reshuffled_dataloaders
         globals()["get_epoch_steps"] = get_epoch_steps
         globals()["get_warmup_steps"] = get_warmup_steps
-        globals()["PAD_TOKEN_ID"] = PAD_TOKEN_ID
+        globals()["get_pad_token_id"] = get_pad_token_id
         return globals()[name]
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
@@ -67,5 +67,5 @@ __all__ = [
     "create_reshuffled_dataloaders",
     "get_epoch_steps",
     "get_warmup_steps",
-    "PAD_TOKEN_ID",
+    "get_pad_token_id",
 ]
