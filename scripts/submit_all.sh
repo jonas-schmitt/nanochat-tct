@@ -209,10 +209,16 @@ submit_job() {
     echo
 }
 
-# Submit jobs for each schema (medium and large only, with dropout=0.2)
+# Submit jobs for each schema
 for schema in $SCHEMAS; do
     echo ">>> Schema: $schema"
     echo
+
+    # Small: only kubernetes (tsconfig/eslintrc small commented out for now)
+    if [ "$schema" = "kubernetes" ]; then
+        submit_job "$schema small tct --dropout=$DROPOUT"
+        submit_job "$schema small utf8 --dropout=$DROPOUT"
+    fi
 
     # Medium: tct and utf8 separately
     submit_job "$schema medium tct --dropout=$DROPOUT"
