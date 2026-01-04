@@ -252,26 +252,44 @@ echo "============================================================"
 echo
 
 # Load modules (per NHR docs: https://doc.nhr.fau.de/environment/python-env/)
+echo "Loading modules..."
 module purge
-module load cuda 2>/dev/null || true
+module load cuda 2>/dev/null || echo "  cuda module not available"
 
-# Load Python 3.12 module (try conda variant first, then regular)
+# Load Python 3.12 module (try variants in order)
 PYTHON_LOADED=""
 for pymod in "python/3.12-conda" "python/3.12"; do
-    if module load "\$pymod" 2>/dev/null; then
-        echo "Loaded module: \$pymod"
+    if module load "\$pymod" 2>&1; then
         PYTHON_LOADED="\$pymod"
+        echo "  Loaded: \$pymod"
         break
+    else
+        echo "  \$pymod not available, trying next..."
     fi
 done
 
 if [ -z "\$PYTHON_LOADED" ]; then
-    echo "ERROR: Python 3.12 module not found"
-    echo "Available Python modules:"
-    module avail python 2>&1 | head -20
+    echo ""
+    echo "ERROR: Python 3.12 module not found!"
+    echo ""
+    echo "Tried: python/3.12-conda, python/3.12"
+    echo ""
+    echo "Available Python modules on this system:"
+    module avail python 2>&1
+    echo ""
+    echo "Currently loaded modules:"
+    module list 2>&1
     exit 1
 fi
-echo "Python: \$(python3 --version)"
+
+# Verify module is loaded and Python works
+echo ""
+echo "Module verification:"
+echo "  Loaded modules:"
+module list 2>&1 | grep -E "python|cuda" || echo "    (none matching python/cuda)"
+echo "  Python path: \$(which python3)"
+echo "  Python version: \$(python3 --version)"
+echo ""
 
 # Set paths - DATA_DIR is sibling of CODE_DIR (set at submission time)
 export CODE_DIR="$CODE_DIR"
@@ -361,10 +379,20 @@ else
     exit 1
 fi
 
-echo "Python:  \$(python --version)"
-echo "PyTorch: \$(python -c 'import torch; print(torch.__version__)')"
-echo "CUDA:    \$(python -c 'import torch; print(torch.version.cuda)')"
-echo "GPU:     \$(nvidia-smi --query-gpu=name --format=csv,noheader)"
+# Verify environment is working
+echo ""
+echo "Environment verification:"
+echo "  Python path: \$(which python)"
+echo "  Python version: \$(python --version)"
+echo "  PyTorch: \$(python -c 'import torch; print(torch.__version__)' 2>/dev/null || echo 'NOT INSTALLED')"
+echo "  CUDA available: \$(python -c 'import torch; print(torch.cuda.is_available())' 2>/dev/null || echo 'N/A')"
+echo "  CUDA version: \$(python -c 'import torch; print(torch.version.cuda)' 2>/dev/null || echo 'N/A')"
+echo "  GPU: \$(nvidia-smi --query-gpu=name --format=csv,noheader 2>/dev/null || echo 'N/A')"
+echo ""
+
+# Verify module is still loaded (important for venv to work correctly)
+echo "Loaded modules after activation:"
+module list 2>&1 | head -5
 echo
 
 EOF
