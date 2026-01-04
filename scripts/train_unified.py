@@ -78,6 +78,7 @@ model_size = "small"    # small, medium, large
 epochs = None           # None => use schema default
 data_root = None        # None => ~/Desktop/data
 model_tag = ""          # optional tag for checkpoint directory
+checkpoint_base = None  # None => use CHECKPOINT_DIR env var, or "checkpoints"
 warmup_fraction = 0.05  # warmup as fraction of first epoch
 grad_clip = 1.0         # gradient clipping
 device_batch_size = None  # None => use config default
@@ -103,6 +104,11 @@ if save_every_pct is None:
 config_keys = [k for k,v in globals().items() if not k.startswith('_') and isinstance(v, (int, float, bool, str, type(None)))]
 exec(open(os.path.join('nanochat', 'configurator.py')).read())
 user_config = {k: globals()[k] for k in config_keys}
+
+# Resolve checkpoint base directory (NHR uses $HPCVAULT to avoid quota issues)
+if checkpoint_base is None:
+    checkpoint_base = os.environ.get("CHECKPOINT_DIR", "checkpoints")
+checkpoint_base = Path(checkpoint_base)
 # -----------------------------------------------------------------------------
 
 # Load schema config
@@ -237,7 +243,7 @@ resumed_min_val_loss = float("inf")
 resumed_smooth_train_loss = 0
 
 if resume_from_epoch > 0:
-    checkpoint_dir = Path("checkpoints") / (model_tag if model_tag else f"{schema}_{tokenizer}_{model_size}")
+    checkpoint_dir = checkpoint_base / (model_tag if model_tag else f"{schema}_{tokenizer}_{model_size}")
     checkpoint_path = checkpoint_dir / f"epoch_{resume_from_epoch:03d}.pt"
     if checkpoint_path.exists():
         print0(f"Resuming from checkpoint: {checkpoint_path}")
@@ -381,7 +387,7 @@ def save_checkpoint(step, epoch, val_loss, min_val_loss_current, smooth_train_lo
         return
 
     output_dirname = model_tag if model_tag else f"{schema}_{tokenizer}_{model_size}"
-    checkpoint_dir = Path("checkpoints") / output_dirname
+    checkpoint_dir = checkpoint_base / output_dirname
     checkpoint_dir.mkdir(parents=True, exist_ok=True)
 
     # Save full training state (model + optimizer + training state)

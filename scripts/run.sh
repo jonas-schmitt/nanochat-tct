@@ -86,6 +86,21 @@ fi
 
 LOG_DIR="${LOG_DIR:-$CODE_DIR/logs}"
 
+# CHECKPOINT_DIR: use environment if set, otherwise platform-specific
+# NHR uses $HPCVAULT (500GB) or $WORK (1TB) to avoid home quota (50GB)
+if [ -z "$CHECKPOINT_DIR" ]; then
+    if [ -n "$HPCVAULT" ] && [ -d "$HPCVAULT" ]; then
+        CHECKPOINT_DIR="$HPCVAULT/checkpoints"
+    elif [ -n "$WORK" ] && [ -d "$WORK" ]; then
+        CHECKPOINT_DIR="$WORK/checkpoints"
+    else
+        CHECKPOINT_DIR="$CODE_DIR/checkpoints"
+    fi
+fi
+export CHECKPOINT_DIR
+mkdir -p "$CHECKPOINT_DIR"
+echo "Checkpoint dir: $CHECKPOINT_DIR"
+
 # GPU info (batch sizes are computed dynamically in Python based on detected VRAM)
 GPU_NAME=$(nvidia-smi --query-gpu=name --format=csv,noheader 2>/dev/null | head -1 || echo "No GPU")
 GPU_MEM=$(nvidia-smi --query-gpu=memory.total --format=csv,noheader,nounits 2>/dev/null | head -1 | tr -d ' ')
@@ -116,9 +131,9 @@ TOKENIZERS="${TOKENIZERS:-tct utf8}"
 
 find_latest_epoch() {
     local exp_name=$1
-    local checkpoint_dir="checkpoints/${exp_name}"
-    if [ -d "$checkpoint_dir" ]; then
-        ls "$checkpoint_dir"/epoch_*.pt 2>/dev/null | sort -V | tail -1 | grep -oP 'epoch_\K\d+' | sed 's/^0*//'
+    local ckpt_dir="${CHECKPOINT_DIR}/${exp_name}"
+    if [ -d "$ckpt_dir" ]; then
+        ls "$ckpt_dir"/epoch_*.pt 2>/dev/null | sort -V | tail -1 | grep -oP 'epoch_\K\d+' | sed 's/^0*//'
     fi
 }
 
@@ -166,7 +181,7 @@ for SCHEMA in $SCHEMAS; do
             log_file="$LOG_DIR/${exp_name}.log"
 
             # Skip if already completed
-            if [ -f "checkpoints/${exp_name}/best.pt" ]; then
+            if [ -f "${CHECKPOINT_DIR}/${exp_name}/best.pt" ]; then
                 echo "[SKIP] $exp_name (already completed)"
                 continue
             fi

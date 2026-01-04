@@ -272,9 +272,20 @@ export CODE_DIR="$CODE_DIR"
 export DATA_DIR="$DATA_DIR"
 export VENV_DIR="\${WORK:-\$(dirname "$CODE_DIR")}/venv-tct"
 
-echo "CODE_DIR: \$CODE_DIR"
-echo "DATA_DIR: \$DATA_DIR"
-echo "VENV_DIR: \$VENV_DIR"
+# CHECKPOINT_DIR: use HPCVAULT (500GB) or WORK (1TB) on NHR to avoid home quota (50GB)
+if [ -n "\$HPCVAULT" ] && [ -d "\$HPCVAULT" ]; then
+    export CHECKPOINT_DIR="\$HPCVAULT/checkpoints"
+elif [ -n "\$WORK" ] && [ -d "\$WORK" ]; then
+    export CHECKPOINT_DIR="\$WORK/checkpoints"
+else
+    export CHECKPOINT_DIR="\$CODE_DIR/checkpoints"
+fi
+mkdir -p "\$CHECKPOINT_DIR"
+
+echo "CODE_DIR:       \$CODE_DIR"
+echo "DATA_DIR:       \$DATA_DIR"
+echo "VENV_DIR:       \$VENV_DIR"
+echo "CHECKPOINT_DIR: \$CHECKPOINT_DIR"
 
 # Verify data exists (should have been extracted by submit_all.sh)
 DATASETS="tsconfig-tct-base tsconfig-utf8-base-matched eslintrc-tct-bpe-500 eslintrc-utf8-bpe-500 kubernetes-tct-bpe-1k kubernetes-utf8-bpe-1k"
