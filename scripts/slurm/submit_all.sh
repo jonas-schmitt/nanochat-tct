@@ -1,7 +1,8 @@
 #!/bin/bash
 # Submit all TCT experiments to SLURM
 #
-# This submits 18 jobs: 3 schemas × 3 sizes × 2 tokenizers
+# This submits 12 jobs: 3 schemas × 2 sizes × 2 tokenizers (medium/large only)
+# Uses dropout=0.2 for all experiments
 #
 # Usage:
 #   ./submit_all.sh           # Submit all experiments
@@ -22,23 +23,22 @@ cd "${SCRIPT_DIR}/../.."
 # Schemas and their expected training times
 SCHEMAS=("tsconfig" "eslintrc" "kubernetes")
 TOKENIZERS=("tct" "utf8")
-MODEL_SIZES=("small" "medium" "large")
+MODEL_SIZES=("medium" "large")  # Only medium and large
+DROPOUT="0.2"
 
 # Time limits by schema × model size
 declare -A TIME_LIMITS
-TIME_LIMITS["tsconfig-small"]="4:00:00"
 TIME_LIMITS["tsconfig-medium"]="8:00:00"
 TIME_LIMITS["tsconfig-large"]="24:00:00"
-TIME_LIMITS["eslintrc-small"]="6:00:00"
 TIME_LIMITS["eslintrc-medium"]="12:00:00"
 TIME_LIMITS["eslintrc-large"]="36:00:00"
-TIME_LIMITS["kubernetes-small"]="24:00:00"
 TIME_LIMITS["kubernetes-medium"]="48:00:00"
 TIME_LIMITS["kubernetes-large"]="72:00:00"
 
 echo "=============================================="
 echo "TCT Experiment Batch Submission"
 echo "=============================================="
+echo "Models: medium, large (dropout=$DROPOUT)"
 echo ""
 
 JOB_COUNT=0
@@ -49,14 +49,14 @@ for SCHEMA in "${SCHEMAS[@]}"; do
             TIME_KEY="${SCHEMA}-${MODEL_SIZE}"
             TIME_LIMIT="${TIME_LIMITS[$TIME_KEY]}"
 
-            echo "Submitting: ${EXPERIMENT} (time: ${TIME_LIMIT})"
+            echo "Submitting: ${EXPERIMENT} (time: ${TIME_LIMIT}, dropout: ${DROPOUT})"
 
             if [[ "$DRY_RUN" == "false" ]]; then
                 sbatch \
                     --job-name="tct-${EXPERIMENT}" \
                     --time="${TIME_LIMIT}" \
                     scripts/slurm/train_nhr.sh \
-                    "${SCHEMA}" "${TOKENIZER}" "${MODEL_SIZE}"
+                    "${SCHEMA}" "${TOKENIZER}" "${MODEL_SIZE}" "--dropout=${DROPOUT}"
             fi
 
             JOB_COUNT=$((JOB_COUNT + 1))

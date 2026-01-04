@@ -198,5 +198,5 @@ if [ "$NEEDS_SETUP" = "1" ]; then
     SETUP_FLAG="--setup"
 fi
 
-# Pass through dry-run flag, always use --no-resume for fresh start
-bash "$SCRIPT_DIR/submit_all.sh" --no-resume --no-pull $SETUP_FLAG $DRY_RUN
+# Pass through dry-run flag (submit_all.sh defaults to fresh start)
+bash "$SCRIPT_DIR/submit_all.sh" --no-pull $SETUP_FLAG $DRY_RUN
