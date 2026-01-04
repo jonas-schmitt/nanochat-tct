@@ -147,7 +147,7 @@ echo
 # Step 3: Submit all jobs (will extract data if needed)
 # =============================================================================
 
-echo ">>> Step 3: Submit All Jobs (no resume)"
+echo ">>> Step 3: Submit All Jobs (fresh start, no resume)"
 echo
 
 # Pass through dry-run flag, use --no-resume for fresh start

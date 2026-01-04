@@ -35,6 +35,8 @@ for arg in "$@"; do
     esac
 done
 
+CURRENT_COMMIT=$(cd "$CODE_DIR" && git rev-parse --short HEAD 2>/dev/null || echo "unknown")
+
 # Platform detection (for info only)
 detect_platform() {
     if [ -d "/workspace" ] && [ -w "/workspace" ]; then
@@ -68,6 +70,8 @@ echo "Date: $(date)"
 echo "Platform: $PLATFORM"
 echo "Code dir: $CODE_DIR"
 echo "Data dir: $DATA_DIR"
+echo "Commit: $CURRENT_COMMIT"
+echo "Resume: $([ -n "$RESUME" ] && echo "YES (from checkpoints)" || echo "NO (fresh start)")"
 echo "Epochs: tsconfig=50, eslintrc=75, kubernetes=100"
 echo "Checkpoint: every 5% of training"
 echo "GPU: small/medium=A100, large=A100_80"
