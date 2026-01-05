@@ -89,14 +89,14 @@ dropout = 0.1           # default 0.1 prevents overfitting, or 0.0-0.5
 learning_rate_override = None  # None => use config default, or e.g. 3e-4
 resume_from_epoch = 0   # resume training from this epoch (0 = start fresh)
 eval_every_epoch = 1    # evaluate every N epochs
-save_every_pct = 2      # checkpoint every 2% of training (override with CLI)
+# RunPod detection (affects checkpoint frequency)
+is_runpod = os.environ.get("RUNPOD_POD_ID") is not None
+
+save_every_pct = 2 if is_runpod else 10  # 2% for RunPod, 10% otherwise (override with CLI)
 num_eval_batches = 100  # number of batches for validation
 reshuffle_data = True   # reshuffle train+val data randomly (fixes sequential split)
 gradient_checkpointing = False  # trade compute for memory (enable with --gradient_checkpointing=True)
 use_torch_compile = True        # disable with --use_torch_compile=False for debugging OOM
-
-# RunPod detection (for logging only now, checkpoint frequency is fixed)
-is_runpod = os.environ.get("RUNPOD_POD_ID") is not None
 
 # CLI override
 config_keys = [k for k,v in globals().items() if not k.startswith('_') and isinstance(v, (int, float, bool, str, type(None)))]
