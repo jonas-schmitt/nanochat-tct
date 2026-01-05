@@ -5,6 +5,7 @@ Provides:
 1. UTF8BPEDecoder: Standalone decoder that works WITHOUT xgrammar
 2. build_xgrammar_tokenizer_info: XGrammar integration (requires xgrammar)
 3. compile_json_schema_grammar: Schema-constrained generation (requires xgrammar)
+4. compute_constrained_bpb: Compute BPB with XGrammar constraints (for evaluation)
 
 Usage (decoding only - no xgrammar required):
     from nanochat.xgrammar_tokenizer import UTF8BPEDecoder
@@ -24,11 +25,26 @@ Usage (constrained generation - requires xgrammar):
     )
     schema = {"type": "object", "properties": {...}}
     compiled = compile_json_schema_grammar(tokenizer_info, schema)
+
+Usage (constrained BPB evaluation):
+    from nanochat.xgrammar_tokenizer import compute_constrained_bpb
+
+    results = compute_constrained_bpb(
+        model=model,
+        tokenizer_info=tokenizer_info,
+        compiled_grammar=compiled_grammar,
+        utf8_decoder=decoder,
+        validation_tokens=val_tokens,
+    )
+    print(f"Raw BPB: {results['raw_bpb']:.4f}")
+    print(f"Constrained BPB: {results['constrained_bpb']:.4f}")
 """
 
 import json
+import math
+from dataclasses import dataclass
 from pathlib import Path
-from typing import List, Optional, Union
+from typing import Dict, List, Optional, Union
 
 try:
     import xgrammar
@@ -271,3 +287,298 @@ def load_schema(schema_name: str) -> dict:
     schema_path = SCHEMA_PATHS[schema_name]
     with open(schema_path) as f:
         return json.load(f)
+
+
+# =============================================================================
+# Constrained BPB Evaluation
+# =============================================================================
+
+@dataclass
+class ConstrainedBPBResult:
+    """Results from constrained BPB evaluation."""
+    raw_bpb: float              # BPB without grammar constraints
+    constrained_bpb: float      # BPB with grammar constraints (renormalized)
+    total_tokens: int           # Total tokens evaluated
+    total_bytes: int            # Total bytes in decoded text
+    num_sequences: int          # Number of sequences evaluated
+    raw_loss: float             # Total raw cross-entropy loss (nats)
+    constrained_loss: float     # Total constrained cross-entropy loss (nats)
+
+
+def compute_constrained_bpb(
+    model,
+    tokenizer_info: "xgrammar.TokenizerInfo",
+    compiled_grammar: "xgrammar.CompiledGrammar",
+    utf8_decoder: UTF8BPEDecoder,
+    validation_tokens: List[List[int]],
+    device: str = "cuda",
+    max_seq_len: Optional[int] = None,
+    show_progress: bool = True,
+) -> ConstrainedBPBResult:
+    """Compute bits-per-byte with XGrammar constraints applied.
+
+    For each token sequence:
+    1. Get valid token mask from grammar state at each position
+    2. Compute raw loss (unconstrained log prob)
+    3. Compute constrained loss (log prob renormalized over valid tokens only)
+    4. Track raw bytes for BPB normalization
+
+    This allows fair comparison: BPE with XGrammar constraints vs TCT.
+    The constrained BPB shows the effective compression when the model
+    only needs to predict among grammar-valid tokens.
+
+    Args:
+        model: The GPT model (must have forward() returning logits)
+        tokenizer_info: XGrammar TokenizerInfo for this vocabulary
+        compiled_grammar: XGrammar CompiledGrammar for the schema
+        utf8_decoder: UTF8BPEDecoder for decoding tokens to bytes
+        validation_tokens: List of token sequences to evaluate
+        device: Device to run on (default: "cuda")
+        max_seq_len: Maximum sequence length to process (default: None = no limit)
+        show_progress: Whether to show progress bar (default: True)
+
+    Returns:
+        ConstrainedBPBResult with raw and constrained BPB metrics
+    """
+    if xgrammar is None:
+        raise ImportError("xgrammar is required for constrained BPB evaluation")
+
+    try:
+        import torch
+        import torch.nn.functional as F
+        from tqdm import tqdm
+    except ImportError as e:
+        raise ImportError(f"Required package not found: {e}")
+
+    model.eval()
+
+    total_raw_loss = 0.0
+    total_constrained_loss = 0.0
+    total_bytes = 0
+    total_tokens = 0
+    num_sequences = 0
+
+    iterator = tqdm(validation_tokens, desc="Computing constrained BPB") if show_progress else validation_tokens
+
+    for tokens in iterator:
+        if len(tokens) < 2:
+            continue  # Need at least 2 tokens for next-token prediction
+
+        # Optionally truncate
+        if max_seq_len is not None and len(tokens) > max_seq_len:
+            tokens = tokens[:max_seq_len]
+
+        # Decode to text for byte count
+        text = utf8_decoder.decode(tokens)
+        n_bytes = len(text.encode('utf-8'))
+        if n_bytes == 0:
+            continue
+
+        total_bytes += n_bytes
+        num_sequences += 1
+
+        # Initialize grammar matcher for this sequence
+        matcher = xgrammar.GrammarMatcher(compiled_grammar)
+        bitmask = xgrammar.allocate_token_bitmask(1, tokenizer_info.vocab_size)
+
+        # Get model logits for entire sequence at once
+        input_ids = torch.tensor([tokens[:-1]], device=device)  # All but last
+        with torch.no_grad():
+            logits = model(input_ids)  # [1, T-1, V]
+            logits = logits[0]  # [T-1, V]
+
+        # Process each position
+        for t in range(len(tokens) - 1):
+            target_token = tokens[t + 1]
+            pos_logits = logits[t]  # [V]
+
+            # Raw loss (unconstrained)
+            raw_log_probs = F.log_softmax(pos_logits, dim=-1)
+            raw_loss = -raw_log_probs[target_token].item()
+            total_raw_loss += raw_loss
+
+            # Get valid token mask from grammar
+            xgrammar.reset_token_bitmask(bitmask)
+            matcher.fill_next_token_bitmask(bitmask)
+
+            # Apply grammar mask for constrained loss
+            constrained_logits = pos_logits.clone()
+            bitmask_tensor = bitmask.to(device)
+            xgrammar.apply_token_bitmask_inplace(constrained_logits.unsqueeze(0), bitmask_tensor)
+            constrained_logits = constrained_logits.squeeze(0)
+
+            # Constrained loss (renormalized over valid tokens)
+            constrained_log_probs = F.log_softmax(constrained_logits, dim=-1)
+            constrained_loss = -constrained_log_probs[target_token].item()
+
+            # Handle case where target is not valid (shouldn't happen with correct grammar)
+            if math.isinf(constrained_loss):
+                # Target token not in valid set - use raw loss as fallback
+                constrained_loss = raw_loss
+
+            total_constrained_loss += constrained_loss
+            total_tokens += 1
+
+            # Advance grammar state
+            try:
+                matcher.accept_token(target_token)
+            except Exception:
+                # If grammar rejects token, reset matcher for next sequence
+                break
+
+    # Compute BPB
+    if total_bytes == 0:
+        return ConstrainedBPBResult(
+            raw_bpb=float('inf'),
+            constrained_bpb=float('inf'),
+            total_tokens=0,
+            total_bytes=0,
+            num_sequences=0,
+            raw_loss=0.0,
+            constrained_loss=0.0,
+        )
+
+    raw_bpb = total_raw_loss / (math.log(2) * total_bytes)
+    constrained_bpb = total_constrained_loss / (math.log(2) * total_bytes)
+
+    return ConstrainedBPBResult(
+        raw_bpb=raw_bpb,
+        constrained_bpb=constrained_bpb,
+        total_tokens=total_tokens,
+        total_bytes=total_bytes,
+        num_sequences=num_sequences,
+        raw_loss=total_raw_loss,
+        constrained_loss=total_constrained_loss,
+    )
+
+
+# =============================================================================
+# TCT BPB Evaluation
+# =============================================================================
+
+@dataclass
+class TCTBPBResult:
+    """Results from TCT BPB evaluation."""
+    bpb: float                  # Bits per byte
+    total_tokens: int           # Total tokens evaluated
+    total_bytes: int            # Total bytes in decoded text
+    num_sequences: int          # Number of sequences evaluated
+    total_loss: float           # Total cross-entropy loss (nats)
+
+
+def get_tct_module(schema: str):
+    """Get TCT tokenizer module for schema.
+
+    Args:
+        schema: One of "tsconfig", "eslintrc", "kubernetes"
+
+    Returns:
+        TCT module with encode/decode/decode_prefix/vocab_size functions
+    """
+    if schema == "tsconfig":
+        import tct_tsconfig_base as tct
+    elif schema == "eslintrc":
+        import tct_eslintrc_bpe_500 as tct
+    elif schema == "kubernetes":
+        import tct_kubernetes_bpe_1k as tct
+    else:
+        raise ValueError(f"Unknown schema: {schema}. Available: tsconfig, eslintrc, kubernetes")
+    return tct
+
+
+def compute_tct_bpb(
+    model,
+    tct_module,
+    validation_tokens: List[List[int]],
+    device: str = "cuda",
+    max_seq_len: Optional[int] = None,
+    show_progress: bool = True,
+) -> TCTBPBResult:
+    """Compute bits-per-byte for TCT model.
+
+    TCT is inherently schema-constrained (100% valid by construction),
+    so we only compute raw BPB (no grammar masking needed).
+
+    Args:
+        model: The GPT model (must have forward() returning logits)
+        tct_module: TCT tokenizer module (has decode function)
+        validation_tokens: List of token sequences to evaluate
+        device: Device to run on (default: "cuda")
+        max_seq_len: Maximum sequence length to process (default: None = no limit)
+        show_progress: Whether to show progress bar (default: True)
+
+    Returns:
+        TCTBPBResult with BPB metrics
+    """
+    try:
+        import torch
+        import torch.nn.functional as F
+        from tqdm import tqdm
+    except ImportError as e:
+        raise ImportError(f"Required package not found: {e}")
+
+    model.eval()
+
+    total_loss = 0.0
+    total_bytes = 0
+    total_tokens = 0
+    num_sequences = 0
+
+    iterator = tqdm(validation_tokens, desc="Computing TCT BPB") if show_progress else validation_tokens
+
+    for tokens in iterator:
+        if len(tokens) < 2:
+            continue  # Need at least 2 tokens for next-token prediction
+
+        # Optionally truncate
+        if max_seq_len is not None and len(tokens) > max_seq_len:
+            tokens = tokens[:max_seq_len]
+
+        # Decode to text for byte count
+        try:
+            json_out, consumed, surplus = tct_module.decode(tokens)
+            n_bytes = len(json_out.encode('utf-8'))
+        except Exception:
+            continue
+
+        if n_bytes == 0:
+            continue
+
+        total_bytes += n_bytes
+        num_sequences += 1
+
+        # Get model logits for entire sequence at once
+        input_ids = torch.tensor([tokens[:-1]], device=device)  # All but last
+        targets = torch.tensor([tokens[1:]], device=device)     # All but first
+
+        with torch.no_grad():
+            logits = model(input_ids)  # [1, T-1, V]
+
+            # Compute cross-entropy loss
+            loss = F.cross_entropy(
+                logits.view(-1, logits.size(-1)),
+                targets.view(-1),
+                reduction='sum'
+            )
+            total_loss += loss.item()
+            total_tokens += len(tokens) - 1
+
+    # Compute BPB
+    if total_bytes == 0:
+        return TCTBPBResult(
+            bpb=float('inf'),
+            total_tokens=0,
+            total_bytes=0,
+            num_sequences=0,
+            total_loss=0.0,
+        )
+
+    bpb = total_loss / (math.log(2) * total_bytes)
+
+    return TCTBPBResult(
+        bpb=bpb,
+        total_tokens=total_tokens,
+        total_bytes=total_bytes,
+        num_sequences=num_sequences,
+        total_loss=total_loss,
+    )
