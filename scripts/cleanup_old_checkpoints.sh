@@ -1,8 +1,8 @@
 #!/bin/bash
-# Remove all checkpoints except the last two from each run
+# Remove all checkpoints except the last two and the best from each run
 #
-# Keeps: last 2 epoch_*.pt, best.pt, config.json
-# Removes: all older epoch_*.pt files
+# Keeps: last 2 epoch_*.pt, best checkpoint (from config.json epoch), best.pt, config.json
+# Removes: all older epoch_*.pt files (unless they are the best)
 #
 # Usage:
 #   bash scripts/cleanup_old_checkpoints.sh          # Interactive confirmation
@@ -51,6 +51,16 @@ for run_dir in "$CHECKPOINT_DIR"/*/; do
         continue
     fi
 
+    # Get best epoch from config.json (if available)
+    best_epoch=""
+    best_checkpoint=""
+    if [ -f "$run_dir/config.json" ]; then
+        best_epoch=$(python3 -c "import json; d=json.load(open('$run_dir/config.json')); print(d.get('epoch', ''))" 2>/dev/null || echo "")
+        if [ -n "$best_epoch" ]; then
+            best_checkpoint=$(printf "epoch_%03d.pt" "$best_epoch")
+        fi
+    fi
+
     # Keep the last two, mark others for deletion
     latest="${epochs[-1]}"
     second_latest="${epochs[-2]}"
@@ -58,13 +68,29 @@ for run_dir in "$CHECKPOINT_DIR"/*/; do
     second_latest_name=$(basename "$second_latest")
 
     echo ">>> $run_name"
-    echo "    Keeping: $latest_name"
-    echo "    Keeping: $second_latest_name"
+    echo "    Keeping: $latest_name (latest)"
+    echo "    Keeping: $second_latest_name (2nd latest)"
+
+    # Check if best checkpoint is different from the last two
+    keep_best_separately=""
+    if [ -n "$best_checkpoint" ] && [ "$best_checkpoint" != "$latest_name" ] && [ "$best_checkpoint" != "$second_latest_name" ]; then
+        if [ -f "$run_dir/$best_checkpoint" ]; then
+            echo "    Keeping: $best_checkpoint (best val_loss at epoch $best_epoch)"
+            keep_best_separately="$best_checkpoint"
+        fi
+    fi
+
     [ -f "$run_dir/best.pt" ] && echo "    Keeping: best.pt"
 
     for ((i=0; i<${#epochs[@]}-2; i++)); do
         file="${epochs[i]}"
         file_name=$(basename "$file")
+
+        # Skip if this is the best checkpoint
+        if [ "$file_name" = "$keep_best_separately" ]; then
+            continue
+        fi
+
         file_size=$(stat -c%s "$file" 2>/dev/null || echo 0)
         TOTAL_SIZE=$((TOTAL_SIZE + file_size))
         TO_DELETE+=("$file")
