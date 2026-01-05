@@ -1,7 +1,7 @@
 #!/bin/bash
-# Remove all checkpoints except the latest from each run
+# Remove all checkpoints except the last two from each run
 #
-# Keeps: latest epoch_*.pt, best.pt, config.json
+# Keeps: last 2 epoch_*.pt, best.pt, config.json
 # Removes: all older epoch_*.pt files
 #
 # Usage:
@@ -46,20 +46,23 @@ for run_dir in "$CHECKPOINT_DIR"/*/; do
     # Find all epoch checkpoints, sorted by epoch number
     mapfile -t epochs < <(ls "$run_dir"epoch_*.pt 2>/dev/null | sort -V)
 
-    if [ ${#epochs[@]} -le 1 ]; then
-        # 0 or 1 checkpoint, nothing to clean
+    if [ ${#epochs[@]} -le 2 ]; then
+        # 0, 1, or 2 checkpoints, nothing to clean
         continue
     fi
 
-    # Keep the last one, mark others for deletion
+    # Keep the last two, mark others for deletion
     latest="${epochs[-1]}"
+    second_latest="${epochs[-2]}"
     latest_name=$(basename "$latest")
+    second_latest_name=$(basename "$second_latest")
 
     echo ">>> $run_name"
     echo "    Keeping: $latest_name"
+    echo "    Keeping: $second_latest_name"
     [ -f "$run_dir/best.pt" ] && echo "    Keeping: best.pt"
 
-    for ((i=0; i<${#epochs[@]}-1; i++)); do
+    for ((i=0; i<${#epochs[@]}-2; i++)); do
         file="${epochs[i]}"
         file_name=$(basename "$file")
         file_size=$(stat -c%s "$file" 2>/dev/null || echo 0)
@@ -114,4 +117,4 @@ for file in "${TO_DELETE[@]}"; do
 done
 
 echo
-echo "Deleted ${#TO_DELETE[@]} old checkpoints, freed $SIZE_HR"
+echo "Deleted ${#TO_DELETE[@]} old checkpoints (kept last 2), freed $SIZE_HR"
