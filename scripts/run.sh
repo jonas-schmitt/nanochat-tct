@@ -115,9 +115,9 @@ echo "GPU: $GPU_NAME (${GPU_MEM}GB) - batch sizes auto-scaled"
 get_epochs() {
     local schema=$1
     case $schema in
-        tsconfig)    echo 50 ;;    # Converges fast
-        eslintrc)    echo 75 ;;    # Medium dataset
-        kubernetes)  echo 100 ;;   # Larger dataset
+        tsconfig)    echo 100 ;;   # Matches schema_configs.py
+        eslintrc)    echo 125 ;;   # Matches schema_configs.py
+        kubernetes)  echo 150 ;;   # Matches schema_configs.py
         *)           echo 100 ;;   # Default
     esac
 }
