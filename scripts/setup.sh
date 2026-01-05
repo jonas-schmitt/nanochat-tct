@@ -297,22 +297,18 @@ mkdir -p "$CODE_DIR/logs"
 # Required datasets (must match schema_configs.py)
 DATASETS="tsconfig-tct-base tsconfig-utf8-base-matched eslintrc-tct-bpe-500 eslintrc-utf8-bpe-500 kubernetes-tct-bpe-1k kubernetes-utf8-bpe-1k"
 
-# Check and extract missing datasets
-extract_if_missing() {
+# Always extract datasets from archives (ensures data matches repo)
+extract_dataset() {
     local name="$1"
     local archive="$CODE_DIR/data/${name}.tar.xz"
     local target="$DATA_DIR/$name"
-
-    if [ -d "$target" ] && [ -f "$target/all.jsonl" ]; then
-        echo "  [OK] $name (exists)"
-        return 0
-    fi
 
     if [ ! -f "$archive" ]; then
         echo "  [!!] $name (archive not found: $archive)"
         return 1
     fi
 
+    # Always extract to ensure data matches repo archives
     echo "  [>>] $name (extracting...)"
     mkdir -p "$target"
     tar --no-same-owner -xJf "$archive" -C "$DATA_DIR"
@@ -325,9 +321,9 @@ extract_if_missing() {
     fi
 }
 
-echo "Checking/extracting datasets to $DATA_DIR..."
+echo "Extracting datasets to $DATA_DIR..."
 for dataset in $DATASETS; do
-    extract_if_missing "$dataset"
+    extract_dataset "$dataset"
 done
 echo "Done."
 
