@@ -1,5 +1,7 @@
-#!/bin/bash
+#!/bin/bash -l
 # Slurm Job Submission Script for NHR FAU (Alex/TinyGPU)
+#
+# IMPORTANT: Uses bash -l (login shell) to ensure module system is available on HPC
 #
 # Usage:
 #   bash scripts/submit.sh kubernetes small medium           # Submit job for kubernetes

@@ -74,44 +74,106 @@ case $PLATFORM in
         apt-get update -qq && apt-get install -y -qq git wget curl htop tmux python3.12 python3.12-venv python3.12-dev 2>/dev/null || true
         ;;
     nhr)
-        # Load modules (per NHR docs: https://doc.nhr.fau.de/environment/python-env/)
-        echo "Loading modules..."
-        module purge 2>/dev/null || true
-        module load cuda 2>/dev/null || echo "  cuda module not available"
-
-        # Load Python 3.12 module (try variants in order)
-        PYTHON_LOADED=""
-        for pymod in "python/3.12-conda" "python/3.12"; do
-            if module load "$pymod" 2>&1; then
-                PYTHON_LOADED="$pymod"
-                echo "  Loaded: $pymod"
-                break
-            else
-                echo "  $pymod not available, trying next..."
-            fi
-        done
-
-        if [ -z "$PYTHON_LOADED" ]; then
-            echo ""
-            echo "ERROR: Python 3.12 module not found!"
-            echo ""
-            echo "Tried: python/3.12-conda, python/3.12"
-            echo ""
-            echo "Available Python modules on this system:"
-            module avail python 2>&1
-            echo ""
-            echo "Currently loaded modules:"
-            module list 2>&1
-            exit 1
+        # Check if venv/conda already exists (allows skipping module failures)
+        CONDA_ENV_DIR="${WORK:-$(dirname "$CODE_DIR")}/software/conda/envs/tct-py312"
+        ENV_EXISTS=""
+        if [ -f "$VENV_DIR/bin/activate" ]; then
+            echo "  [OK] Venv already exists: $VENV_DIR"
+            ENV_EXISTS="venv"
+        elif [ -d "$CONDA_ENV_DIR" ]; then
+            echo "  [OK] Conda env already exists: $CONDA_ENV_DIR"
+            ENV_EXISTS="conda"
         fi
 
-        # Verify module is loaded and Python works
-        echo ""
-        echo "Module verification:"
-        echo "  Loaded modules:"
-        module list 2>&1 | grep -E "python|cuda" || echo "    (none matching python/cuda)"
-        echo "  Python path: $(which python3)"
-        echo "  Python version: $(python3 --version)"
+        # Try to load modules (per NHR docs: https://doc.nhr.fau.de/environment/python-env/)
+        echo "Loading modules..."
+
+        # Check if module command is available, try to initialize if not
+        if ! command -v module &>/dev/null; then
+            echo "  [WARN] 'module' command not available, trying to initialize..."
+
+            # Try common module initialization paths
+            MODULE_INIT_PATHS=(
+                "/etc/profile.d/modules.sh"
+                "/usr/share/Modules/init/bash"
+                "/opt/modules/init/bash"
+                "/usr/local/Modules/init/bash"
+                "/apps/modules/init/bash"
+            )
+            for init_path in "${MODULE_INIT_PATHS[@]}"; do
+                if [ -f "$init_path" ]; then
+                    echo "  Found module init at: $init_path"
+                    source "$init_path"
+                    break
+                fi
+            done
+        fi
+
+        # Check again after trying to initialize
+        if ! command -v module &>/dev/null; then
+            echo "  [WARN] 'module' command still not available after init attempts"
+            if [ -n "$ENV_EXISTS" ]; then
+                echo "  [OK] Continuing with existing $ENV_EXISTS environment"
+            else
+                # Try using system Python as last resort
+                if command -v python3 &>/dev/null; then
+                    PY_VERSION=$(python3 --version 2>&1 | grep -oP '\d+\.\d+')
+                    echo "  [FALLBACK] Found system Python: $(python3 --version)"
+                    echo "  Will try to create environment with system Python"
+                else
+                    echo ""
+                    echo "ERROR: 'module' command not available and no Python found!"
+                    echo ""
+                    echo "This script must be run in a login shell on NHR."
+                    echo "Make sure to use: bash -l scripts/setup.sh"
+                    echo "Or run in an interactive job: srun --partition=a100 --gres=gpu:1 --time=01:00:00 --pty bash -l"
+                    exit 1
+                fi
+            fi
+        else
+            module purge 2>/dev/null || true
+            module load cuda 2>/dev/null || echo "  cuda module not available"
+
+            # Load Python 3.12 module (try variants in order)
+            PYTHON_LOADED=""
+            for pymod in "python/3.12-conda" "python/3.12"; do
+                if module load "$pymod" 2>&1; then
+                    PYTHON_LOADED="$pymod"
+                    echo "  Loaded: $pymod"
+                    break
+                else
+                    echo "  $pymod not available, trying next..."
+                fi
+            done
+
+            if [ -z "$PYTHON_LOADED" ]; then
+                echo ""
+                echo "[WARN] Python 3.12 module not found!"
+                if [ -n "$ENV_EXISTS" ]; then
+                    echo "  [OK] Continuing with existing $ENV_EXISTS environment"
+                else
+                    echo ""
+                    echo "ERROR: No Python module and no existing environment!"
+                    echo ""
+                    echo "Tried: python/3.12-conda, python/3.12"
+                    echo ""
+                    echo "Available Python modules on this system:"
+                    module avail python 2>&1
+                    echo ""
+                    echo "Currently loaded modules:"
+                    module list 2>&1
+                    exit 1
+                fi
+            else
+                # Verify module is loaded and Python works
+                echo ""
+                echo "Module verification:"
+                echo "  Loaded modules:"
+                module list 2>&1 | grep -E "python|cuda" || echo "    (none matching python/cuda)"
+                echo "  Python path: $(which python3)"
+                echo "  Python version: $(python3 --version)"
+            fi
+        fi
 
         # Configure paths to use $WORK (not $HOME - quota issues)
         export PYTHONUSERBASE="$WORK/software/private"

@@ -1,5 +1,7 @@
-#!/bin/bash
+#!/bin/bash -l
 # Fresh Start: Setup + Clean + Submit All Training Jobs
+#
+# IMPORTANT: Uses bash -l (login shell) to ensure module system is available on HPC
 #
 # This is a fully automatic script that handles everything:
 # 1. Always runs setup (ensures clean environment)
@@ -31,7 +33,31 @@ echo "Fresh Start: Setup + Clean + Submit All"
 echo "============================================================"
 echo "Date: $(date)"
 echo "Host: $(hostname)"
+echo "User: $(whoami)"
+echo "Shell: $SHELL"
 echo "============================================================"
+echo
+
+# =============================================================================
+# Debug: Environment diagnostics
+# =============================================================================
+
+echo ">>> Environment Diagnostics"
+echo "  PWD: $(pwd)"
+echo "  SCRIPT_DIR: $SCRIPT_DIR"
+echo "  HOME: $HOME"
+echo "  WORK: ${WORK:-<not set>}"
+echo "  HPCVAULT: ${HPCVAULT:-<not set>}"
+echo "  PATH (first 200 chars): ${PATH:0:200}..."
+echo
+
+# Check critical commands
+echo "  Command availability:"
+echo "    bash: $(command -v bash || echo 'NOT FOUND')"
+echo "    python3: $(command -v python3 || echo 'NOT FOUND')"
+echo "    module: $(command -v module || echo 'NOT FOUND (will try to init)')"
+echo "    git: $(command -v git || echo 'NOT FOUND')"
+echo "    tar: $(command -v tar || echo 'NOT FOUND')"
 echo
 
 # =============================================================================
@@ -49,6 +75,12 @@ detect_platform() {
 }
 
 PLATFORM=$(detect_platform)
+echo ">>> Platform Detection"
+echo "  Detected platform: $PLATFORM"
+echo "  Detection logic:"
+echo "    /workspace exists and writable: $([ -d '/workspace' ] && [ -w '/workspace' ] && echo 'YES' || echo 'NO')"
+echo "    \$WORK set and exists: $([ -n "$WORK" ] && [ -d "$WORK" ] && echo 'YES ('$WORK')' || echo 'NO')"
+echo
 
 # CODE_DIR and DATA_DIR are always computed from script location
 # This ensures consistency regardless of where repo is cloned
@@ -68,11 +100,20 @@ case $PLATFORM in
         ;;
 esac
 
-echo "Platform:  $PLATFORM"
-echo "Code dir:  $CODE_DIR"
-echo "Data dir:  $DATA_DIR"
-echo "Venv:      $VENV_DIR"
-[ -n "$CONDA_ENV_DIR" ] && echo "Conda:     $CONDA_ENV_DIR"
+echo ">>> Path Configuration"
+echo "  Platform:  $PLATFORM"
+echo "  Code dir:  $CODE_DIR"
+echo "  Data dir:  $DATA_DIR"
+echo "  Venv:      $VENV_DIR"
+[ -n "$CONDA_ENV_DIR" ] && echo "  Conda:     $CONDA_ENV_DIR"
+echo
+
+# Verify paths exist
+echo ">>> Path Verification"
+echo "  Code dir exists: $([ -d "$CODE_DIR" ] && echo 'YES' || echo 'NO')"
+echo "  Data dir exists: $([ -d "$DATA_DIR" ] && echo 'YES' || echo 'NO')"
+echo "  Venv exists: $([ -f "$VENV_DIR/bin/activate" ] && echo 'YES' || echo 'NO')"
+[ -n "$CONDA_ENV_DIR" ] && echo "  Conda exists: $([ -d "$CONDA_ENV_DIR" ] && echo 'YES' || echo 'NO')"
 echo
 
 # =============================================================================

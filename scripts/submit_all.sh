@@ -1,5 +1,7 @@
-#!/bin/bash
+#!/bin/bash -l
 # Submit all training jobs to Slurm
+#
+# IMPORTANT: Uses bash -l (login shell) to ensure module system is available on HPC
 #
 # This script handles everything automatically:
 # 1. Checks if setup is complete (venv exists)
@@ -68,9 +70,13 @@ echo "============================================================"
 echo "Submitting All Training Jobs"
 echo "============================================================"
 echo "Date: $(date)"
+echo "Host: $(hostname)"
+echo "User: $(whoami)"
 echo "Platform: $PLATFORM"
 echo "Code dir: $CODE_DIR"
 echo "Data dir: $DATA_DIR"
+echo "Venv: $VENV_DIR"
+[ -n "$CONDA_ENV_DIR" ] && echo "Conda: $CONDA_ENV_DIR"
 echo "Commit: $CURRENT_COMMIT"
 echo "Resume: $([ -n "$RESUME" ] && echo "YES (from checkpoints)" || echo "NO (fresh start)")"
 echo "Epochs: tsconfig=100, eslintrc=125, kubernetes=150"
@@ -80,6 +86,31 @@ echo "GPU: small/medium=A100, large=A100_80"
 echo "Total jobs: 18 (3 schemas × 2 tokenizers × 3 sizes)"
 [ -n "$DRY_RUN" ] && echo "Mode: DRY RUN"
 echo "============================================================"
+echo
+
+# =============================================================================
+# Debug: Environment diagnostics
+# =============================================================================
+
+echo ">>> Environment Diagnostics"
+echo "  PWD: $(pwd)"
+echo "  HOME: $HOME"
+echo "  WORK: ${WORK:-<not set>}"
+echo "  HPCVAULT: ${HPCVAULT:-<not set>}"
+echo
+
+echo "  Path verification:"
+echo "    Code dir exists: $([ -d "$CODE_DIR" ] && echo 'YES' || echo 'NO')"
+echo "    Data dir exists: $([ -d "$DATA_DIR" ] && echo 'YES' || echo 'NO')"
+echo "    Venv exists: $([ -f "$VENV_DIR/bin/activate" ] && echo 'YES' || echo 'NO')"
+[ -n "$CONDA_ENV_DIR" ] && echo "    Conda exists: $([ -d "$CONDA_ENV_DIR" ] && echo 'YES' || echo 'NO')"
+echo
+
+echo "  Command availability:"
+echo "    sbatch: $(command -v sbatch || echo 'NOT FOUND')"
+echo "    module: $(command -v module || echo 'NOT FOUND')"
+echo "    python3: $(command -v python3 || echo 'NOT FOUND')"
+echo "    tar: $(command -v tar || echo 'NOT FOUND')"
 echo
 
 # =============================================================================
