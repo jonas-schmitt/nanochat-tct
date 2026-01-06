@@ -92,21 +92,31 @@ case $PLATFORM in
         if ! command -v module &>/dev/null; then
             echo "  [WARN] 'module' command not available, trying to initialize..."
 
-            # Try common module initialization paths
+            # Try common module initialization paths (per https://modules.readthedocs.io/en/stable/INSTALL.html)
             MODULE_INIT_PATHS=(
-                "/etc/profile.d/modules.sh"
-                "/usr/share/Modules/init/bash"
-                "/opt/modules/init/bash"
-                "/usr/local/Modules/init/bash"
-                "/apps/modules/init/bash"
+                "/etc/profile.d/modules.sh"           # System-wide (login shells)
+                "/etc/profile.d/modules.csh"          # System-wide (csh variant)
+                "/usr/share/Modules/init/bash"        # Debian/Ubuntu style
+                "/usr/local/Modules/init/bash"        # Default installation path
+                "/opt/modules/init/bash"              # Custom installs
+                "/apps/modules/init/bash"             # HPC cluster style
+                "/usr/share/modules/init/bash"        # Alternative Debian path
             )
+            INIT_FOUND=""
             for init_path in "${MODULE_INIT_PATHS[@]}"; do
                 if [ -f "$init_path" ]; then
                     echo "  Found module init at: $init_path"
-                    source "$init_path"
+                    source "$init_path" 2>/dev/null || true
+                    INIT_FOUND="1"
                     break
                 fi
             done
+
+            # Last resort: try sourcing /etc/profile (what login shells do)
+            if [ -z "$INIT_FOUND" ] && [ -f "/etc/profile" ]; then
+                echo "  Trying /etc/profile as last resort..."
+                source /etc/profile 2>/dev/null || true
+            fi
         fi
 
         # Check again after trying to initialize
