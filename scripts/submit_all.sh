@@ -73,7 +73,7 @@ echo "Code dir: $CODE_DIR"
 echo "Data dir: $DATA_DIR"
 echo "Commit: $CURRENT_COMMIT"
 echo "Resume: $([ -n "$RESUME" ] && echo "YES (from checkpoints)" || echo "NO (fresh start)")"
-echo "Epochs: tsconfig=50, eslintrc=75, kubernetes=100"
+echo "Epochs: tsconfig=100, eslintrc=125, kubernetes=150"
 echo "Checkpoint: every 10% of training"
 echo "Models: small, medium, large (all schemas, TCT + UTF8)"
 echo "GPU: small/medium=A100, large=A100_80"
@@ -217,21 +217,25 @@ submit_job() {
 }
 
 # Submit jobs for each schema (all model sizes, all tokenizers)
-# Total: 3 schemas × 2 tokenizers × 3 sizes = 18 experiments
+# Each submit_job creates a SEPARATE Slurm job
+# Total: 3 schemas × 2 tokenizers × 3 sizes = 18 separate jobs
 for schema in $SCHEMAS; do
     echo ">>> Schema: $schema"
     echo
 
-    # Small: tct and utf8
+    # Small TCT (separate job)
     submit_job "$schema small tct --dropout=$DROPOUT"
+    # Small UTF8 (separate job)
     submit_job "$schema small utf8 --dropout=$DROPOUT"
 
-    # Medium: tct and utf8
+    # Medium TCT (separate job)
     submit_job "$schema medium tct --dropout=$DROPOUT"
+    # Medium UTF8 (separate job)
     submit_job "$schema medium utf8 --dropout=$DROPOUT"
 
-    # Large: tct and utf8 (A100_80 for memory headroom)
+    # Large TCT (separate job, A100_80 for memory)
     submit_job "$schema large tct --gpu=a100_80 --dropout=$DROPOUT"
+    # Large UTF8 (separate job, A100_80 for memory)
     submit_job "$schema large utf8 --gpu=a100_80 --dropout=$DROPOUT"
 
     echo
