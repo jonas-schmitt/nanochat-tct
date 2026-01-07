@@ -314,6 +314,7 @@ def compute_constrained_bpb(
     device: str = "cuda",
     max_seq_len: Optional[int] = None,
     show_progress: bool = True,
+    normalize_bytes: bool = False,
 ) -> ConstrainedBPBResult:
     """Compute bits-per-byte with XGrammar constraints applied.
 
@@ -336,6 +337,7 @@ def compute_constrained_bpb(
         device: Device to run on (default: "cuda")
         max_seq_len: Maximum sequence length to process (default: None = no limit)
         show_progress: Whether to show progress bar (default: True)
+        normalize_bytes: If True, count bytes from minified JSON (for fair comparison)
 
     Returns:
         ConstrainedBPBResult with raw and constrained BPB metrics
@@ -370,6 +372,16 @@ def compute_constrained_bpb(
 
         # Decode to text for byte count
         text = utf8_decoder.decode(tokens)
+
+        # Optionally normalize to minified JSON for fair comparison with TCT
+        if normalize_bytes:
+            try:
+                import json
+                parsed = json.loads(text)
+                text = json.dumps(parsed, separators=(',', ':'), sort_keys=True)
+            except json.JSONDecodeError:
+                pass  # Keep original text if not valid JSON
+
         n_bytes = len(text.encode('utf-8'))
         if n_bytes == 0:
             continue
@@ -493,6 +505,7 @@ def compute_tct_bpb(
     device: str = "cuda",
     max_seq_len: Optional[int] = None,
     show_progress: bool = True,
+    normalize_bytes: bool = False,
 ) -> TCTBPBResult:
     """Compute bits-per-byte for TCT model.
 
@@ -506,6 +519,9 @@ def compute_tct_bpb(
         device: Device to run on (default: "cuda")
         max_seq_len: Maximum sequence length to process (default: None = no limit)
         show_progress: Whether to show progress bar (default: True)
+        normalize_bytes: If True, count bytes from minified JSON with sorted keys
+                        (for fair comparison - TCT already produces minified JSON
+                        but may have different key ordering)
 
     Returns:
         TCTBPBResult with BPB metrics
@@ -537,6 +553,13 @@ def compute_tct_bpb(
         # Decode to text for byte count
         try:
             json_out, consumed, surplus = tct_module.decode(tokens)
+
+            # Optionally normalize to minified JSON with sorted keys for fair comparison
+            if normalize_bytes:
+                import json
+                parsed = json.loads(json_out)
+                json_out = json.dumps(parsed, separators=(',', ':'), sort_keys=True)
+
             n_bytes = len(json_out.encode('utf-8'))
         except Exception:
             continue

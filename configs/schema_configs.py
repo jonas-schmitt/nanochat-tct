@@ -81,7 +81,7 @@ SCHEMA_CONFIGS = {
 
         # Vocabulary sizes (includes pad token)
         "tct_vocab_size": 500,      # BPE-500 (499) + pad
-        "utf8_vocab_size": 727,     # UTF8 BPE (726) + pad
+        "utf8_vocab_size": 717,     # UTF8 BPE (716 from eslintrc-utf8-bpe-500) + pad
 
         # Training data statistics
         "train_files": 114_499,
@@ -134,7 +134,7 @@ SCHEMA_CONFIGS = {
 
         # Data directories
         "data_dir_tct": "kubernetes-tct-bpe-1k",
-        "data_dir_utf8": "kubernetes-utf8-bpe-1k",
+        "data_dir_utf8": "kubernetes-utf8-bpe-1k-matched",
 
         # Schema info
         "complexity": "high",

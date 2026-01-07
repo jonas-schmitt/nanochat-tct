@@ -2,33 +2,41 @@
 """
 ICML 2026 Evaluation Script: TCT vs BPE+XGrammar
 
-Runs all evaluation metrics from EVALUATION_PLAN.md:
-1. Constrained BPB - Information-theoretic comparison with XGrammar masking
+Runs evaluation metrics:
+1. BPB (Bits-per-Byte) - Information-theoretic comparison with XGrammar masking
 2. Generation Quality - Field value distribution comparison
-3. Semantic Accuracy - P(correct) at decision points (future work)
 
 Usage:
-    # Full evaluation for tsconfig
+    # Full evaluation for kubernetes
     python -m scripts.eval_icml \
-        --schema tsconfig \
-        --tct_checkpoint checkpoints/tsconfig_tct_medium/ \
-        --utf8_checkpoint checkpoints/tsconfig_utf8_medium/ \
+        --schema kubernetes \
+        --tct_checkpoint checkpoints/kubernetes_tct_small/ \
+        --utf8_checkpoint checkpoints/kubernetes_utf8_small/ \
         --num_samples 1000 \
-        --output results/icml/tsconfig.json
+        --output results/icml/kubernetes.json
 
-    # Just constrained BPB (faster)
+    # BPB only (faster)
     python -m scripts.eval_icml \
-        --schema tsconfig \
-        --utf8_checkpoint checkpoints/tsconfig_utf8_medium/ \
-        --constrained_bpb_only \
-        --output results/icml/tsconfig_bpb.json
+        --schema kubernetes \
+        --tct_checkpoint checkpoints/kubernetes_tct_small/ \
+        --utf8_checkpoint checkpoints/kubernetes_utf8_small/ \
+        --bpb_only \
+        --output results/icml/kubernetes_bpb.json
 
-    # Test with random model
+    # Generation quality only
     python -m scripts.eval_icml \
-        --schema tsconfig \
-        --random_model \
-        --num_samples 100 \
-        --device cpu
+        --schema kubernetes \
+        --tct_checkpoint checkpoints/kubernetes_tct_small/ \
+        --utf8_checkpoint checkpoints/kubernetes_utf8_small/ \
+        --generation_only \
+        --output results/icml/kubernetes_gen.json
+
+    # Specific epochs
+    python -m scripts.eval_icml \
+        --schema kubernetes \
+        --tct_checkpoint checkpoints/kubernetes_tct_small/ --tct_epoch 30 \
+        --utf8_checkpoint checkpoints/kubernetes_utf8_small/ --utf8_epoch 30 \
+        --bpb_only
 """
 
 import argparse
@@ -42,11 +50,28 @@ from typing import Any, Dict, List, Optional
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 
-def load_model(checkpoint_dir: Path, device: str = "cuda"):
+def normalize_json(json_str: str) -> str:
+    """Normalize JSON string to minified canonical form (sorted keys, no whitespace).
+
+    This ensures fair comparison between TCT (minified) and UTF8 (formatted) outputs.
+    """
+    try:
+        parsed = json.loads(json_str)
+        return json.dumps(parsed, separators=(',', ':'), sort_keys=True)
+    except json.JSONDecodeError:
+        return json_str  # Return original if not valid JSON
+
+
+def load_model(checkpoint_dir: Path, device: str = "cuda", epoch: int = None):
     """Load model from checkpoint directory.
 
+    Args:
+        checkpoint_dir: Path to checkpoint directory
+        device: Device to load model on
+        epoch: Specific epoch to load (default: None = auto-select best/latest)
+
     Returns the model and full config dict (including schema_config for data paths).
-    Prioritizes: best.pt > checkpoint at min_val_loss epoch > latest checkpoint.
+    Prioritizes: specified epoch > best.pt > checkpoint at min_val_loss epoch > latest checkpoint.
     """
     import torch
     from nanochat.gpt import GPT, GPTConfig
@@ -74,17 +99,29 @@ def load_model(checkpoint_dir: Path, device: str = "cuda"):
 
     model = GPT(model_config)
 
-    # Find checkpoint file - prioritize best.pt, then checkpoint at config epoch
-    checkpoint_path = checkpoint_dir / "best.pt"
-    if not checkpoint_path.exists():
-        # Try checkpoint at the epoch recorded in config (has the val_loss we want)
-        config_epoch = config_dict.get("epoch")
-        if config_epoch is not None:
-            epoch_path = checkpoint_dir / f"epoch_{config_epoch:03d}.pt"
-            if epoch_path.exists() and epoch_path.stat().st_size > 0:
-                checkpoint_path = epoch_path
+    # Find checkpoint file
+    checkpoint_path = None
 
-    if not checkpoint_path.exists() or checkpoint_path.stat().st_size == 0:
+    # If specific epoch requested, use that
+    if epoch is not None:
+        epoch_path = checkpoint_dir / f"epoch_{epoch:03d}.pt"
+        if epoch_path.exists() and epoch_path.stat().st_size > 0:
+            checkpoint_path = epoch_path
+        else:
+            raise FileNotFoundError(f"Checkpoint for epoch {epoch} not found: {epoch_path}")
+
+    # Otherwise, prioritize best.pt > config epoch > latest
+    if checkpoint_path is None:
+        checkpoint_path = checkpoint_dir / "best.pt"
+        if not checkpoint_path.exists():
+            # Try checkpoint at the epoch recorded in config (has the val_loss we want)
+            config_epoch = config_dict.get("epoch")
+            if config_epoch is not None:
+                epoch_path = checkpoint_dir / f"epoch_{config_epoch:03d}.pt"
+                if epoch_path.exists() and epoch_path.stat().st_size > 0:
+                    checkpoint_path = epoch_path
+
+    if checkpoint_path is None or not checkpoint_path.exists() or checkpoint_path.stat().st_size == 0:
         # Fall back to latest valid checkpoint
         checkpoint_files = [f for f in checkpoint_dir.glob("epoch_*.pt") if f.stat().st_size > 0]
         if not checkpoint_files:
@@ -163,9 +200,32 @@ def load_validation_tokens(data_dir: Path, max_samples: int = 1000) -> List[List
     return tokens
 
 
-def find_merge_table(schema: str) -> Path:
-    """Find BPE merge table for schema."""
+def find_merge_table(schema: str, tokenizer: str = "utf8") -> Path:
+    """Find BPE merge table for schema.
+
+    Args:
+        schema: Schema name (tsconfig, eslintrc, kubernetes)
+        tokenizer: Tokenizer type ("utf8" or "tct") - prefers matching type
+
+    Returns:
+        Path to the merge table JSON file
+    """
     bpe_dir = Path(__file__).parent.parent / "bpe-merges"
+
+    # Define search order based on tokenizer type
+    if tokenizer == "utf8":
+        # Prefer UTF8 merge tables (matched variants first)
+        suffixes = ["-utf8-bpe-1k-matched", "-utf8-base-matched", "-utf8-bpe-500", "-utf8-bpe"]
+    else:
+        # Prefer TCT merge tables
+        suffixes = ["-tct-bpe-1k", "-tct-bpe-500", "-tct-base"]
+
+    for suffix in suffixes:
+        candidate = bpe_dir / f"{schema}{suffix}.json"
+        if candidate.exists():
+            return candidate
+
+    # Fallback: any merge table for this schema
     candidates = list(bpe_dir.glob(f"{schema}*.json"))
     if not candidates:
         raise FileNotFoundError(f"No merge table for {schema} in {bpe_dir}")
@@ -187,7 +247,8 @@ def find_data_dir(schema: str, tokenizer: str = "utf8") -> Path:
     if tokenizer == "tct":
         suffixes = ["-tct-bpe-500", "-tct-bpe-1k", "-tct-base", "-tct"]
     else:
-        suffixes = ["-utf8-base-matched", "-utf8-bpe-500", "-utf8-bpe-1k", "-utf8"]
+        # Note: -utf8-bpe-1k-matched is the correct kubernetes UTF8 dir (matched to TCT compression)
+        suffixes = ["-utf8-bpe-1k-matched", "-utf8-base-matched", "-utf8-bpe-500", "-utf8-bpe-1k", "-utf8"]
 
     candidates = []
     for root in data_roots:
@@ -208,6 +269,7 @@ def run_constrained_bpb(
     num_samples: int,
     max_seq_len: int,
     device: str,
+    normalize_bytes: bool = True,
 ) -> Dict[str, Any]:
     """Run constrained BPB evaluation."""
     from nanochat.xgrammar_tokenizer import (
@@ -252,6 +314,7 @@ def run_constrained_bpb(
         device=device,
         max_seq_len=max_seq_len,
         show_progress=True,
+        normalize_bytes=normalize_bytes,
     )
 
     print("\n  Results:")
@@ -468,8 +531,14 @@ def run_generation_quality_utf8(
     device: str,
     temperature: float = 0.7,
     max_tokens: int = 512,
+    normalize_json_output: bool = True,
 ) -> Dict[str, Any]:
-    """Run generation quality evaluation for UTF8-BPE model with XGrammar."""
+    """Run generation quality evaluation for UTF8-BPE model with XGrammar.
+
+    Args:
+        normalize_json_output: If True, normalize ground truth and generated JSON
+                              to minified form for consistent field extraction
+    """
     from nanochat.field_extractors import get_extractor
     from nanochat.distribution_metrics import compare_extraction_results
     from nanochat.xgrammar_tokenizer import (
@@ -499,6 +568,10 @@ def run_generation_quality_utf8(
     validation_tokens = load_validation_tokens(data_dir, num_samples)
     val_texts = [utf8_decoder.decode(tokens) for tokens in validation_tokens]
 
+    # Optionally normalize to canonical JSON for consistent comparison
+    if normalize_json_output:
+        val_texts = [normalize_json(t) for t in val_texts]
+
     real_result = extractor.extract_from_samples(val_texts)
     print(f"  Validation samples: {real_result.num_valid}/{real_result.num_samples} valid")
 
@@ -520,6 +593,10 @@ def run_generation_quality_utf8(
         temperature=temperature,
         show_progress=True,
     )
+
+    # Optionally normalize generated samples to canonical JSON
+    if normalize_json_output:
+        generated_texts = [normalize_json(t) for t in generated_texts]
 
     # Extract fields from generated samples
     print(f"\n  Extracting fields from {len(generated_texts)} generated samples...")
@@ -569,6 +646,7 @@ def run_generation_quality_tct(
     num_samples: int,
     temperature: float = 0.7,
     max_tokens: int = 512,
+    normalize_json_output: bool = True,
 ) -> Dict[str, Any]:
     """Run generation quality evaluation for TCT model.
 
@@ -580,6 +658,8 @@ def run_generation_quality_tct(
         num_samples: Number of samples to generate
         temperature: Sampling temperature
         max_tokens: Maximum tokens per sample
+        normalize_json_output: If True, normalize ground truth and generated JSON
+                              to minified form for consistent field extraction
 
     Returns:
         Dict with generation results and distribution comparison
@@ -598,6 +678,11 @@ def run_generation_quality_tct(
 
     # Extract ground truth distribution from validation samples
     print(f"\n  Extracting ground truth distribution from {len(validation_json_strings)} validation samples...")
+
+    # Optionally normalize ground truth to canonical JSON
+    if normalize_json_output:
+        validation_json_strings = [normalize_json(s) for s in validation_json_strings]
+
     real_result = extractor.extract_from_samples(validation_json_strings)
     print(f"  Validation samples: {real_result.num_valid}/{real_result.num_samples} valid")
 
@@ -617,6 +702,10 @@ def run_generation_quality_tct(
         temperature=temperature,
         show_progress=True,
     )
+
+    # Optionally normalize generated samples to canonical JSON
+    if normalize_json_output:
+        generated_texts = [normalize_json(t) for t in generated_texts]
 
     # Extract fields from generated samples
     print(f"\n  Extracting fields from {len(generated_texts)} generated samples...")
@@ -864,6 +953,8 @@ def main():
     # Model options
     parser.add_argument("--tct_checkpoint", type=str, help="TCT model checkpoint directory")
     parser.add_argument("--utf8_checkpoint", type=str, help="UTF8-BPE model checkpoint directory")
+    parser.add_argument("--tct_epoch", type=int, help="TCT checkpoint epoch (default: latest)")
+    parser.add_argument("--utf8_epoch", type=int, help="UTF8 checkpoint epoch (default: latest)")
     parser.add_argument("--random_model", action="store_true", help="Use random model for testing")
 
     # Schema options
@@ -875,9 +966,11 @@ def main():
     parser.add_argument("--data_dir", type=str, help="Data directory (auto-detect if not specified)")
     parser.add_argument("--merge_table", type=str, help="BPE merge table (auto-detect if not specified)")
 
-    # Evaluation options
-    parser.add_argument("--constrained_bpb_only", action="store_true",
-                        help="Only run constrained BPB evaluation")
+    # Evaluation options - what to run
+    parser.add_argument("--bpb_only", action="store_true",
+                        help="Only run BPB evaluation (skip generation quality)")
+    parser.add_argument("--generation_only", action="store_true",
+                        help="Only run generation quality evaluation (skip BPB)")
     parser.add_argument("--num_samples", type=int, default=1000,
                         help="Number of samples for BPB evaluation")
     parser.add_argument("--num_gen_samples", type=int, default=100,
@@ -888,6 +981,10 @@ def main():
                         help="Maximum tokens per generated sample")
     parser.add_argument("--temperature", type=float, default=0.7,
                         help="Sampling temperature for generation")
+    parser.add_argument("--normalize_bytes", action="store_true", default=True,
+                        help="Normalize bytes to minified JSON for fair comparison (default: True)")
+    parser.add_argument("--no_normalize_bytes", dest="normalize_bytes", action="store_false",
+                        help="Disable byte normalization (use raw decoded bytes)")
 
     # Output options
     parser.add_argument("--output", type=str, help="Output JSON file for results")
@@ -897,6 +994,11 @@ def main():
                         help="Device to run on (cuda/cpu)")
 
     args = parser.parse_args()
+
+    # Validate conflicting options
+    if args.bpb_only and args.generation_only:
+        print("ERROR: Cannot use both --bpb_only and --generation_only")
+        sys.exit(1)
 
     # Validate arguments
     if not args.random_model and not args.tct_checkpoint and not args.utf8_checkpoint:
@@ -915,11 +1017,13 @@ def main():
     print(f"UTF8 data:   {utf8_data_dir}")
     print(f"Samples:     {args.num_samples}")
     print(f"Device:      {args.device}")
+    print(f"Normalize bytes: {args.normalize_bytes} (minified JSON for fair comparison)")
 
     results = {
         "schema": args.schema,
         "num_samples": args.num_samples,
         "max_seq_len": args.max_seq_len,
+        "normalize_bytes": args.normalize_bytes,
         "merge_table": str(merge_table),
         "utf8_data_dir": str(utf8_data_dir),
     }
@@ -940,25 +1044,27 @@ def main():
             model, config = create_random_model(vocab_size, args.device)
         else:
             print(f"Loading model from {args.utf8_checkpoint}")
-            model, config = load_model(Path(args.utf8_checkpoint), args.device)
+            model, config = load_model(Path(args.utf8_checkpoint), args.device, args.utf8_epoch)
 
         print(f"  vocab_size: {config.get('vocab_size')}")
         print(f"  n_layer: {config.get('n_layer')}")
 
-        # Run constrained BPB
-        bpb_results = run_constrained_bpb(
-            model=model,
-            schema=args.schema,
-            merge_table=merge_table,
-            data_dir=utf8_data_dir,
-            num_samples=args.num_samples,
-            max_seq_len=args.max_seq_len,
-            device=args.device,
-        )
-        results["utf8_constrained_bpb"] = bpb_results
+        # Run constrained BPB (unless --generation_only)
+        if not args.generation_only:
+            bpb_results = run_constrained_bpb(
+                model=model,
+                schema=args.schema,
+                merge_table=merge_table,
+                data_dir=utf8_data_dir,
+                num_samples=args.num_samples,
+                max_seq_len=args.max_seq_len,
+                device=args.device,
+                normalize_bytes=args.normalize_bytes,
+            )
+            results["utf8_constrained_bpb"] = bpb_results
 
-        # Run generation quality (if not constrained BPB only)
-        if not args.constrained_bpb_only:
+        # Run generation quality (unless --bpb_only)
+        if not args.bpb_only:
             gen_results = run_generation_quality_utf8(
                 model=model,
                 schema=args.schema,
@@ -968,6 +1074,7 @@ def main():
                 device=args.device,
                 temperature=args.temperature,
                 max_tokens=args.max_gen_tokens,
+                normalize_json_output=args.normalize_bytes,
             )
             results["utf8_generation"] = gen_results
 
@@ -992,7 +1099,7 @@ def main():
 
         # Load model
         print(f"Loading model from {args.tct_checkpoint}")
-        model, full_config = load_model(Path(args.tct_checkpoint), args.device)
+        model, full_config = load_model(Path(args.tct_checkpoint), args.device, args.tct_epoch)
         model_cfg = full_config.get("model_config", full_config)
         schema_cfg = full_config.get("schema_config", {})
         print(f"  vocab_size: {model_cfg.get('vocab_size')}")
@@ -1023,31 +1130,33 @@ def main():
             # Load TCT validation tokens
             tct_validation_tokens = load_validation_tokens(tct_data_dir, args.num_samples)
 
-            # Compute TCT BPB
-            print("\n  Computing TCT BPB...")
-            tct_bpb_result = compute_tct_bpb(
-                model=model,
-                tct_module=tct_module,
-                validation_tokens=tct_validation_tokens,
-                device=args.device,
-                max_seq_len=args.max_seq_len,
-                show_progress=True,
-            )
-            print(f"\n  TCT BPB Results:")
-            print(f"    BPB:         {tct_bpb_result.bpb:.4f}")
-            print(f"    Sequences:   {tct_bpb_result.num_sequences}")
-            print(f"    Tokens:      {tct_bpb_result.total_tokens}")
-            print(f"    Bytes:       {tct_bpb_result.total_bytes}")
+            # Compute TCT BPB (unless --generation_only)
+            if not args.generation_only:
+                print("\n  Computing TCT BPB...")
+                tct_bpb_result = compute_tct_bpb(
+                    model=model,
+                    tct_module=tct_module,
+                    validation_tokens=tct_validation_tokens,
+                    device=args.device,
+                    max_seq_len=args.max_seq_len,
+                    show_progress=True,
+                    normalize_bytes=args.normalize_bytes,
+                )
+                print(f"\n  TCT BPB Results:")
+                print(f"    BPB:         {tct_bpb_result.bpb:.4f}")
+                print(f"    Sequences:   {tct_bpb_result.num_sequences}")
+                print(f"    Tokens:      {tct_bpb_result.total_tokens}")
+                print(f"    Bytes:       {tct_bpb_result.total_bytes}")
 
-            results["tct_bpb"] = {
-                "bpb": tct_bpb_result.bpb,
-                "num_sequences": tct_bpb_result.num_sequences,
-                "total_tokens": tct_bpb_result.total_tokens,
-                "total_bytes": tct_bpb_result.total_bytes,
-                "total_loss_nats": tct_bpb_result.total_loss,
-            }
+                results["tct_bpb"] = {
+                    "bpb": tct_bpb_result.bpb,
+                    "num_sequences": tct_bpb_result.num_sequences,
+                    "total_tokens": tct_bpb_result.total_tokens,
+                    "total_bytes": tct_bpb_result.total_bytes,
+                    "total_loss_nats": tct_bpb_result.total_loss,
+                }
 
-            # Decode TCT tokens to get validation JSON strings
+            # Decode TCT tokens to get validation JSON strings (for generation quality)
             val_json_strings = []
             for tokens in tct_validation_tokens[:args.num_gen_samples]:
                 try:
@@ -1063,8 +1172,8 @@ def main():
             utf8_validation_tokens = load_validation_tokens(utf8_data_dir, args.num_gen_samples)
             val_json_strings = [utf8_decoder.decode(tokens) for tokens in utf8_validation_tokens]
 
-        # Run generation quality for TCT
-        if not args.constrained_bpb_only:
+        # Run generation quality for TCT (unless --bpb_only)
+        if not args.bpb_only:
             tct_gen_results = run_generation_quality_tct(
                 model=model,
                 schema=args.schema,
@@ -1073,6 +1182,7 @@ def main():
                 num_samples=args.num_gen_samples,
                 temperature=args.temperature,
                 max_tokens=args.max_gen_tokens,
+                normalize_json_output=args.normalize_bytes,
             )
             results["tct_generation"] = tct_gen_results
 
