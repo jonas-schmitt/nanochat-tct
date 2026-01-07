@@ -12,9 +12,16 @@ Key Features:
 - Inputs padded with PAD, targets padded with -1 (ignored in loss)
 - Compatible with nanochat's training loop
 - Coordinated filtering: excludes manifests exceeding context window in EITHER tokenization
+- Optional BOS token prepending for unconditional generation (use_bos=True)
 
 IMPORTANT: PAD token must be the LAST token in vocab (vocab_size - 1), NOT 0!
 Token 0 is a valid data token (e.g., start-of-object in TCT).
+
+BOS Token Behavior (when use_bos=True):
+- PAD token is prepended as BOS to each sequence
+- Model learns P(first_token | BOS), enabling true unconditional generation
+- During generation, start with [BOS] and sample the first token
+- Only TRAILING pads are masked in loss; position 0 (BOS) is NOT masked
 """
 
 import json
@@ -83,6 +90,7 @@ class JSONLDataset(Dataset):
         pad_token_id: int,
         max_len: Optional[int] = None,
         verbose: bool = True,
+        use_bos: bool = True,
     ):
         """
         Initialize dataset from pre-encoded JSONL file.
@@ -93,17 +101,21 @@ class JSONLDataset(Dataset):
             pad_token_id: Token ID used for padding (should be vocab_size - 1)
             max_len: Filter out sequences longer than this (None = no filtering)
             verbose: Print loading statistics
+            use_bos: If True (default), prepend pad_token_id as BOS to enable unconditional generation
         """
         self.context_size = context_size
         self.pad_token_id = pad_token_id
         self.max_len = max_len
         self.verbose = verbose
+        self.use_bos = use_bos
 
         # Load all sequences into memory
         self.sequences = self._load_jsonl(jsonl_file)
 
         if verbose:
             self._print_stats()
+            if use_bos:
+                print(f"  BOS token: {pad_token_id} (prepended to all sequences)")
 
     def _load_jsonl(self, jsonl_file: Path) -> list:
         """Load sequences from JSONL file."""
@@ -153,14 +165,24 @@ class JSONLDataset(Dataset):
         Returns:
             inputs: [context_size] tensor, padded with pad_token_id
             targets: [context_size] tensor, padded with -1 (ignored in loss)
+
+        When use_bos=True:
+            - BOS (pad_token_id) is prepended to sequence
+            - inputs[0] = BOS, targets[0] = first real token
+            - Model learns P(first_token | BOS) for unconditional generation
+            - Only TRAILING pads are masked, not the BOS at position 0
         """
         tokens = self.sequences[idx]
 
-        # Truncate if too long
-        if len(tokens) > self.context_size:
-            tokens = tokens[:self.context_size]
+        # Prepend BOS token if enabled
+        if self.use_bos:
+            tokens = torch.cat([torch.tensor([self.pad_token_id], dtype=torch.long), tokens])
 
-        # Need context_size + 1 tokens for teacher forcing
+        # Truncate if too long (need context_size + 1 for teacher forcing)
+        if len(tokens) > self.context_size + 1:
+            tokens = tokens[:self.context_size + 1]
+
+        # Pad if too short
         if len(tokens) < self.context_size + 1:
             needed = self.context_size + 1 - len(tokens)
             tokens = torch.cat([tokens, torch.full((needed,), self.pad_token_id, dtype=torch.long)])
@@ -169,8 +191,11 @@ class JSONLDataset(Dataset):
         inputs = tokens[:-1].clone()   # First context_size tokens
         targets = tokens[1:].clone()   # Last context_size tokens
 
-        # Replace padding in targets with -1 (ignored in loss via ignore_index)
+        # Replace TRAILING padding in targets with -1 (ignored in loss via ignore_index)
+        # When use_bos=True: DON'T mask position 0 - that's where we predict first token from BOS
         mask = inputs == self.pad_token_id
+        if self.use_bos:
+            mask[0] = False  # Never mask position 0 (BOS position)
         targets[mask] = -1
 
         # Convert inputs to int32 (model expects this)
@@ -190,6 +215,7 @@ def create_reshuffled_dataloaders(
     num_workers: int = 0,
     verbose: bool = True,
     seed: int = 42,
+    use_bos: bool = True,
 ) -> tuple:
     """
     Load all data, shuffle randomly, and create train/val dataloaders.
@@ -315,28 +341,45 @@ def create_reshuffled_dataloaders(
 
     if verbose:
         print(f"  Reshuffled split: {len(train_sequences):,} train, {len(val_sequences):,} val (seed={seed})")
+        if use_bos:
+            print(f"  BOS token: {pad_token_id} (prepended to all sequences)")
 
     # Create datasets directly from sequences
     class InMemoryDataset(Dataset):
-        def __init__(self, sequences, context_size, pad_id):
+        def __init__(self, sequences, context_size, pad_id, use_bos=False):
             self.sequences = sequences
             self.context_size = context_size
             self.pad_token_id = pad_id
+            self.use_bos = use_bos
 
         def __len__(self):
             return len(self.sequences)
 
         def __getitem__(self, idx):
             tokens = self.sequences[idx]
-            if len(tokens) > self.context_size:
-                tokens = tokens[:self.context_size]
+
+            # Prepend BOS token if enabled
+            if self.use_bos:
+                tokens = torch.cat([torch.tensor([self.pad_token_id], dtype=torch.long), tokens])
+
+            # Truncate if too long
+            if len(tokens) > self.context_size + 1:
+                tokens = tokens[:self.context_size + 1]
+
+            # Pad if too short
             if len(tokens) < self.context_size + 1:
                 needed = self.context_size + 1 - len(tokens)
                 tokens = torch.cat([tokens, torch.full((needed,), self.pad_token_id, dtype=torch.long)])
+
             inputs = tokens[:-1].clone()
             targets = tokens[1:].clone()
+
+            # Mask TRAILING pads only; don't mask position 0 (BOS) if use_bos
             mask = inputs == self.pad_token_id
+            if self.use_bos:
+                mask[0] = False  # Never mask position 0 (BOS position)
             targets[mask] = -1
+
             inputs = inputs.to(dtype=torch.int32)
             return inputs, targets
 
@@ -348,7 +391,7 @@ def create_reshuffled_dataloaders(
         return inputs, targets
 
     train_loader = DataLoader(
-        InMemoryDataset(train_sequences, context_size, pad_token_id),
+        InMemoryDataset(train_sequences, context_size, pad_token_id, use_bos=use_bos),
         batch_size=batch_size,
         shuffle=True,
         num_workers=num_workers,
@@ -358,7 +401,7 @@ def create_reshuffled_dataloaders(
     )
 
     val_loader = DataLoader(
-        InMemoryDataset(val_sequences, context_size, pad_token_id),
+        InMemoryDataset(val_sequences, context_size, pad_token_id, use_bos=use_bos),
         batch_size=batch_size,
         shuffle=False,
         num_workers=num_workers,
@@ -380,6 +423,7 @@ def create_dataloader(
     shuffle: Optional[bool] = None,
     num_workers: int = 0,
     verbose: bool = True,
+    use_bos: bool = True,
 ) -> DataLoader:
     """
     Create DataLoader for pre-encoded JSONL sequences.
@@ -394,6 +438,7 @@ def create_dataloader(
         shuffle: Shuffle sequences (default: True for train, False for val)
         num_workers: DataLoader workers (0 = main process only)
         verbose: Print loading statistics
+        use_bos: If True (default), prepend pad_token_id as BOS to enable unconditional generation
 
     Returns:
         DataLoader yielding (inputs, targets) batches of shape [B, context_size]
@@ -444,6 +489,7 @@ def create_dataloader(
         pad_token_id=pad_token_id,
         max_len=max_len,
         verbose=verbose,
+        use_bos=use_bos,
     )
 
     # Auto-determine shuffle

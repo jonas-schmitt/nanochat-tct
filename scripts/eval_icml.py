@@ -198,6 +198,33 @@ def compute_valid_indices(
     return valid_indices
 
 
+def compute_first_token_distribution(data_dir: Path) -> Dict[int, float]:
+    """Compute empirical distribution of first tokens from training data.
+
+    TCT sequences start with different tokens depending on the schema variant
+    (e.g., Deployment, Service, Pod). This distribution should be used to
+    sample the first token during generation.
+
+    Returns:
+        Dict mapping token_id -> probability
+    """
+    from collections import Counter
+
+    all_path = data_dir / "all.jsonl"
+    if not all_path.exists():
+        raise FileNotFoundError(f"Training data not found: {all_path}")
+
+    first_tokens = Counter()
+    with open(all_path) as f:
+        for line in f:
+            tokens = json.loads(line)
+            if tokens:
+                first_tokens[tokens[0]] += 1
+
+    total = sum(first_tokens.values())
+    return {token: count / total for token, count in first_tokens.items()}
+
+
 def load_validation_tokens(data_dir: Path, max_samples: int = 1000) -> List[List[int]]:
     """Load validation tokens from JSONL file."""
     val_path = data_dir / "validate.jsonl"
@@ -482,6 +509,7 @@ def generate_samples_tct(
     model,
     tct_module,
     num_samples: int,
+    first_token_distribution: Dict[int, float],
     max_tokens: int = 512,
     temperature: float = 0.7,
     top_k: int = 50,
@@ -497,6 +525,7 @@ def generate_samples_tct(
         model: The GPT model
         tct_module: TCT tokenizer module (encode/decode/decode_prefix/vocab_size)
         num_samples: Number of samples to generate
+        first_token_distribution: Dict mapping token_id -> probability for first token
         max_tokens: Maximum tokens per sample (should match typical training lengths)
         temperature: Sampling temperature
         top_k: Top-k sampling parameter
@@ -508,6 +537,7 @@ def generate_samples_tct(
     import torch
     import torch.nn.functional as F
     from tqdm import tqdm
+    import random
 
     device = next(model.parameters()).device
     generated_texts = []
@@ -515,13 +545,18 @@ def generate_samples_tct(
     decode_partial = 0
     decode_empty = 0
 
+    # Prepare first token sampling
+    first_tokens = list(first_token_distribution.keys())
+    first_probs = list(first_token_distribution.values())
+
     iterator = tqdm(range(num_samples), desc="Generating TCT samples") if show_progress else range(num_samples)
 
     for _ in iterator:
-        # TCT sequences always start with token 0
-        generated_tokens = [0]
+        # Sample first token from empirical distribution (NOT hardcoded!)
+        first_token = random.choices(first_tokens, weights=first_probs, k=1)[0]
+        generated_tokens = [first_token]
 
-        # Generate max_tokens - 1 more (we already have token 0)
+        # Generate max_tokens - 1 more (we already have first token)
         for step in range(max_tokens - 1):
             # Get model logits for next token
             input_ids = torch.tensor([generated_tokens], device=device)
@@ -692,6 +727,7 @@ def run_generation_quality_tct(
     schema: str,
     tct_module,
     validation_json_strings: List[str],
+    first_token_distribution: Dict[int, float],
     num_samples: int,
     temperature: float = 0.7,
     max_tokens: int = 512,
@@ -704,6 +740,7 @@ def run_generation_quality_tct(
         schema: Schema name ("tsconfig", "eslintrc", "kubernetes")
         tct_module: TCT tokenizer module
         validation_json_strings: Ground truth JSON strings from validation set
+        first_token_distribution: Dict mapping token_id -> probability for first token
         num_samples: Number of samples to generate
         temperature: Sampling temperature
         max_tokens: Maximum tokens per sample
@@ -747,6 +784,7 @@ def run_generation_quality_tct(
         model=model,
         tct_module=tct_module,
         num_samples=num_samples,
+        first_token_distribution=first_token_distribution,
         max_tokens=max_tokens,
         temperature=temperature,
         show_progress=True,
@@ -1266,11 +1304,17 @@ def main():
 
         # Run generation quality for TCT (unless --bpb_only)
         if not args.bpb_only:
+            # Compute first token distribution for generation
+            print("  Computing first token distribution for generation...")
+            first_token_dist = compute_first_token_distribution(tct_data_dir)
+            print(f"  First tokens: {len(first_token_dist)} unique, top: {list(first_token_dist.keys())[:5]}")
+
             tct_gen_results = run_generation_quality_tct(
                 model=model,
                 schema=args.schema,
                 tct_module=tct_module,
                 validation_json_strings=val_json_strings,
+                first_token_distribution=first_token_dist,
                 num_samples=args.num_gen_samples,
                 temperature=args.temperature,
                 max_tokens=args.max_gen_tokens,
