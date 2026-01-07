@@ -25,6 +25,7 @@ DROPOUT=""
 LR_SCHEDULE=""
 EFF_BATCH=""
 GRAD_CKPT=""
+EPOCHS_OVERRIDE=""
 
 for arg in "$@"; do
     case $arg in
@@ -39,6 +40,8 @@ for arg in "$@"; do
         --eff_batch=*) EFF_BATCH="${arg#--eff_batch=}" ;;
         --batch=*) EFF_BATCH="${arg#--batch=}" ;;
         --gradient_checkpointing|--grad_ckpt) GRAD_CKPT="True" ;;
+        --epochs=*) EPOCHS_OVERRIDE="${arg#--epochs=}" ;;
+        epochs=*) EPOCHS_OVERRIDE="${arg#epochs=}" ;;
     esac
 done
 
@@ -54,6 +57,7 @@ if [ -z "$SCHEMAS" ]; then
     echo "Tokenizers: tct, utf8"
     echo "Options:"
     echo "  resume              Resume from latest checkpoint"
+    echo "  --epochs=N          Override max epochs (default: schema-specific)"
     echo "  --dropout=0.2       Set dropout (default: 0.2)"
     echo "  --lr_schedule=X     LR schedule: cosine (default) or constant"
     echo "  constant            Shorthand for --lr_schedule=constant"
@@ -65,6 +69,7 @@ if [ -z "$SCHEMAS" ]; then
     echo "  bash scripts/run.sh kubernetes tsconfig eslintrc    # Run all schemas"
     echo "  bash scripts/run.sh kubernetes small tct"
     echo "  bash scripts/run.sh kubernetes tsconfig resume"
+    echo "  bash scripts/run.sh kubernetes --epochs=50          # Shorter training"
     echo "  bash scripts/run.sh kubernetes --dropout=0.2        # Higher dropout"
     echo "  bash scripts/run.sh kubernetes constant             # No LR decay"
     exit 1
@@ -156,6 +161,7 @@ echo "Data: $DATA_DIR"
 echo "Schemas: $SCHEMAS"
 echo "Sizes: $SIZES"
 echo "Tokenizers: ${FILTER_TOKENIZER:-$TOKENIZERS}"
+[ -n "$EPOCHS_OVERRIDE" ] && echo "Epochs: $EPOCHS_OVERRIDE (override)"
 [ -n "$DROPOUT" ] && echo "Dropout: $DROPOUT"
 [ -n "$LR_SCHEDULE" ] && echo "LR Schedule: $LR_SCHEDULE"
 [ -n "$EFF_BATCH" ] && echo "Effective batch: $EFF_BATCH"
@@ -164,7 +170,12 @@ echo "============================================================"
 echo
 
 for SCHEMA in $SCHEMAS; do
-    EPOCHS=$(get_epochs "$SCHEMA")
+    # Use override if provided, otherwise schema default
+    if [ -n "$EPOCHS_OVERRIDE" ]; then
+        EPOCHS="$EPOCHS_OVERRIDE"
+    else
+        EPOCHS=$(get_epochs "$SCHEMA")
+    fi
 
     echo "============================================================"
     echo "$SCHEMA ($EPOCHS epochs)"
@@ -215,6 +226,7 @@ for SCHEMA in $SCHEMAS; do
                 --schema="$SCHEMA" \
                 --tokenizer="$tokenizer" \
                 --model_size="$size" \
+                --epochs="$EPOCHS" \
                 --data_root="$DATA_DIR" \
                 $RESUME_ARG \
                 $EXTRA_ARGS \
