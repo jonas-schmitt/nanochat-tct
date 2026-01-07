@@ -35,6 +35,20 @@ SMALL_ARCH = {
     "transformer_params": "~50M",
 }
 
+# Wider but shallower variant of SMALL - same params, potentially faster
+# d_model=768, n_layers=6 vs d_model=512, n_layers=16
+# Fewer sequential layers = faster on GPU, more parallelism per layer
+# Higher ffn_mult=3.0 (closer to modern LLMs like LLaMA ~2.67)
+SMALL_WIDE_ARCH = {
+    "d_model": 768,
+    "n_layers": 6,
+    "n_heads": 12,  # head_dim=64
+    "ffn_mult": 3.0,  # Higher FFN capacity
+    "use_swiglu": True,
+    "dropout": 0.1,  # Dropout for regularization
+    "transformer_params": "~48M",  # 48.37M - similar to SMALL_ARCH
+}
+
 MEDIUM_ARCH = {
     "d_model": 768,
     "n_layers": 16,
@@ -57,6 +71,7 @@ LARGE_ARCH = {
 
 ARCHITECTURES = {
     "small": SMALL_ARCH,
+    "small-wide": SMALL_WIDE_ARCH,
     "medium": MEDIUM_ARCH,
     "large": LARGE_ARCH,
 }
@@ -78,9 +93,10 @@ TARGET_EFFECTIVE_BATCH = 64
 REFERENCE_VRAM_GB = 24
 REFERENCE_BATCH_SIZES = {
     2048: {
-        "small": 16,   # d=512, L=16, SwiGLU 2.5x, ~50M model
-        "medium": 8,   # d=768, L=16, SwiGLU 3.0x, ~126M model
-        "large": 4,    # d=1024, L=24, SwiGLU 3.25x, ~350M model
+        "small": 16,       # d=512, L=16, SwiGLU 2.5x, ~50M model
+        "small-wide": 16,  # d=768, L=7, SwiGLU 2.5x, ~50M model (fewer layers = similar memory)
+        "medium": 8,       # d=768, L=16, SwiGLU 3.0x, ~126M model
+        "large": 4,        # d=1024, L=24, SwiGLU 3.25x, ~350M model
     },
 }
 
@@ -162,9 +178,10 @@ COMMON_TRAINING = {
 
 # Learning rate adjustments by model size (smaller for larger models)
 LR_ADJUSTMENTS = {
-    "small": 4e-4,   # ~50M params (base LR for batch 64)
-    "medium": 3e-4,  # ~125M params (scaled down)
-    "large": 2e-4,   # ~350M params (scaled down)
+    "small": 4e-4,       # ~50M params (base LR for batch 64)
+    "small-wide": 4e-4,  # ~50M params (same as small)
+    "medium": 3e-4,      # ~125M params (scaled down)
+    "large": 2e-4,       # ~350M params (scaled down)
 }
 
 # =============================================================================
@@ -176,7 +193,13 @@ MODEL_CONFIGS = {
         **SMALL_ARCH,
         **COMMON_TRAINING,
         "learning_rate": LR_ADJUSTMENTS["small"],
-        "description": "Small model (~52M with vocab=1k), fastest training",
+        "description": "Small model (~50M with vocab=1k), 16 layers",
+    },
+    "small-wide": {
+        **SMALL_WIDE_ARCH,
+        **COMMON_TRAINING,
+        "learning_rate": LR_ADJUSTMENTS["small-wide"],
+        "description": "Small-wide model (~48M with vocab=1k), 6 layers, d_model=768, ffn=3.0",
     },
     "medium": {
         **MEDIUM_ARCH,

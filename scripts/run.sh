@@ -31,7 +31,7 @@ for arg in "$@"; do
     case $arg in
         kubernetes|tsconfig|eslintrc) SCHEMAS="$SCHEMAS $arg" ;;
         tct|utf8) FILTER_TOKENIZER="$arg" ;;
-        small|medium|large) FILTER_SIZES="$FILTER_SIZES $arg" ;;
+        small|small-wide|medium|large) FILTER_SIZES="$FILTER_SIZES $arg" ;;
         resume) RESUME_MODE="1" ;;
         --dropout=*) DROPOUT="${arg#--dropout=}" ;;
         dropout=*) DROPOUT="${arg#dropout=}" ;;
@@ -53,7 +53,7 @@ if [ -z "$SCHEMAS" ]; then
     echo "Usage: bash scripts/run.sh <schema>... [size]... [tokenizer] [resume] [options]"
     echo ""
     echo "Schemas: kubernetes, tsconfig, eslintrc"
-    echo "Sizes: small, medium, large"
+    echo "Sizes: small, small-wide, medium, large"
     echo "Tokenizers: tct, utf8"
     echo "Options:"
     echo "  resume              Resume from latest checkpoint"
