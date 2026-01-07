@@ -120,10 +120,10 @@ echo "GPU: $GPU_NAME (${GPU_MEM}GB) - batch sizes auto-scaled"
 get_epochs() {
     local schema=$1
     case $schema in
-        tsconfig)    echo 100 ;;   # Matches schema_configs.py
-        eslintrc)    echo 125 ;;   # Matches schema_configs.py
-        kubernetes)  echo 150 ;;   # Matches schema_configs.py
-        *)           echo 100 ;;   # Default
+        tsconfig)    echo 75 ;;    # Matches schema_configs.py
+        eslintrc)    echo 100 ;;   # Matches schema_configs.py
+        kubernetes)  echo 125 ;;   # Matches schema_configs.py
+        *)           echo 75 ;;    # Default
     esac
 }
 
