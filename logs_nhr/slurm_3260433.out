@@ -1,0 +1,78 @@
+### Starting TaskPrologue of job 3260433 on a0531 at Sun Jan  4 11:39:52 CET 2026
+Running on cores 16-31 with governor ondemand
+Sun Jan  4 11:39:52 2026       
++-----------------------------------------------------------------------------------------+
+| NVIDIA-SMI 580.105.08             Driver Version: 580.105.08     CUDA Version: 13.0     |
++-----------------------------------------+------------------------+----------------------+
+| GPU  Name                 Persistence-M | Bus-Id          Disp.A | Volatile Uncorr. ECC |
+| Fan  Temp   Perf          Pwr:Usage/Cap |           Memory-Usage | GPU-Util  Compute M. |
+|                                         |                        |               MIG M. |
+|=========================================+========================+======================|
+|   0  NVIDIA A100-SXM4-80GB          On  |   00000000:13:00.0 Off |                    0 |
+| N/A   33C    P0             64W /  400W |       0MiB /  81920MiB |      0%      Default |
+|                                         |                        |             Disabled |
++-----------------------------------------+------------------------+----------------------+
+
++-----------------------------------------------------------------------------------------+
+| Processes:                                                                              |
+|  GPU   GI   CI              PID   Type   Process name                        GPU Memory |
+|        ID   ID                                                               Usage      |
+|=========================================================================================|
+|  No running processes found                                                             |
++-----------------------------------------------------------------------------------------+
+### Finished TaskPrologue
+
+============================================================
+TCT Training Job
+============================================================
+Job ID:     3260433
+Node:       a0531
+GPU:        a100_80 (a100)
+Start:      Sun Jan  4 11:39:54 CET 2026
+============================================================
+
+Using Python 3.12-conda module
+CODE_DIR:       /home/hpc/iwia/iwia104h/jonas/nanochat-tct
+DATA_DIR:       /home/hpc/iwia/iwia104h/jonas/data
+VENV_DIR:       /home/woody/iwia/iwia104h/venv-tct
+CHECKPOINT_DIR: /home/vault/iwia/iwia104h/checkpoints
+Verifying datasets...
+  [OK] tsconfig-tct-base
+  [OK] tsconfig-utf8-base-matched
+  [OK] eslintrc-tct-bpe-500
+  [OK] eslintrc-utf8-bpe-500
+  [OK] kubernetes-tct-bpe-1k
+  [OK] kubernetes-utf8-bpe-1k
+Staging data from /home/hpc/iwia/iwia104h/jonas/data to /tmp/3260433.alex/data...
+  Copying tsconfig-tct-base...
+  Copying tsconfig-utf8-base-matched...
+  Copying eslintrc-tct-bpe-500...
+  Copying eslintrc-utf8-bpe-500...
+  Copying kubernetes-tct-bpe-1k...
+  Copying kubernetes-utf8-bpe-1k...
+Data staging complete: 3.2G
+ERROR: No Python environment found
+Run setup first: bash scripts/submit.sh --setup --gpu=a100_80
+=== JOB_STATISTICS ===
+=== current date     : Sun Jan  4 11:40:09 CET 2026
+= Job-ID             : 3260433 on alex
+= Job-Name           : tct_kubernetes_large_tct
+= Job-Command        : /tmp/tct_job_EI8rKj.sh
+= Initial workdir    : /home/hpc/iwia/iwia104h/jonas/nanochat-tct
+= Queue/Partition    : a100
+= Slurm account      : iwia with QOS=normal
+= Features           : a100_80
+= Requested resources:  for 1-00:00:00
+= Elapsed runtime    : 00:00:28
+= Total RAM usage    : 5.1 GiB of assigned  GiB (%)
+= Node list          : a0531
+= Subm/Elig/Start/End: 2026-01-04T11:39:38 / 2026-01-04T11:39:38 / 2026-01-04T11:39:39 / 2026-01-04T11:40:07
+======================
+=== Quota infos ======
+    Path              Used     SoftQ    HardQ    Gracetime  Filec    FileQ    FiHaQ    FileGrace    
+    /home/woody         10.6G  1000.0G  1500.0G        N/A  41,866    5,000K   7,500K        N/A    
+    /home/hpc           27.3G   104.9G   209.7G        N/A  31,265      500K   1,000K        N/A    
+    /home/vault          0.0K  1048.6G  2097.2G        N/A       2      200K     400K        N/A    
+======================
+=== GPU utilization ==
+gpu_name, gpu_bus_id, pid, gpu_utilization [%], mem_utilization [%], max_memory_usage [MiB], time [ms]

@@ -1,0 +1,64 @@
+% Table 1: Constrained BPB Comparison
+\begin{table}[h]
+\centering
+\caption{Bits-per-byte comparison with and without grammar constraints}
+\label{tab:constrained-bpb}
+\begin{tabular}{lrrr}
+\toprule
+Schema & Raw BPB & Constrained BPB & Reduction \\
+\midrule
+tsconfig & 4.8949 & 4.7821 & 2.3\% \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+% Table 2: Field Distribution Comparison
+\begin{table}[h]
+\centering
+\caption{Field value distribution comparison (generated vs validation)}
+\label{tab:field-distribution}
+\begin{tabular}{lrrrr}
+\toprule
+Field & KL Div. & TV Dist. & Coverage & Mode Match \\
+\midrule
+compilerOptions.declaration & 0.000 & 1.000 & 0\% &  \\
+compilerOptions.esModuleInterop & 0.000 & 1.000 & 0\% &  \\
+compilerOptions.forceConsistentCasingInFileNames & 0.000 & 1.000 & 0\% &  \\
+compilerOptions.jsx & 0.000 & 1.000 & 0\% &  \\
+compilerOptions.lib & -0.000 & 1.000 & 0\% &  \\
+compilerOptions.module & 0.131 & 1.000 & 0\% &  \\
+compilerOptions.moduleResolution & 0.000 & 1.000 & 0\% &  \\
+compilerOptions.noEmit & 0.000 & 1.000 & 0\% &  \\
+compilerOptions.noImplicitAny & 0.057 & 1.000 & 0\% &  \\
+compilerOptions.outDir & 0.000 & 1.000 & 0\% &  \\
+compilerOptions.rootDir & 0.000 & 1.000 & 0\% &  \\
+compilerOptions.skipLibCheck & 0.000 & 1.000 & 0\% &  \\
+compilerOptions.sourceMap & 0.000 & 1.000 & 0\% &  \\
+compilerOptions.strict & 0.000 & 1.000 & 0\% &  \\
+compilerOptions.target & 0.059 & 1.000 & 0\% &  \\
+\midrule
+\textbf{Mean} & \textbf{0.016} & \textbf{1.000} & \textbf{0\%} & \textbf{0\%} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+% Table 3: Generation Quality Summary
+\begin{table}[h]
+\centering
+\caption{Generation quality metrics}
+\label{tab:generation-summary}
+\begin{tabular}{lr}
+\toprule
+Metric & Value \\
+\midrule
+Schema & tsconfig \\
+Validation samples & 5 \\
+Generated samples & 5 \\
+Temperature & 0.7 \\
+Mean KL divergence & 0.0164 \\
+Mean TV distance & 1.0000 \\
+Mean coverage & 0.0\% \\
+Mode match rate & 0.0\% \\
+\bottomrule
+\end{tabular}
+\end{table}

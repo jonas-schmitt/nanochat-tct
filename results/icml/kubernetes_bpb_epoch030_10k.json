@@ -1,0 +1,27 @@
+{
+  "schema": "kubernetes",
+  "num_samples": 10000,
+  "max_seq_len": 2048,
+  "normalize_bytes": true,
+  "merge_table": "/home/josch/git/nanochat-tct/bpe-merges/kubernetes-utf8-bpe-1k-matched.json",
+  "utf8_data_dir": "/home/josch/Desktop/data/kubernetes-utf8-bpe-1k-matched",
+  "num_valid_samples": 9720,
+  "tct_data_dir": "/home/josch/Desktop/data/kubernetes-tct-bpe-1k",
+  "utf8_constrained_bpb": {
+    "raw_bpb": 0.16219555168211416,
+    "constrained_bpb": 0.16203737530536996,
+    "bpb_reduction_percent": 0.09752201900962731,
+    "num_sequences": 9720,
+    "total_tokens": 1826327,
+    "total_bytes": 6360437,
+    "raw_loss_nats": 715074.606147295,
+    "constrained_loss_nats": 714377.250953955
+  },
+  "tct_bpb": {
+    "bpb": 0.16422100870605372,
+    "num_sequences": 9720,
+    "total_tokens": 1754826,
+    "total_bytes": 6360409,
+    "total_loss_nats": 724001.0897378922
+  }
+}
