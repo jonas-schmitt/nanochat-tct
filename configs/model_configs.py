@@ -69,10 +69,10 @@ ARCHITECTURES = {
 # =============================================================================
 # Dynamic Batch Size Scaling
 # =============================================================================
-# Target effective batch: 64 (standard batch size)
+# Target effective batch: 32 (reduced for finer-grained updates)
 # Maximize micro batch for GPU efficiency, use grad_accum to reach target eff batch
 
-TARGET_EFFECTIVE_BATCH = 64
+TARGET_EFFECTIVE_BATCH = 32
 
 # Reference batch sizes: max micro batch that fits on 24GB VRAM (RTX 4090/3090)
 # These scale linearly with available VRAM (computed in compute_batch_config)
@@ -150,7 +150,7 @@ def compute_batch_config(model_size: str, context_size: int, gpu_memory_gb: floa
 
 # Common training hyperparameters (all configs)
 COMMON_TRAINING = {
-    "learning_rate": 3e-4,  # Will be slightly reduced for large model
+    "learning_rate": 3e-4,  # Base LR (overridden by LR_ADJUSTMENTS per model size)
     "lr_schedule": "cosine",  # Cosine decay with warmup
     "weight_decay": 0.1,
     "beta1": 0.9,
@@ -163,9 +163,9 @@ COMMON_TRAINING = {
 
 # Learning rate adjustments by model size (smaller for larger models)
 LR_ADJUSTMENTS = {
-    "small": 4e-4,   # ~50M params
-    "medium": 3e-4,  # ~125M params
-    "large": 2e-4,   # ~350M params
+    "small": 3e-4,   # ~50M params (base LR)
+    "medium": 2e-4,  # ~125M params (scaled down)
+    "large": 1.5e-4, # ~350M params (scaled down)
 }
 
 # =============================================================================
@@ -337,7 +337,7 @@ def print_model_summary():
         ("A100-80", 80),
     ]
 
-    print("Batch Sizes by GPU (context=2048, target eff_batch=64):")
+    print("Batch Sizes by GPU (context=2048, target eff_batch=32):")
     print("-" * 85)
     print(f"{'Model':<12}", end="")
     for gpu_name, _ in target_gpus:
