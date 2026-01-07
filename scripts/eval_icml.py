@@ -54,10 +54,21 @@ def normalize_json(json_str: str) -> str:
     """Normalize JSON string to minified canonical form (sorted keys, no whitespace).
 
     This ensures fair comparison between TCT (minified) and UTF8 (formatted) outputs.
+    Normalizes ISO 8601 timestamps:
+    - Strips microseconds: .NNNNNN -> empty (TCT doesn't preserve them)
+    - Normalizes timezone: +00:00 -> Z
     """
     try:
         parsed = json.loads(json_str)
-        return json.dumps(parsed, separators=(',', ':'), sort_keys=True)
+        result = json.dumps(parsed, separators=(',', ':'), sort_keys=True)
+        # Normalize ISO 8601 UTC timestamps:
+        import re
+        # 1. Strip microseconds: .NNNNNN -> empty (TCT doesn't preserve them)
+        result = re.sub(r'(\d{2}:\d{2}:\d{2})\.\d+', r'\1', result)
+        # 2. Normalize timezone: +00:00 -> Z
+        result = re.sub(r'(\d{2}:\d{2}:\d{2})\+00:00', r'\1Z', result)
+        result = re.sub(r'(\d{2}:\d{2}:\d{2})-00:00', r'\1Z', result)
+        return result
     except json.JSONDecodeError:
         return json_str  # Return original if not valid JSON
 
@@ -168,6 +179,25 @@ def create_random_model(vocab_size: int, device: str = "cuda"):
     }
 
 
+def compute_valid_indices(
+    utf8_tokens: List[List[int]],
+    tct_tokens: List[List[int]],
+    max_seq_len: int,
+) -> List[int]:
+    """Compute indices of samples that are valid for BOTH tokenizers.
+
+    A sample is valid if its token count is <= max_seq_len in BOTH tokenizations.
+    This ensures fair comparison by evaluating identical samples.
+    """
+    valid_indices = []
+    for i in range(min(len(utf8_tokens), len(tct_tokens))):
+        utf8_len = len(utf8_tokens[i])
+        tct_len = len(tct_tokens[i])
+        if utf8_len <= max_seq_len and tct_len <= max_seq_len:
+            valid_indices.append(i)
+    return valid_indices
+
+
 def load_validation_tokens(data_dir: Path, max_samples: int = 1000) -> List[List[int]]:
     """Load validation tokens from JSONL file."""
     val_path = data_dir / "validate.jsonl"
@@ -233,45 +263,55 @@ def find_merge_table(schema: str, tokenizer: str = "utf8") -> Path:
 
 
 def find_data_dir(schema: str, tokenizer: str = "utf8") -> Path:
-    """Find data directory for schema.
+    """Find data directory for schema using schema_configs.py definitions.
 
     Args:
         schema: Schema name (tsconfig, eslintrc, kubernetes)
         tokenizer: Tokenizer type ("utf8" or "tct")
+
+    Raises:
+        FileNotFoundError: If the expected data directory doesn't exist
     """
-    data_roots = [
-        Path(__file__).parent.parent.parent / "data",
-        Path.home() / "Desktop" / "data",
-    ]
+    from configs.schema_configs import get_schema_config
+
+    config = get_schema_config(schema)
 
     if tokenizer == "tct":
-        suffixes = ["-tct-bpe-500", "-tct-bpe-1k", "-tct-base", "-tct"]
+        data_path = config.get("data_path_tct")
+        dir_name = config.get("data_dir_tct")
     else:
-        # Note: -utf8-bpe-1k-matched is the correct kubernetes UTF8 dir (matched to TCT compression)
-        suffixes = ["-utf8-bpe-1k-matched", "-utf8-base-matched", "-utf8-bpe-500", "-utf8-bpe-1k", "-utf8"]
+        data_path = config.get("data_path_utf8")
+        dir_name = config.get("data_dir_utf8")
 
-    candidates = []
-    for root in data_roots:
-        for suffix in suffixes:
-            candidates.append(root / f"{schema}{suffix}")
+    if data_path and data_path.exists():
+        return data_path
 
-    for c in candidates:
-        if c.exists():
-            return c
-    raise FileNotFoundError(f"No data directory for {schema} ({tokenizer}). Tried: {candidates}")
+    # Fail fast with clear error
+    raise FileNotFoundError(
+        f"Data directory not found for {schema} ({tokenizer}). "
+        f"Expected: {data_path} (dir: {dir_name}). "
+        f"Check schema_configs.py and ~/Desktop/data/"
+    )
 
 
 def run_constrained_bpb(
     model,
     schema: str,
     merge_table: Path,
-    data_dir: Path,
-    num_samples: int,
-    max_seq_len: int,
+    validation_tokens: List[List[int]],
     device: str,
     normalize_bytes: bool = True,
 ) -> Dict[str, Any]:
-    """Run constrained BPB evaluation."""
+    """Run constrained BPB evaluation.
+
+    Args:
+        model: The model to evaluate
+        schema: Schema name
+        merge_table: Path to BPE merge table
+        validation_tokens: Pre-filtered validation tokens (already filtered by max_seq_len)
+        device: Device to use
+        normalize_bytes: Whether to normalize bytes to minified JSON
+    """
     from nanochat.xgrammar_tokenizer import (
         UTF8BPEDecoder,
         build_xgrammar_tokenizer_info,
@@ -298,10 +338,7 @@ def run_constrained_bpb(
     print("  Compiling grammar...")
     compiled_grammar = compile_json_schema_grammar(tokenizer_info, schema_dict)
 
-    # Load validation tokens
-    print(f"  Loading validation tokens from {data_dir}...")
-    validation_tokens = load_validation_tokens(data_dir, num_samples)
-    print(f"  Loaded {len(validation_tokens)} sequences")
+    print(f"  Validation sequences: {len(validation_tokens)} (pre-filtered)")
 
     # Compute constrained BPB
     print("\n  Computing constrained BPB...")
@@ -312,7 +349,7 @@ def run_constrained_bpb(
         utf8_decoder=utf8_decoder,
         validation_tokens=validation_tokens,
         device=device,
-        max_seq_len=max_seq_len,
+        max_seq_len=None,  # Already pre-filtered
         show_progress=True,
         normalize_bytes=normalize_bytes,
     )
@@ -975,8 +1012,8 @@ def main():
                         help="Number of samples for BPB evaluation")
     parser.add_argument("--num_gen_samples", type=int, default=100,
                         help="Number of samples to generate for distribution comparison")
-    parser.add_argument("--max_seq_len", type=int, default=512,
-                        help="Maximum sequence length for BPB evaluation")
+    parser.add_argument("--max_seq_len", type=int, default=2048,
+                        help="Maximum sequence length for BPB evaluation (default: 2048, training length)")
     parser.add_argument("--max_gen_tokens", type=int, default=512,
                         help="Maximum tokens per generated sample")
     parser.add_argument("--temperature", type=float, default=0.7,
@@ -1033,6 +1070,43 @@ def main():
     utf8_decoder = UTF8BPEDecoder(merge_table)
     vocab_size = utf8_decoder.vocab_size()
 
+    # Pre-load validation tokens and compute valid indices for fair comparison
+    print("\n  Loading validation data...")
+    utf8_validation_tokens = load_validation_tokens(utf8_data_dir, args.num_samples)
+    print(f"  UTF8 validation tokens: {len(utf8_validation_tokens)} samples")
+
+    # Try to find TCT data directory
+    tct_data_dir = None
+    if args.tct_checkpoint:
+        try:
+            tct_data_dir = find_data_dir(args.schema, "tct")
+        except FileNotFoundError:
+            pass
+
+    # If both tokenizations available, compute valid indices for fair comparison
+    if tct_data_dir:
+        tct_validation_tokens = load_validation_tokens(tct_data_dir, args.num_samples)
+        print(f"  TCT validation tokens: {len(tct_validation_tokens)} samples")
+
+        # Compute valid indices (samples that fit in max_seq_len for BOTH tokenizers)
+        valid_indices = compute_valid_indices(
+            utf8_validation_tokens, tct_validation_tokens, args.max_seq_len
+        )
+        print(f"  Valid for both (max_seq_len={args.max_seq_len}): {len(valid_indices)} samples")
+
+        # Filter to valid indices only
+        utf8_validation_tokens = [utf8_validation_tokens[i] for i in valid_indices]
+        tct_validation_tokens = [tct_validation_tokens[i] for i in valid_indices]
+
+        results["num_valid_samples"] = len(valid_indices)
+        results["tct_data_dir"] = str(tct_data_dir)
+    else:
+        tct_validation_tokens = None
+        # For UTF8-only evaluation, filter by max_seq_len
+        utf8_validation_tokens = [t for t in utf8_validation_tokens if len(t) <= args.max_seq_len]
+        print(f"  After filtering (max_seq_len={args.max_seq_len}): {len(utf8_validation_tokens)} samples")
+        results["num_valid_samples"] = len(utf8_validation_tokens)
+
     # Evaluate UTF8-BPE model (with constrained BPB)
     if args.utf8_checkpoint or args.random_model:
         print("\n" + "-" * 60)
@@ -1055,9 +1129,7 @@ def main():
                 model=model,
                 schema=args.schema,
                 merge_table=merge_table,
-                data_dir=utf8_data_dir,
-                num_samples=args.num_samples,
-                max_seq_len=args.max_seq_len,
+                validation_tokens=utf8_validation_tokens,  # Pre-filtered for fair comparison
                 device=args.device,
                 normalize_bytes=args.normalize_bytes,
             )
@@ -1106,29 +1178,40 @@ def main():
         print(f"  n_layer: {model_cfg.get('n_layer')}")
         print(f"  val_loss: {full_config.get('val_loss', 'N/A')}")
 
-        # For TCT BPB, use data path from checkpoint config, or fall back to discovery
-        tct_data_dir = None
-        if schema_cfg.get("data_path_tct"):
-            candidate = Path(schema_cfg["data_path_tct"])
-            if candidate.exists():
-                tct_data_dir = candidate
-            else:
-                # Try relative to home/Desktop/data with the directory name
-                data_dir_name = schema_cfg.get("data_dir_tct")
-                if data_dir_name:
-                    candidate = Path.home() / "Desktop" / "data" / data_dir_name
-                    if candidate.exists():
-                        tct_data_dir = candidate
-        if tct_data_dir is None:
-            try:
-                tct_data_dir = find_data_dir(args.schema, "tct")
-            except FileNotFoundError:
-                tct_data_dir = None
+        # Use pre-filtered tct_validation_tokens if available (from fair comparison section)
+        # Otherwise, try to find data dir and load tokens
+        if tct_validation_tokens is None:
+            # Try to find TCT data dir from checkpoint config or discovery
+            tct_data_dir_local = None
+            if schema_cfg.get("data_path_tct"):
+                candidate = Path(schema_cfg["data_path_tct"])
+                if candidate.exists():
+                    tct_data_dir_local = candidate
+                else:
+                    # Try relative to home/Desktop/data with the directory name
+                    data_dir_name = schema_cfg.get("data_dir_tct")
+                    if data_dir_name:
+                        candidate = Path.home() / "Desktop" / "data" / data_dir_name
+                        if candidate.exists():
+                            tct_data_dir_local = candidate
+            if tct_data_dir_local is None:
+                try:
+                    tct_data_dir_local = find_data_dir(args.schema, "tct")
+                except FileNotFoundError:
+                    tct_data_dir_local = None
 
-        if tct_data_dir:
-            print(f"  TCT data dir: {tct_data_dir}")
-            # Load TCT validation tokens
-            tct_validation_tokens = load_validation_tokens(tct_data_dir, args.num_samples)
+            if tct_data_dir_local:
+                tct_data_dir = tct_data_dir_local
+                print(f"  TCT data dir: {tct_data_dir}")
+                # Load and filter tokens (UTF8-only comparison path)
+                tct_validation_tokens = load_validation_tokens(tct_data_dir, args.num_samples)
+                tct_validation_tokens = [t for t in tct_validation_tokens if len(t) <= args.max_seq_len]
+                print(f"  TCT validation tokens: {len(tct_validation_tokens)} (filtered to max_seq_len={args.max_seq_len})")
+            else:
+                print(f"  WARNING: No TCT data directory found. TCT BPB cannot be computed.")
+
+        if tct_validation_tokens is not None:
+            print(f"  Using {len(tct_validation_tokens)} pre-filtered TCT validation sequences")
 
             # Compute TCT BPB (unless --generation_only)
             if not args.generation_only:
@@ -1136,9 +1219,9 @@ def main():
                 tct_bpb_result = compute_tct_bpb(
                     model=model,
                     tct_module=tct_module,
-                    validation_tokens=tct_validation_tokens,
+                    validation_tokens=tct_validation_tokens,  # Pre-filtered for fair comparison
                     device=args.device,
-                    max_seq_len=args.max_seq_len,
+                    max_seq_len=None,  # Already pre-filtered
                     show_progress=True,
                     normalize_bytes=args.normalize_bytes,
                 )
@@ -1165,12 +1248,9 @@ def main():
                 except Exception:
                     continue
         else:
-            print(f"  WARNING: No TCT data directory found. Using UTF8 validation data for generation comparison.")
+            print(f"  WARNING: No TCT validation tokens available. Using UTF8 validation data for generation comparison.")
             # Fallback: use UTF8 validation data decoded for comparison
-            from nanochat.xgrammar_tokenizer import UTF8BPEDecoder
-            utf8_decoder = UTF8BPEDecoder(merge_table)
-            utf8_validation_tokens = load_validation_tokens(utf8_data_dir, args.num_gen_samples)
-            val_json_strings = [utf8_decoder.decode(tokens) for tokens in utf8_validation_tokens]
+            val_json_strings = [utf8_decoder.decode(tokens) for tokens in utf8_validation_tokens[:args.num_gen_samples]]
 
         # Run generation quality for TCT (unless --bpb_only)
         if not args.bpb_only:
@@ -1197,18 +1277,38 @@ def main():
     print("SUMMARY")
     print("=" * 60)
 
-    if "utf8_constrained_bpb" in results:
-        bpb = results["utf8_constrained_bpb"]
-        print(f"\nUTF8-BPE Constrained BPB:")
-        print(f"  Raw BPB:         {bpb['raw_bpb']:.4f}")
-        print(f"  Constrained BPB: {bpb['constrained_bpb']:.4f}")
-        print(f"  Reduction:       {bpb['bpb_reduction_percent']:.1f}%")
+    # BPB Comparison Table (all three metrics)
+    if "utf8_constrained_bpb" in results or "tct_bpb" in results:
+        print("\n  BPB Comparison (lower is better):")
+        print(f"  {'Method':<25} {'BPB':>10} {'Sequences':>12} {'Bytes':>12}")
+        print(f"  {'-'*59}")
 
-    if "tct_bpb" in results:
-        bpb = results["tct_bpb"]
-        print(f"\nTCT BPB:")
-        print(f"  BPB:             {bpb['bpb']:.4f}")
-        print(f"  Sequences:       {bpb['num_sequences']}")
+        if "utf8_constrained_bpb" in results:
+            bpb = results["utf8_constrained_bpb"]
+            # Raw BPE (no grammar constraints)
+            print(f"  {'UTF8-BPE (raw)':<25} {bpb['raw_bpb']:>10.4f} {bpb['num_sequences']:>12} {bpb['total_bytes']:>12}")
+            # BPE + XGrammar
+            print(f"  {'UTF8-BPE + XGrammar':<25} {bpb['constrained_bpb']:>10.4f} {bpb['num_sequences']:>12} {bpb['total_bytes']:>12}")
+
+        if "tct_bpb" in results:
+            bpb = results["tct_bpb"]
+            # TCT (inherently constrained)
+            print(f"  {'TCT':<25} {bpb['bpb']:>10.4f} {bpb['num_sequences']:>12} {bpb['total_bytes']:>12}")
+
+        # Fairness verification
+        if "utf8_constrained_bpb" in results and "tct_bpb" in results:
+            utf8_bpb = results["utf8_constrained_bpb"]
+            tct_bpb = results["tct_bpb"]
+            print(f"\n  Fairness Verification:")
+            if utf8_bpb['num_sequences'] == tct_bpb['num_sequences']:
+                print(f"    ✓ Same number of sequences: {utf8_bpb['num_sequences']}")
+            else:
+                print(f"    ✗ DIFFERENT sequence counts: UTF8={utf8_bpb['num_sequences']}, TCT={tct_bpb['num_sequences']}")
+            if utf8_bpb['total_bytes'] == tct_bpb['total_bytes']:
+                print(f"    ✓ Same total bytes: {utf8_bpb['total_bytes']}")
+            else:
+                print(f"    ✗ DIFFERENT byte counts: UTF8={utf8_bpb['total_bytes']}, TCT={tct_bpb['total_bytes']}")
+                print(f"      (This is UNFAIR - bytes should match for normalized JSON)")
 
     if "utf8_generation" in results and "tct_generation" in results:
         utf8 = results["utf8_generation"].get("comparison", {})

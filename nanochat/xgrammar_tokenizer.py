@@ -362,25 +362,37 @@ def compute_constrained_bpb(
 
     iterator = tqdm(validation_tokens, desc="Computing constrained BPB") if show_progress else validation_tokens
 
+    skipped_too_long = 0
+    skipped_invalid_json = 0
+
     for tokens in iterator:
         if len(tokens) < 2:
             continue  # Need at least 2 tokens for next-token prediction
 
-        # Optionally truncate
+        # Skip sequences that exceed max_seq_len (don't truncate - it corrupts JSON)
         if max_seq_len is not None and len(tokens) > max_seq_len:
-            tokens = tokens[:max_seq_len]
+            skipped_too_long += 1
+            continue
 
         # Decode to text for byte count
         text = utf8_decoder.decode(tokens)
 
-        # Optionally normalize to minified JSON for fair comparison with TCT
+        # Normalize to minified JSON for fair comparison with TCT
         if normalize_bytes:
             try:
                 import json
+                import re
                 parsed = json.loads(text)
                 text = json.dumps(parsed, separators=(',', ':'), sort_keys=True)
+                # Normalize ISO 8601 UTC timestamps:
+                # 1. Strip microseconds: .NNNNNN -> empty (TCT doesn't preserve them)
+                text = re.sub(r'(\d{2}:\d{2}:\d{2})\.\d+', r'\1', text)
+                # 2. Normalize timezone: +00:00 -> Z
+                text = re.sub(r'(\d{2}:\d{2}:\d{2})\+00:00', r'\1Z', text)
+                text = re.sub(r'(\d{2}:\d{2}:\d{2})-00:00', r'\1Z', text)
             except json.JSONDecodeError:
-                pass  # Keep original text if not valid JSON
+                skipped_invalid_json += 1
+                continue  # Skip sequences that aren't valid JSON
 
         n_bytes = len(text.encode('utf-8'))
         if n_bytes == 0:
@@ -452,6 +464,10 @@ def compute_constrained_bpb(
 
     raw_bpb = total_raw_loss / (math.log(2) * total_bytes)
     constrained_bpb = total_constrained_loss / (math.log(2) * total_bytes)
+
+    # Report skipped sequences
+    if skipped_too_long > 0 or skipped_invalid_json > 0:
+        print(f"  Skipped: {skipped_too_long} too long, {skipped_invalid_json} invalid JSON")
 
     return ConstrainedBPBResult(
         raw_bpb=raw_bpb,
@@ -542,26 +558,38 @@ def compute_tct_bpb(
 
     iterator = tqdm(validation_tokens, desc="Computing TCT BPB") if show_progress else validation_tokens
 
+    skipped_too_long = 0
+    skipped_decode_failed = 0
+
     for tokens in iterator:
         if len(tokens) < 2:
             continue  # Need at least 2 tokens for next-token prediction
 
-        # Optionally truncate
+        # Skip sequences that exceed max_seq_len (don't truncate - it corrupts decode)
         if max_seq_len is not None and len(tokens) > max_seq_len:
-            tokens = tokens[:max_seq_len]
+            skipped_too_long += 1
+            continue
 
         # Decode to text for byte count
         try:
             json_out, consumed, surplus = tct_module.decode(tokens)
 
-            # Optionally normalize to minified JSON with sorted keys for fair comparison
+            # Normalize to minified JSON with sorted keys for fair comparison
             if normalize_bytes:
                 import json
+                import re
                 parsed = json.loads(json_out)
                 json_out = json.dumps(parsed, separators=(',', ':'), sort_keys=True)
+                # Normalize ISO 8601 UTC timestamps:
+                # 1. Strip microseconds: .NNNNNN -> empty (TCT doesn't preserve them)
+                json_out = re.sub(r'(\d{2}:\d{2}:\d{2})\.\d+', r'\1', json_out)
+                # 2. Normalize timezone: +00:00 -> Z
+                json_out = re.sub(r'(\d{2}:\d{2}:\d{2})\+00:00', r'\1Z', json_out)
+                json_out = re.sub(r'(\d{2}:\d{2}:\d{2})-00:00', r'\1Z', json_out)
 
             n_bytes = len(json_out.encode('utf-8'))
         except Exception:
+            skipped_decode_failed += 1
             continue
 
         if n_bytes == 0:
@@ -597,6 +625,10 @@ def compute_tct_bpb(
         )
 
     bpb = total_loss / (math.log(2) * total_bytes)
+
+    # Report skipped sequences
+    if skipped_too_long > 0 or skipped_decode_failed > 0:
+        print(f"  Skipped: {skipped_too_long} too long, {skipped_decode_failed} decode failed")
 
     return TCTBPBResult(
         bpb=bpb,
