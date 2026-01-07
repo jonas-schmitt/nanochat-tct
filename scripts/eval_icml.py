@@ -407,6 +407,7 @@ def generate_samples_xgrammar(
     tokenizer_info,
     compiled_grammar,
     utf8_decoder,
+    first_token_distribution: Dict[int, float],
     num_samples: int,
     max_tokens: int = 512,
     temperature: float = 0.7,
@@ -415,10 +416,14 @@ def generate_samples_xgrammar(
 ) -> List[str]:
     """Generate samples using UTF8-BPE model with XGrammar constraints.
 
+    Args:
+        first_token_distribution: Dict mapping token_id -> probability for first token
+
     Returns:
         List of generated JSON strings (only valid ones)
     """
     import time
+    import random
     import torch
     import torch.nn.functional as F
     import xgrammar
@@ -430,6 +435,10 @@ def generate_samples_xgrammar(
     empty_count = 0
     failed_count = 0
 
+    # Prepare first token sampling
+    first_tokens = list(first_token_distribution.keys())
+    first_probs = list(first_token_distribution.values())
+
     iterator = tqdm(range(num_samples), desc="Generating samples") if show_progress else range(num_samples)
 
     for _ in iterator:
@@ -438,8 +447,8 @@ def generate_samples_xgrammar(
             matcher = xgrammar.GrammarMatcher(compiled_grammar)
             bitmask = xgrammar.allocate_token_bitmask(1, tokenizer_info.vocab_size)
 
-            # UTF8-BPE sequences start with token 123 (the '{' character)
-            start_token = 123
+            # Sample first token from empirical distribution (fair comparison with TCT)
+            start_token = random.choices(first_tokens, weights=first_probs, k=1)[0]
             generated_tokens = [start_token]
             matcher.accept_token(start_token)
 
@@ -647,6 +656,11 @@ def run_generation_quality_utf8(
     schema_dict = load_schema(schema)
     compiled_grammar = compile_json_schema_grammar(tokenizer_info, schema_dict)
 
+    # Compute first token distribution for fair comparison with TCT
+    print("  Computing first token distribution for generation...")
+    first_token_dist = compute_first_token_distribution(data_dir)
+    print(f"  First tokens: {len(first_token_dist)} unique, top: {list(first_token_dist.keys())[:5]}")
+
     # Load and decode validation samples for ground truth distribution
     print(f"\n  Extracting ground truth distribution from validation data...")
     validation_tokens = load_validation_tokens(data_dir, num_samples)
@@ -672,6 +686,7 @@ def run_generation_quality_utf8(
         tokenizer_info=tokenizer_info,
         compiled_grammar=compiled_grammar,
         utf8_decoder=utf8_decoder,
+        first_token_distribution=first_token_dist,
         num_samples=num_samples,
         max_tokens=max_tokens,
         temperature=temperature,
