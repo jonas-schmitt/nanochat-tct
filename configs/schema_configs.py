@@ -134,7 +134,7 @@ SCHEMA_CONFIGS = {
 
         # Data directories
         "data_dir_tct": "kubernetes-tct-bpe-1k",
-        "data_dir_utf8": "kubernetes-utf8-bpe-1k-matched",
+        "data_dir_utf8": "kubernetes-utf8-bpe-1k",
 
         # Schema info
         "complexity": "high",

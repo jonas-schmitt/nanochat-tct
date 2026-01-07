@@ -116,9 +116,11 @@ schema_cfg = get_schema_config(schema, data_root)
 if tokenizer == "tct":
     vocab_size = schema_cfg["tct_vocab_size"]
     data_path = schema_cfg["data_path_tct"]
+    partner_data_path = schema_cfg.get("data_path_utf8")  # For coordinated filtering
 elif tokenizer == "utf8":
     vocab_size = schema_cfg["utf8_vocab_size"]
     data_path = schema_cfg["data_path_utf8"]
+    partner_data_path = schema_cfg.get("data_path_tct")  # For coordinated filtering
 else:
     raise ValueError(f"Unknown tokenizer: '{tokenizer}'. Use 'tct' or 'utf8'")
 
@@ -325,6 +327,8 @@ if reshuffle_data:
         context_size=T,
         batch_size=B,
         train_ratio=0.95,
+        max_len=T,  # Filter sequences exceeding context window
+        partner_data_dir=partner_data_path,  # Coordinated filtering with partner tokenizer
         device=device,
         verbose=master_process,
         seed=42,

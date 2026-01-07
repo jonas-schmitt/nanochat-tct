@@ -11,6 +11,7 @@ Key Features:
 - Each batch contains B independent sequences (no concatenation)
 - Inputs padded with PAD, targets padded with -1 (ignored in loss)
 - Compatible with nanochat's training loop
+- Coordinated filtering: excludes manifests exceeding context window in EITHER tokenization
 
 IMPORTANT: PAD token must be the LAST token in vocab (vocab_size - 1), NOT 0!
 Token 0 is a valid data token (e.g., start-of-object in TCT).
@@ -18,10 +19,36 @@ Token 0 is a valid data token (e.g., start-of-object in TCT).
 
 import json
 from pathlib import Path
-from typing import Optional, Tuple, Iterator
+from typing import Optional, Tuple, Iterator, List
 
 import torch
 from torch.utils.data import Dataset, DataLoader, IterableDataset
+
+
+def _load_sequence_lengths(data_dir: Path) -> List[int]:
+    """Load sequence lengths from all.jsonl without keeping full sequences in memory.
+
+    Used for coordinated filtering between TCT and UTF8 tokenizations.
+    """
+    lengths = []
+    all_jsonl = data_dir / "all.jsonl"
+
+    if all_jsonl.exists():
+        with open(all_jsonl, 'r') as f:
+            for line in f:
+                tokens = json.loads(line)
+                lengths.append(len(tokens))
+    else:
+        # Fallback: combine train + validate
+        for jsonl_name in ["train.jsonl", "validate.jsonl"]:
+            jsonl_file = data_dir / jsonl_name
+            if jsonl_file.exists():
+                with open(jsonl_file, 'r') as f:
+                    for line in f:
+                        tokens = json.loads(line)
+                        lengths.append(len(tokens))
+
+    return lengths
 
 
 def get_pad_token_id(data_dir: Path) -> int:
@@ -158,6 +185,7 @@ def create_reshuffled_dataloaders(
     batch_size: int,
     train_ratio: float = 0.95,
     max_len: Optional[int] = None,
+    partner_data_dir: Optional[Path] = None,
     device: str = "cuda",
     num_workers: int = 0,
     verbose: bool = True,
@@ -174,6 +202,10 @@ def create_reshuffled_dataloaders(
         batch_size: Batch size
         train_ratio: Fraction for training (default 0.95)
         max_len: Filter sequences longer than this
+        partner_data_dir: Partner data directory for coordinated filtering.
+            When provided, sequences are excluded if they exceed max_len in
+            EITHER this directory or partner_data_dir. This ensures TCT and
+            UTF8 models train on identical samples.
         device: Device for tensors
         num_workers: DataLoader workers
         verbose: Print statistics
@@ -191,6 +223,7 @@ def create_reshuffled_dataloaders(
         print(f"  Pad token: {pad_token_id}")
 
     # Load all sequences - prefer all.jsonl if available, otherwise combine train+val
+    # NOTE: We load ALL sequences first, then apply filtering (for coordinated filtering)
     all_sequences = []
     all_jsonl = data_dir / "all.jsonl"
 
@@ -199,8 +232,7 @@ def create_reshuffled_dataloaders(
         with open(all_jsonl, 'r') as f:
             for line in f:
                 tokens = json.loads(line)
-                if max_len is None or len(tokens) <= max_len:
-                    all_sequences.append(torch.tensor(tokens, dtype=torch.long))
+                all_sequences.append(torch.tensor(tokens, dtype=torch.long))
         source = "all.jsonl"
     else:
         # Fallback: combine train.jsonl and validate.jsonl
@@ -210,12 +242,52 @@ def create_reshuffled_dataloaders(
                 with open(jsonl_file, 'r') as f:
                     for line in f:
                         tokens = json.loads(line)
-                        if max_len is None or len(tokens) <= max_len:
-                            all_sequences.append(torch.tensor(tokens, dtype=torch.long))
+                        all_sequences.append(torch.tensor(tokens, dtype=torch.long))
         source = "train.jsonl + validate.jsonl"
 
     if verbose:
         print(f"Loaded {len(all_sequences):,} total sequences from {data_dir.name} ({source})")
+
+    # Apply filtering (coordinated or standard)
+    if max_len is not None:
+        original_count = len(all_sequences)
+
+        if partner_data_dir is not None:
+            # Coordinated filtering: exclude if exceeds max_len in EITHER tokenization
+            partner_data_dir = Path(partner_data_dir)
+            if not partner_data_dir.exists():
+                if verbose:
+                    print(f"  WARNING: Partner dir not found: {partner_data_dir}")
+                    print(f"  Falling back to standard filtering")
+                all_sequences = [s for s in all_sequences if len(s) <= max_len]
+            else:
+                if verbose:
+                    print(f"  Coordinated filtering with partner: {partner_data_dir.name}")
+
+                partner_lengths = _load_sequence_lengths(partner_data_dir)
+
+                if len(partner_lengths) != len(all_sequences):
+                    if verbose:
+                        print(f"  WARNING: Length mismatch (own={len(all_sequences)}, partner={len(partner_lengths)})")
+                        print(f"  Falling back to standard filtering")
+                    all_sequences = [s for s in all_sequences if len(s) <= max_len]
+                else:
+                    # Filter to indices valid in BOTH tokenizations
+                    valid_indices = [
+                        i for i in range(len(all_sequences))
+                        if len(all_sequences[i]) <= max_len and partner_lengths[i] <= max_len
+                    ]
+                    all_sequences = [all_sequences[i] for i in valid_indices]
+
+                    if verbose:
+                        excluded = original_count - len(all_sequences)
+                        print(f"  Coordinated filtering: kept {len(all_sequences):,}, excluded {excluded:,} (max_len={max_len})")
+        else:
+            # Standard filtering (no partner)
+            all_sequences = [s for s in all_sequences if len(s) <= max_len]
+            if verbose:
+                excluded = original_count - len(all_sequences)
+                print(f"  Standard filtering: kept {len(all_sequences):,}, excluded {excluded:,} (max_len={max_len})")
 
     # Check for empty dataset
     if len(all_sequences) == 0:
