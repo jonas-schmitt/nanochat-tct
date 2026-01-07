@@ -543,18 +543,20 @@ def generate_samples_tct(
             generated_texts.append(json_out)
             decode_success += 1
         except Exception:
-            # Full decode failed, get partial result via decode_prefix
+            # Full decode failed, try partial decode just to track statistics
             try:
                 partial_json, consumed, is_complete = tct_module.decode_prefix(generated_tokens)
                 if partial_json and partial_json != "{}":
-                    generated_texts.append(partial_json)
                     decode_partial += 1
+                    # NOTE: We do NOT add partial decodes to generated_texts
+                    # This ensures fair comparison with UTF8+XGrammar which only
+                    # includes complete, valid JSON samples
             except Exception:
-                # Skip this sample entirely
-                continue
+                pass
+            continue  # Skip this sample - only count full decodes
 
     if show_progress:
-        print(f"  Generated: {len(generated_texts)} samples ({decode_success} full decode, {decode_partial} partial)")
+        print(f"  Generated: {decode_success} valid samples ({decode_partial} partial decodes not included)")
 
     return generated_texts
 
