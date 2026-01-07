@@ -22,6 +22,10 @@ checkpoints-bpe/
 
 # Training logs
 logs/*.log
+runpod_logs/
+
+# Evaluation results (local only)
+results/
 
 # Local developer guide (keep local-only)
 CLAUDE.md
