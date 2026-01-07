@@ -11,7 +11,7 @@ Three preset architectures (sized for ~50M/125M/350M with vocab=1000):
 SwiGLU: Gated linear unit with 3 FFN matrices (gate, up, down) instead of 2.
 Used by LLaMA, Mistral, etc. for better performance.
 
-Dropout is 0.0 by default (modern LLM standard). Weight decay provides regularization.
+Dropout is 0.2 by default for regularization, combined with batch size 64.
 
 The SAME architecture is used for ALL schemas and tokenizers.
 Reference: kubernetes (vocab=1000)
@@ -31,7 +31,7 @@ SMALL_ARCH = {
     "n_heads": 8,  # head_dim=64
     "ffn_mult": 2.5,  # SwiGLU multiplier to hit ~50M target
     "use_swiglu": True,
-    "dropout": 0.0,  # Modern LLM standard (weight decay provides regularization)
+    "dropout": 0.2,  # Dropout for regularization (combined with larger batch)
     "transformer_params": "~50M",
 }
 
@@ -41,7 +41,7 @@ MEDIUM_ARCH = {
     "n_heads": 12,  # head_dim=64
     "ffn_mult": 3.0,  # SwiGLU multiplier to hit ~125M target
     "use_swiglu": True,
-    "dropout": 0.0,  # Modern LLM standard (weight decay provides regularization)
+    "dropout": 0.2,  # Dropout for regularization (combined with larger batch)
     "transformer_params": "~125M",
 }
 
@@ -51,7 +51,7 @@ LARGE_ARCH = {
     "n_heads": 16,  # head_dim=64
     "ffn_mult": 3.25,  # SwiGLU multiplier to hit ~350M target
     "use_swiglu": True,
-    "dropout": 0.0,  # Modern LLM standard (weight decay provides regularization)
+    "dropout": 0.2,  # Dropout for regularization (combined with larger batch)
     "transformer_params": "~350M",
 }
 
@@ -68,10 +68,10 @@ ARCHITECTURES = {
 # =============================================================================
 # Dynamic Batch Size Scaling
 # =============================================================================
-# Target effective batch: 32 (reduced for finer-grained updates)
+# Target effective batch: 64 (good balance of stability and regularization)
 # Maximize micro batch for GPU efficiency, use grad_accum to reach target eff batch
 
-TARGET_EFFECTIVE_BATCH = 32
+TARGET_EFFECTIVE_BATCH = 64
 
 # Reference batch sizes: max micro batch that fits on 24GB VRAM (RTX 4090/3090)
 # These scale linearly with available VRAM (computed in compute_batch_config)
@@ -149,7 +149,7 @@ def compute_batch_config(model_size: str, context_size: int, gpu_memory_gb: floa
 
 # Common training hyperparameters (all configs)
 COMMON_TRAINING = {
-    "learning_rate": 3e-4,  # Base LR (overridden by LR_ADJUSTMENTS per model size)
+    "learning_rate": 4e-4,  # Base LR (overridden by LR_ADJUSTMENTS per model size)
     "lr_schedule": "cosine",  # Cosine decay with warmup
     "weight_decay": 0.1,
     "beta1": 0.9,
@@ -162,9 +162,9 @@ COMMON_TRAINING = {
 
 # Learning rate adjustments by model size (smaller for larger models)
 LR_ADJUSTMENTS = {
-    "small": 3e-4,   # ~50M params (base LR)
-    "medium": 2e-4,  # ~125M params (scaled down)
-    "large": 1.5e-4, # ~350M params (scaled down)
+    "small": 4e-4,   # ~50M params (base LR for batch 64)
+    "medium": 3e-4,  # ~125M params (scaled down)
+    "large": 2e-4,   # ~350M params (scaled down)
 }
 
 # =============================================================================
@@ -336,7 +336,7 @@ def print_model_summary():
         ("A100-80", 80),
     ]
 
-    print("Batch Sizes by GPU (context=2048, target eff_batch=32):")
+    print("Batch Sizes by GPU (context=2048, target eff_batch=64):")
     print("-" * 85)
     print(f"{'Model':<12}", end="")
     for gpu_name, _ in target_gpus:

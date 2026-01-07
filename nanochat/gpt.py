@@ -32,7 +32,7 @@ class GPTConfig:
     n_head: int = 6 # number of query heads
     n_kv_head: int = 6 # number of key/value heads (GQA)
     n_embd: int = 768
-    dropout: float = 0.0  # dropout probability (0.0 = no dropout)
+    dropout: float = 0.2  # dropout probability for regularization
     use_swiglu: bool = False  # use SwiGLU activation (LLaMA/Mistral style)
     ffn_mult: float = 4.0  # FFN hidden dimension multiplier
     gradient_checkpointing: bool = False  # trade compute for memory
