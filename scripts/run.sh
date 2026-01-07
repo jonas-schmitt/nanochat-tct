@@ -54,7 +54,7 @@ if [ -z "$SCHEMAS" ]; then
     echo "Tokenizers: tct, utf8"
     echo "Options:"
     echo "  resume              Resume from latest checkpoint"
-    echo "  --dropout=0.1       Set dropout (default: 0.1)"
+    echo "  --dropout=0.2       Set dropout (default: 0.2)"
     echo "  --lr_schedule=X     LR schedule: cosine (default) or constant"
     echo "  constant            Shorthand for --lr_schedule=constant"
     echo "  --eff_batch=N       Effective batch size (default: 64)"
