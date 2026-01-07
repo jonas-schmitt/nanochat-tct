@@ -400,6 +400,7 @@ def generate_samples_xgrammar(
     device = next(model.parameters()).device
     generated_texts = []
     valid_count = 0
+    empty_count = 0
     failed_count = 0
 
     iterator = tqdm(range(num_samples), desc="Generating samples") if show_progress else range(num_samples)
@@ -454,12 +455,16 @@ def generate_samples_xgrammar(
             # Decode
             text = utf8_decoder.decode(generated_tokens)
 
-            # Validate JSON
+            # Validate JSON and exclude empty objects
             try:
                 import json
-                json.loads(text)
-                generated_texts.append(text)
-                valid_count += 1
+                parsed = json.loads(text)
+                # Exclude empty objects for fair comparison with TCT
+                if parsed and parsed != {}:
+                    generated_texts.append(text)
+                    valid_count += 1
+                else:
+                    empty_count += 1
             except json.JSONDecodeError:
                 failed_count += 1
 
@@ -468,7 +473,7 @@ def generate_samples_xgrammar(
             continue
 
     if show_progress:
-        print(f"  Generated: {valid_count} valid, {failed_count} failed")
+        print(f"  Generated: {valid_count} valid, {empty_count} empty (excluded), {failed_count} failed")
 
     return generated_texts
 
@@ -508,6 +513,7 @@ def generate_samples_tct(
     generated_texts = []
     decode_success = 0
     decode_partial = 0
+    decode_empty = 0
 
     iterator = tqdm(range(num_samples), desc="Generating TCT samples") if show_progress else range(num_samples)
 
@@ -537,26 +543,30 @@ def generate_samples_tct(
             next_token = torch.multinomial(probs, num_samples=1).item()
             generated_tokens.append(next_token)
 
-        # Decode final result - try full decode first
+        # Decode result using decode_prefix which handles extra tokens gracefully
+        # (model may generate tokens beyond the complete JSON)
         try:
-            json_out, consumed, surplus = tct_module.decode(generated_tokens)
-            generated_texts.append(json_out)
-            decode_success += 1
+            json_out, consumed, is_complete = tct_module.decode_prefix(generated_tokens)
+
+            if is_complete and json_out and json_out != "{}":
+                # Complete, non-empty JSON - count as success
+                generated_texts.append(json_out)
+                decode_success += 1
+            elif is_complete:
+                # Complete but empty {} - track separately
+                decode_empty += 1
+            elif json_out and json_out != "{}":
+                # Partial JSON (not complete) - track but don't include
+                decode_partial += 1
+            else:
+                # Empty partial - count as empty
+                decode_empty += 1
         except Exception:
-            # Full decode failed, try partial decode just to track statistics
-            try:
-                partial_json, consumed, is_complete = tct_module.decode_prefix(generated_tokens)
-                if partial_json and partial_json != "{}":
-                    decode_partial += 1
-                    # NOTE: We do NOT add partial decodes to generated_texts
-                    # This ensures fair comparison with UTF8+XGrammar which only
-                    # includes complete, valid JSON samples
-            except Exception:
-                pass
-            continue  # Skip this sample - only count full decodes
+            # Decode failed entirely
+            continue
 
     if show_progress:
-        print(f"  Generated: {decode_success} valid samples ({decode_partial} partial decodes not included)")
+        print(f"  Generated: {decode_success} valid, {decode_empty} empty (excluded), {decode_partial} partial (excluded)")
 
     return generated_texts
 
