@@ -26,6 +26,7 @@ LR_SCHEDULE=""
 EFF_BATCH=""
 GRAD_CKPT=""
 EPOCHS_OVERRIDE=""
+COMPILE_MODE=""
 
 for arg in "$@"; do
     case $arg in
@@ -42,6 +43,8 @@ for arg in "$@"; do
         --gradient_checkpointing|--grad_ckpt) GRAD_CKPT="True" ;;
         --epochs=*) EPOCHS_OVERRIDE="${arg#--epochs=}" ;;
         epochs=*) EPOCHS_OVERRIDE="${arg#epochs=}" ;;
+        --compile_mode=*) COMPILE_MODE="${arg#--compile_mode=}" ;;
+        --max-autotune) COMPILE_MODE="max-autotune" ;;
     esac
 done
 
@@ -63,6 +66,7 @@ if [ -z "$SCHEMAS" ]; then
     echo "  constant            Shorthand for --lr_schedule=constant"
     echo "  --eff_batch=N       Effective batch size (default: 64)"
     echo "  --grad_ckpt         Enable gradient checkpointing (saves memory, ~4% slower)"
+    echo "  --max-autotune      Use torch.compile max-autotune (slower compile, faster run)"
     echo "  --use_muon=False    Disable Muon optimizer (default: True, uses Muon+AdamW)"
     echo "  --scale_lr_by_batch Scale AdamW LRs by sqrt(batch/524K) (default: False)"
     echo ""
@@ -223,6 +227,7 @@ for SCHEMA in $SCHEMAS; do
             [ -n "$LR_SCHEDULE" ] && EXTRA_ARGS="$EXTRA_ARGS --lr_schedule=$LR_SCHEDULE"
             [ -n "$EFF_BATCH" ] && EXTRA_ARGS="$EXTRA_ARGS --eff_batch=$EFF_BATCH"
             [ -n "$GRAD_CKPT" ] && EXTRA_ARGS="$EXTRA_ARGS --gradient_checkpointing=$GRAD_CKPT"
+            [ -n "$COMPILE_MODE" ] && EXTRA_ARGS="$EXTRA_ARGS --compile_mode=$COMPILE_MODE"
             # Use custom model_tag if we have custom settings
             [ -n "$DROPOUT" ] || [ -n "$LR_SCHEDULE" ] || [ -n "$EFF_BATCH" ] && EXTRA_ARGS="$EXTRA_ARGS --model_tag=$exp_name"
 
