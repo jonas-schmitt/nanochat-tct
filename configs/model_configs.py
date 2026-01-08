@@ -4,9 +4,9 @@ Schema-agnostic model configurations for TCT experiments.
 All schemas use context_size=2048.
 
 Preset architectures (sized for vocab=1000):
-- Tiny:   d_model=256, 6 layers, SwiGLU 2.5x   (~5M params)
-- Mini:   d_model=384, 8 layers, SwiGLU 2.5x   (~15M params)
-- Base:   d_model=512, 10 layers, SwiGLU 2.5x  (~32M params)
+- Tiny:   d_model=256, 6 layers, SwiGLU 3.0x   (~5M params)
+- Mini:   d_model=384, 8 layers, SwiGLU 3.0x   (~15M params)
+- Base:   d_model=512, 10 layers, SwiGLU 3.0x  (~34M params)
 - Small:  d_model=512, 16 layers, SwiGLU 2.5x  (~50M params)
 - Medium: d_model=768, 16 layers, SwiGLU 3.0x  (~125M params)
 - Large:  d_model=1024, 24 layers, SwiGLU 3.25x (~350M params)
@@ -31,15 +31,15 @@ Single-epoch ratios by schema:
                     eslintrc    kubernetes/tsconfig
     Model   Params  (21.5M)     (117M)
     ------  ------  ----------  -------------------
-    tiny    5.6M    3.8x        21x    ✓ recommended
-    mini    15.1M   1.4x        7.8x   ✓ recommended
-    base    32.2M   0.7x        3.6x   ~ borderline
-    small   50.3M   0.4x        2.3x   ! overparameterized
+    tiny    5M      4.3x        23x    ✓ recommended
+    mini    15M     1.4x        7.8x   ✓ recommended
+    base    34M     0.6x        3.4x   ~ borderline
+    small   50M     0.4x        2.3x   ! overparameterized
     medium  125M    0.2x        0.9x   ✗ not recommended
     large   350M    0.06x       0.3x   ✗ not recommended
 
 Recommendations:
-- eslintrc: Use tiny only (even tiny is overparameterized at 3.8x)
+- eslintrc: Use tiny only (even tiny is overparameterized at 4.3x)
 - kubernetes/tsconfig: Use tiny or mini (base is borderline)
 - medium/large: Not recommended for any schema (severe overfitting)
 
@@ -69,7 +69,7 @@ TINY_ARCH = {
     "d_model": 256,
     "n_layers": 6,
     "n_heads": 4,  # head_dim=64
-    "ffn_mult": 2.5,  # SwiGLU multiplier
+    "ffn_mult": 3.0,  # SwiGLU multiplier (modern LLM practice)
     "use_swiglu": True,
     "dropout": 0.0,  # No dropout - Chinchilla optimal
     "weight_decay": 0.0,  # No weight decay - Chinchilla optimal
@@ -80,7 +80,7 @@ MINI_ARCH = {
     "d_model": 384,
     "n_layers": 8,
     "n_heads": 6,  # head_dim=64
-    "ffn_mult": 2.5,  # SwiGLU multiplier
+    "ffn_mult": 3.0,  # SwiGLU multiplier (modern LLM practice)
     "use_swiglu": True,
     "dropout": 0.0,  # No dropout - good token/param ratio
     "weight_decay": 0.0,  # No weight decay - good token/param ratio
@@ -91,11 +91,11 @@ BASE_ARCH = {
     "d_model": 512,
     "n_layers": 10,
     "n_heads": 8,  # head_dim=64
-    "ffn_mult": 2.5,  # SwiGLU multiplier
+    "ffn_mult": 3.0,  # SwiGLU multiplier (modern LLM practice)
     "use_swiglu": True,
     "dropout": 0.0,  # No dropout - test first, add if needed
     "weight_decay": 0.0,  # No weight decay - test first, add if needed
-    "transformer_params": "~32M",
+    "transformer_params": "~34M",
 }
 
 SMALL_ARCH = {
