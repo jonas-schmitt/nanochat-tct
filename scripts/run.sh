@@ -64,6 +64,7 @@ if [ -z "$SCHEMAS" ]; then
     echo "  --eff_batch=N       Effective batch size (default: 64)"
     echo "  --grad_ckpt         Enable gradient checkpointing (saves memory, ~4% slower)"
     echo "  --use_muon=False    Disable Muon optimizer (default: True, uses Muon+AdamW)"
+    echo "  --scale_lr_by_batch Scale AdamW LRs by sqrt(batch/524K) (default: False)"
     echo ""
     echo "Examples:"
     echo "  bash scripts/run.sh kubernetes"

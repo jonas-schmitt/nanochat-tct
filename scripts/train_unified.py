@@ -89,11 +89,14 @@ dropout = 0.2           # dropout for regularization (combined with batch 64)
 learning_rate_override = None  # None => use config default, or e.g. 3e-4
 resume_from_epoch = 0   # resume training from this epoch (0 = start fresh)
 eval_every_epoch = 1    # evaluate every N epochs
-# Muon optimizer settings (from original nanochat)
+# Muon optimizer settings (from nanochat, validated by Essential AI 2025)
+# Muon is batch-size robust - no LR scaling needed (arxiv.org/abs/2505.02222)
+# AdamW LRs are scaled by 1/sqrt(d_model/768) in setup_optimizers() (muP principle)
 use_muon = True         # use Muon for transformer layers, AdamW for embeddings
-matrix_lr = 0.02        # learning rate for transformer layers (Muon)
+matrix_lr = 0.02        # learning rate for transformer layers (Muon) - batch invariant
 embedding_lr = 0.2      # learning rate for token embeddings (AdamW)
 unembedding_lr = 0.004  # learning rate for lm_head (AdamW)
+scale_lr_by_batch = False  # optional: scale AdamW LRs by sqrt(batch/524K)
 # RunPod detection
 is_runpod = os.environ.get("RUNPOD_POD_ID") is not None
 
@@ -307,16 +310,30 @@ print0(f"Number of parameters: {num_params:,}")
 # Initialize optimizer(s)
 if use_muon:
     # Muon for transformer layers, AdamW for embeddings (original nanochat setup)
-    # Scale LRs by 1/sqrt(d_model/768) as in original nanochat
+    # Reference: Essential AI (2025) shows Muon is batch-size robust
     d_model = model_cfg["d_model"]
-    dmodel_lr_scale = (d_model / 768) ** -0.5
-    print0(f"Optimizer: Muon + AdamW (d_model LR scale: {dmodel_lr_scale:.4f})")
-    print0(f"  Muon LR (transformer): {matrix_lr}")
-    print0(f"  AdamW LR (embeddings): {embedding_lr * dmodel_lr_scale:.6f}")
-    print0(f"  AdamW LR (lm_head): {unembedding_lr * dmodel_lr_scale:.6f}")
+    dmodel_lr_scale = (d_model / 768) ** -0.5  # muP scaling for d_model
+
+    # Optional: scale AdamW LRs by sqrt(batch/524K) for smaller batches
+    # Muon LR is NOT scaled (batch-invariant by design)
+    effective_embedding_lr = embedding_lr
+    effective_unembedding_lr = unembedding_lr
+    if scale_lr_by_batch:
+        token_batch = B * T * grad_accum * ddp_world_size
+        adamw_batch_scale = math.sqrt(token_batch / 524288)
+        effective_embedding_lr *= adamw_batch_scale
+        effective_unembedding_lr *= adamw_batch_scale
+        print0(f"Optimizer: Muon + AdamW (batch LR scale: {adamw_batch_scale:.4f})")
+    else:
+        print0(f"Optimizer: Muon + AdamW")
+
+    print0(f"  d_model LR scale: {dmodel_lr_scale:.4f}")
+    print0(f"  Muon LR (transformer): {matrix_lr} (batch-invariant)")
+    print0(f"  AdamW LR (embeddings): {effective_embedding_lr * dmodel_lr_scale:.6f}")
+    print0(f"  AdamW LR (lm_head): {effective_unembedding_lr * dmodel_lr_scale:.6f}")
     optimizers = orig_model.setup_optimizers(
-        unembedding_lr=unembedding_lr,
-        embedding_lr=embedding_lr,
+        unembedding_lr=effective_unembedding_lr,
+        embedding_lr=effective_embedding_lr,
         matrix_lr=matrix_lr,
         weight_decay=weight_decay,
     )
