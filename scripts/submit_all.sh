@@ -8,8 +8,8 @@
 # 2. Extracts training data if needed
 # 3. Submits all training jobs
 #
-# Submits ALL model sizes for ALL schemas and tokenizers
-# Total: 3 schemas × 2 tokenizers × 6 sizes = 36 experiments
+# Submits model sizes tiny through medium for ALL schemas and tokenizers
+# Total: 3 schemas × 2 tokenizers × 5 sizes = 30 experiments
 #
 # Usage:
 #   bash scripts/submit_all.sh              # Submit all jobs (resume from checkpoints)
@@ -79,11 +79,11 @@ echo "Venv: $VENV_DIR"
 [ -n "$CONDA_ENV_DIR" ] && echo "Conda: $CONDA_ENV_DIR"
 echo "Commit: $CURRENT_COMMIT"
 echo "Resume: $([ -n "$RESUME" ] && echo "YES (from checkpoints)" || echo "NO (fresh start)")"
-echo "Epochs: base=100×1.5, small+=100 (schema-dependent)"
-echo "Checkpoint: every 5% (tiny/mini/base), 10% (small+)"
-echo "Models: tiny, mini, base, small, medium, large (all schemas, TCT + UTF8)"
-echo "GPU: tiny/mini/base=A40, small/medium=A100, large=A100_80"
-echo "Total jobs: 36 (3 schemas × 2 tokenizers × 6 sizes)"
+echo "Epochs: 150 (tiny-small), 100 (medium)"
+echo "Checkpoint: every 5% (tiny/mini/base), 10% (small/medium)"
+echo "Models: tiny, mini, base, small, medium (all schemas, TCT + UTF8)"
+echo "GPU: tiny/mini/base=A40, small/medium=A100"
+echo "Total jobs: 30 (3 schemas × 2 tokenizers × 5 sizes)"
 [ -n "$DRY_RUN" ] && echo "Mode: DRY RUN"
 echo "============================================================"
 echo
@@ -249,7 +249,7 @@ submit_job() {
 
 # Submit jobs for each schema (all model sizes, all tokenizers)
 # Each submit_job creates a SEPARATE Slurm job
-# Total: 3 schemas × 2 tokenizers × 6 sizes = 36 separate jobs
+# Total: 3 schemas × 2 tokenizers × 5 sizes = 30 separate jobs
 for schema in $SCHEMAS; do
     echo ">>> Schema: $schema"
     echo
@@ -273,10 +273,6 @@ for schema in $SCHEMAS; do
     # Medium TCT/UTF8 (A100, dropout=0.2)
     submit_job "$schema medium tct --dropout=$DROPOUT"
     submit_job "$schema medium utf8 --dropout=$DROPOUT"
-
-    # Large TCT/UTF8 (A100_80 for memory, dropout=0.2)
-    submit_job "$schema large tct --gpu=a100_80 --dropout=$DROPOUT"
-    submit_job "$schema large utf8 --gpu=a100_80 --dropout=$DROPOUT"
 
     echo
 done

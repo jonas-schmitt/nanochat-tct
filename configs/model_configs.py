@@ -312,6 +312,7 @@ MODEL_CONFIGS = {
         **SMALL_ARCH,
         **COMMON_TRAINING,
         "learning_rate": LR_ADJUSTMENTS["small"],
+        "epochs_multiplier": 1.5,  # 150 epochs (extended training)
         "description": "Small model (~48M with vocab=1k), 14 layers",
     },
     "small-wide": {
