@@ -26,6 +26,9 @@ import os
 os.environ["PYTORCH_ALLOC_CONF"] = "expandable_segments:True,garbage_collection_threshold:0.8"
 # Clear inductor cache on startup to avoid stale compiled graphs causing OOM
 os.environ["TORCHINDUCTOR_CACHE_DIR"] = "/tmp/torchinductor_cache"
+# Suppress verbose torch.compile / autotune output
+os.environ["TORCHINDUCTOR_VERBOSE"] = "0"
+os.environ["TORCH_LOGS"] = "-all"
 
 import gc
 import shutil
