@@ -26,18 +26,6 @@ import os
 os.environ["PYTORCH_ALLOC_CONF"] = "expandable_segments:True,garbage_collection_threshold:0.8"
 # Clear inductor cache on startup to avoid stale compiled graphs causing OOM
 os.environ["TORCHINDUCTOR_CACHE_DIR"] = "/tmp/torchinductor_cache"
-# Suppress verbose torch.compile / autotune output (must be before torch import)
-os.environ["TORCHINDUCTOR_VERBOSE"] = "0"
-os.environ["TORCH_LOGS"] = "-all"
-os.environ["TRITON_PRINT_AUTOTUNING"] = "0"
-os.environ["TORCHINDUCTOR_AUTOTUNE_VERBOSE"] = "0"
-os.environ["TORCHINDUCTOR_LOG_LEVEL"] = "ERROR"
-
-import logging
-logging.getLogger("torch._inductor").setLevel(logging.ERROR)
-logging.getLogger("torch._inductor.autotune").setLevel(logging.ERROR)
-logging.getLogger("torch._dynamo").setLevel(logging.ERROR)
-logging.getLogger("triton").setLevel(logging.ERROR)
 
 import gc
 import shutil
@@ -49,11 +37,6 @@ from pathlib import Path
 from contextlib import nullcontext
 
 import torch
-
-# Suppress autotune verbose output (must be after torch import)
-import torch._inductor.config as inductor_config
-inductor_config.verbose_progress = False
-inductor_config.autotune_in_subproc = False  # Avoid subprocess output
 
 # Aggressive GPU cleanup at startup - clear any stale allocations from previous runs
 if torch.cuda.is_available():
