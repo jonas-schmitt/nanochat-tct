@@ -249,6 +249,11 @@ def compute_batch_config(model_size: str, context_size: int, gpu_memory_gb: floa
 
     # Compute gradient accumulation to reach target (model-specific)
     target_eff_batch = TARGET_EFFECTIVE_BATCH.get(model_size, 64)
+
+    # Cap batch_size at target to avoid exceeding effective batch target
+    # (on large GPUs, we could fit more but we want consistent training dynamics)
+    batch_size = min(batch_size, target_eff_batch)
+
     grad_accum = max(1, target_eff_batch // batch_size)
 
     return {

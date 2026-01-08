@@ -143,7 +143,7 @@ model_cfg = get_model_config(model_size, vocab_size, context_size, base_epochs)
 
 # Apply epochs multiplier if present (e.g., small-long uses 2x epochs)
 epochs_multiplier = model_cfg.get("epochs_multiplier", 1)
-num_epochs = base_epochs * epochs_multiplier
+num_epochs = int(base_epochs * epochs_multiplier)
 
 # Compute init
 device_type = autodetect_device_type() if device_type == "" else device_type
