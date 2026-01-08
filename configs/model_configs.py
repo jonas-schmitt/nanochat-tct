@@ -11,7 +11,7 @@ Three preset architectures (sized for ~50M/125M/350M with vocab=1000):
 SwiGLU: Gated linear unit with 3 FFN matrices (gate, up, down) instead of 2.
 Used by LLaMA, Mistral, etc. for better performance.
 
-Dropout is 0.1 by default for regularization, combined with batch size 64.
+Dropout is 0.2 for all model sizes, combined with batch size 64 for regularization.
 
 The SAME architecture is used for ALL schemas and tokenizers.
 Reference: kubernetes (vocab=1000)

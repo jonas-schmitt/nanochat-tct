@@ -48,9 +48,9 @@ SCHEMA_CONFIGS = {
         "tct_vocab_size": 258,      # Base encoding (257) + pad
         "utf8_vocab_size": 277,     # Minimal BPE (276) + pad
 
-        # Training data statistics
-        "train_files": 320_202,
-        "validate_files": 35_578,
+        # Training data statistics (95/5 split)
+        "train_files": 337_991,  # 355,780 × 0.95
+        "validate_files": 17_789,  # 355,780 × 0.05
         "total_files": 355_780,
         "train_tokens_tct": 117_000_000,
         "train_tokens_utf8": 103_000_000,
@@ -83,9 +83,9 @@ SCHEMA_CONFIGS = {
         "tct_vocab_size": 500,      # BPE-500 (499) + pad
         "utf8_vocab_size": 717,     # UTF8 BPE (716 from eslintrc-utf8-bpe-500) + pad
 
-        # Training data statistics
-        "train_files": 114_499,
-        "validate_files": 12_722,
+        # Training data statistics (95/5 split)
+        "train_files": 120_859,  # 127,221 × 0.95
+        "validate_files": 6_362,  # 127,221 × 0.05
         "total_files": 127_221,
         "train_tokens_tct": 21_500_000,
         "train_tokens_utf8": 21_600_000,
@@ -118,9 +118,9 @@ SCHEMA_CONFIGS = {
         "tct_vocab_size": 1000,     # BPE-1k (999) + pad
         "utf8_vocab_size": 1527,    # UTF8 BPE (256 base + 1270 merges + 1 pad)
 
-        # Training data statistics
-        "train_files": 221_795,
-        "validate_files": 24_644,
+        # Training data statistics (95/5 split)
+        "train_files": 234_117,  # 246,439 × 0.95
+        "validate_files": 12_322,  # 246,439 × 0.05
         "total_files": 246_439,
         "train_tokens_tct": 114_000_000,  # 514 avg * 221k files
         "train_tokens_utf8": 114_000_000,
