@@ -31,7 +31,7 @@ for arg in "$@"; do
     case $arg in
         kubernetes|tsconfig|eslintrc) SCHEMAS="$SCHEMAS $arg" ;;
         tct|utf8) FILTER_TOKENIZER="$arg" ;;
-        small|small-wide|medium|large) FILTER_SIZES="$FILTER_SIZES $arg" ;;
+        tiny|mini|base|small|small-wide|medium|large) FILTER_SIZES="$FILTER_SIZES $arg" ;;
         resume) RESUME_MODE="1" ;;
         --dropout=*) DROPOUT="${arg#--dropout=}" ;;
         dropout=*) DROPOUT="${arg#dropout=}" ;;
@@ -53,7 +53,7 @@ if [ -z "$SCHEMAS" ]; then
     echo "Usage: bash scripts/run.sh <schema>... [size]... [tokenizer] [resume] [options]"
     echo ""
     echo "Schemas: kubernetes, tsconfig, eslintrc"
-    echo "Sizes: small, small-wide, medium, large"
+    echo "Sizes: tiny, mini, base, small, small-wide, medium, large"
     echo "Tokenizers: tct, utf8"
     echo "Options:"
     echo "  resume              Resume from latest checkpoint"
@@ -125,6 +125,8 @@ get_epochs() {
     echo 100
 }
 
+# Default sizes for full experiment suite (can override with explicit size args)
+# tiny/mini/base recommended for limited data, small/medium/large for larger datasets
 DEFAULT_SIZES="small medium large"
 TOKENIZERS="${TOKENIZERS:-tct utf8}"
 

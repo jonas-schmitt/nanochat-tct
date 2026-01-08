@@ -3,7 +3,10 @@ Schema-agnostic model configurations for TCT experiments.
 
 All schemas use context_size=2048.
 
-Three preset architectures (sized for ~50M/125M/350M with vocab=1000):
+Preset architectures (sized for vocab=1000):
+- Tiny:   d_model=256, 6 layers, SwiGLU 2.5x   (~5M params)
+- Mini:   d_model=384, 8 layers, SwiGLU 2.5x   (~15M params)
+- Base:   d_model=512, 10 layers, SwiGLU 2.5x  (~32M params)
 - Small:  d_model=512, 16 layers, SwiGLU 2.5x  (~50M params)
 - Medium: d_model=768, 16 layers, SwiGLU 3.0x  (~125M params)
 - Large:  d_model=1024, 24 layers, SwiGLU 3.25x (~350M params)
@@ -13,9 +16,15 @@ Used by LLaMA, Mistral, etc. for better performance.
 
 Dropout is 0.2 for all model sizes, combined with batch size 64 for regularization.
 
+Token/param ratios for 117M token dataset (kubernetes):
+- Tiny:  ~21x (optimal per Chinchilla)
+- Mini:  ~8x  (good generalization)
+- Base:  ~4x  (balanced)
+- Small: ~2x  (may overfit)
+
 The SAME architecture is used for ALL schemas and tokenizers.
 Reference: kubernetes (vocab=1000)
-- Low vocab schemas (258-1000): ~50M/125M/350M as designed
+- Low vocab schemas (258-1000): params as designed
 - High vocab schemas (20k+): More params from larger embeddings
 """
 
@@ -24,6 +33,36 @@ from typing import Dict, Any
 # =============================================================================
 # Core Model Architectures (vocab/context independent)
 # =============================================================================
+
+TINY_ARCH = {
+    "d_model": 256,
+    "n_layers": 6,
+    "n_heads": 4,  # head_dim=64
+    "ffn_mult": 2.5,  # SwiGLU multiplier
+    "use_swiglu": True,
+    "dropout": 0.2,  # Dropout for regularization
+    "transformer_params": "~5M",
+}
+
+MINI_ARCH = {
+    "d_model": 384,
+    "n_layers": 8,
+    "n_heads": 6,  # head_dim=64
+    "ffn_mult": 2.5,  # SwiGLU multiplier
+    "use_swiglu": True,
+    "dropout": 0.2,  # Dropout for regularization
+    "transformer_params": "~15M",
+}
+
+BASE_ARCH = {
+    "d_model": 512,
+    "n_layers": 10,
+    "n_heads": 8,  # head_dim=64
+    "ffn_mult": 2.5,  # SwiGLU multiplier
+    "use_swiglu": True,
+    "dropout": 0.2,  # Dropout for regularization
+    "transformer_params": "~32M",
+}
 
 SMALL_ARCH = {
     "d_model": 512,
@@ -70,6 +109,9 @@ LARGE_ARCH = {
 }
 
 ARCHITECTURES = {
+    "tiny": TINY_ARCH,
+    "mini": MINI_ARCH,
+    "base": BASE_ARCH,
     "small": SMALL_ARCH,
     "small-wide": SMALL_WIDE_ARCH,
     "medium": MEDIUM_ARCH,
@@ -93,6 +135,9 @@ TARGET_EFFECTIVE_BATCH = 64
 REFERENCE_VRAM_GB = 24
 REFERENCE_BATCH_SIZES = {
     2048: {
+        "tiny": 32,        # d=256, L=6, SwiGLU 2.5x, ~5M model
+        "mini": 32,        # d=384, L=8, SwiGLU 2.5x, ~15M model
+        "base": 16,        # d=512, L=10, SwiGLU 2.5x, ~32M model
         "small": 16,       # d=512, L=16, SwiGLU 2.5x, ~50M model
         "small-wide": 16,  # d=768, L=7, SwiGLU 2.5x, ~50M model (fewer layers = similar memory)
         "medium": 8,       # d=768, L=16, SwiGLU 3.0x, ~126M model
@@ -178,6 +223,9 @@ COMMON_TRAINING = {
 
 # Learning rate adjustments by model size (smaller for larger models)
 LR_ADJUSTMENTS = {
+    "tiny": 6e-4,        # ~5M params (higher LR for smaller model)
+    "mini": 5e-4,        # ~15M params
+    "base": 4e-4,        # ~32M params
     "small": 4e-4,       # ~50M params (base LR for batch 64)
     "small-wide": 4e-4,  # ~50M params (same as small)
     "medium": 3e-4,      # ~125M params (scaled down)
@@ -189,6 +237,24 @@ LR_ADJUSTMENTS = {
 # =============================================================================
 
 MODEL_CONFIGS = {
+    "tiny": {
+        **TINY_ARCH,
+        **COMMON_TRAINING,
+        "learning_rate": LR_ADJUSTMENTS["tiny"],
+        "description": "Tiny model (~5M with vocab=1k), 6 layers - best token/param ratio",
+    },
+    "mini": {
+        **MINI_ARCH,
+        **COMMON_TRAINING,
+        "learning_rate": LR_ADJUSTMENTS["mini"],
+        "description": "Mini model (~15M with vocab=1k), 8 layers - good generalization",
+    },
+    "base": {
+        **BASE_ARCH,
+        **COMMON_TRAINING,
+        "learning_rate": LR_ADJUSTMENTS["base"],
+        "description": "Base model (~32M with vocab=1k), 10 layers - balanced",
+    },
     "small": {
         **SMALL_ARCH,
         **COMMON_TRAINING,
@@ -371,7 +437,7 @@ def print_model_summary():
     print()
     print("-" * 85)
 
-    for size in ["small", "medium", "large"]:
+    for size in ["tiny", "mini", "base", "small", "medium", "large"]:
         print(f"{size:<12}", end="")
         for gpu_name, vram in target_gpus:
             cfg = compute_batch_config(size, 2048, gpu_memory_gb=vram)
