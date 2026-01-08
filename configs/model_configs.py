@@ -100,13 +100,13 @@ BASE_ARCH = {
 
 SMALL_ARCH = {
     "d_model": 512,
-    "n_layers": 16,
+    "n_layers": 14,
     "n_heads": 8,  # head_dim=64
-    "ffn_mult": 2.5,  # SwiGLU multiplier to hit ~50M target
+    "ffn_mult": 3.0,  # SwiGLU multiplier (modern LLM practice)
     "use_swiglu": True,
     "dropout": 0.2,  # Dropout for overparameterized model
     "weight_decay": 0.1,  # Weight decay for overparameterized model
-    "transformer_params": "~50M",
+    "transformer_params": "~48M",
 }
 
 # Wider but shallower variant of SMALL - same params, potentially faster
@@ -291,25 +291,28 @@ MODEL_CONFIGS = {
         **TINY_ARCH,
         **COMMON_TRAINING,
         "learning_rate": LR_ADJUSTMENTS["tiny"],
+        "epochs_multiplier": 1.5,  # 150 epochs (Chinchilla-optimal training)
         "description": "Tiny model (~5M with vocab=1k), 6 layers - best token/param ratio",
     },
     "mini": {
         **MINI_ARCH,
         **COMMON_TRAINING,
         "learning_rate": LR_ADJUSTMENTS["mini"],
+        "epochs_multiplier": 1.5,  # 150 epochs (Chinchilla-optimal training)
         "description": "Mini model (~15M with vocab=1k), 8 layers - good generalization",
     },
     "base": {
         **BASE_ARCH,
         **COMMON_TRAINING,
         "learning_rate": LR_ADJUSTMENTS["base"],
+        "epochs_multiplier": 1.5,  # 150 epochs (Chinchilla-optimal training)
         "description": "Base model (~32M with vocab=1k), 10 layers - balanced",
     },
     "small": {
         **SMALL_ARCH,
         **COMMON_TRAINING,
         "learning_rate": LR_ADJUSTMENTS["small"],
-        "description": "Small model (~50M with vocab=1k), 16 layers",
+        "description": "Small model (~48M with vocab=1k), 14 layers",
     },
     "small-wide": {
         **SMALL_WIDE_ARCH,
