@@ -163,10 +163,19 @@ ARCHITECTURES = {
 # =============================================================================
 # Dynamic Batch Size Scaling
 # =============================================================================
-# Target effective batch: 64 (good balance of stability and regularization)
-# Maximize micro batch for GPU efficiency, use grad_accum to reach target eff batch
+# Target effective batch sizes per model
+# - tiny/mini: 128 (Chinchilla-optimal, benefit from larger stable batches)
+# - base+: 64 (borderline/overparameterized, smaller batch adds regularization)
 
-TARGET_EFFECTIVE_BATCH = 64
+TARGET_EFFECTIVE_BATCH = {
+    "tiny": 128,
+    "mini": 128,
+    "base": 64,
+    "small": 64,
+    "small-wide": 64,
+    "medium": 64,
+    "large": 64,
+}
 
 # Reference batch sizes: max micro batch that fits on 24GB VRAM (RTX 4090/3090)
 # These scale linearly with available VRAM (computed in compute_batch_config)
@@ -238,8 +247,9 @@ def compute_batch_config(model_size: str, context_size: int, gpu_memory_gb: floa
     else:
         batch_size = valid_batches[0]  # Largest that fits
 
-    # Compute gradient accumulation to reach target
-    grad_accum = max(1, TARGET_EFFECTIVE_BATCH // batch_size)
+    # Compute gradient accumulation to reach target (model-specific)
+    target_eff_batch = TARGET_EFFECTIVE_BATCH.get(model_size, 64)
+    grad_accum = max(1, target_eff_batch // batch_size)
 
     return {
         "batch_size": batch_size,
