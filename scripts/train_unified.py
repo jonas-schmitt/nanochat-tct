@@ -29,6 +29,7 @@ os.environ["TORCHINDUCTOR_CACHE_DIR"] = "/tmp/torchinductor_cache"
 # Suppress verbose torch.compile / autotune output
 os.environ["TORCHINDUCTOR_VERBOSE"] = "0"
 os.environ["TORCH_LOGS"] = "-all"
+os.environ["TRITON_PRINT_AUTOTUNING"] = "0"
 
 import gc
 import shutil
