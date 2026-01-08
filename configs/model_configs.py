@@ -14,7 +14,8 @@ Preset architectures (sized for vocab=1000):
 SwiGLU: Gated linear unit with 3 FFN matrices (gate, up, down) instead of 2.
 Used by LLaMA, Mistral, etc. for better performance.
 
-Dropout is 0.2 for all model sizes, combined with batch size 64 for regularization.
+Dropout scales with model size: 0.0 for tiny/mini, 0.1 for base, 0.2 for small+.
+Smaller models at Chinchilla-optimal ratios don't need dropout regularization.
 
 Token/param ratios for 117M token dataset (kubernetes):
 - Tiny:  ~21x (optimal per Chinchilla)
@@ -40,7 +41,7 @@ TINY_ARCH = {
     "n_heads": 4,  # head_dim=64
     "ffn_mult": 2.5,  # SwiGLU multiplier
     "use_swiglu": True,
-    "dropout": 0.2,  # Dropout for regularization
+    "dropout": 0.0,  # No dropout - Chinchilla optimal, no spare capacity
     "transformer_params": "~5M",
 }
 
@@ -50,7 +51,7 @@ MINI_ARCH = {
     "n_heads": 6,  # head_dim=64
     "ffn_mult": 2.5,  # SwiGLU multiplier
     "use_swiglu": True,
-    "dropout": 0.2,  # Dropout for regularization
+    "dropout": 0.0,  # No dropout - good token/param ratio
     "transformer_params": "~15M",
 }
 
@@ -60,7 +61,7 @@ BASE_ARCH = {
     "n_heads": 8,  # head_dim=64
     "ffn_mult": 2.5,  # SwiGLU multiplier
     "use_swiglu": True,
-    "dropout": 0.2,  # Dropout for regularization
+    "dropout": 0.1,  # Light dropout - moderately over-parameterized
     "transformer_params": "~32M",
 }
 
