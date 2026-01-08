@@ -8,8 +8,8 @@
 # 2. Extracts training data if needed
 # 3. Submits all training jobs
 #
-# Submits ALL model sizes (small/medium/large) for ALL schemas and tokenizers
-# Total: 3 schemas × 2 tokenizers × 3 sizes = 18 experiments with dropout=0.2
+# Submits ALL model sizes for ALL schemas and tokenizers
+# Total: 3 schemas × 2 tokenizers × 6 sizes = 36 experiments
 #
 # Usage:
 #   bash scripts/submit_all.sh              # Submit all jobs (resume from checkpoints)
@@ -79,11 +79,11 @@ echo "Venv: $VENV_DIR"
 [ -n "$CONDA_ENV_DIR" ] && echo "Conda: $CONDA_ENV_DIR"
 echo "Commit: $CURRENT_COMMIT"
 echo "Resume: $([ -n "$RESUME" ] && echo "YES (from checkpoints)" || echo "NO (fresh start)")"
-echo "Epochs: tsconfig=100, eslintrc=125, kubernetes=150"
-echo "Checkpoint: every 10% of training"
-echo "Models: small, medium, large (all schemas, TCT + UTF8)"
-echo "GPU: small/medium=A100, large=A100_80"
-echo "Total jobs: 18 (3 schemas × 2 tokenizers × 3 sizes)"
+echo "Epochs: base=100×1.5, small+=100 (schema-dependent)"
+echo "Checkpoint: every 5% (tiny/mini/base), 10% (small+)"
+echo "Models: tiny, mini, base, small, medium, large (all schemas, TCT + UTF8)"
+echo "GPU: tiny/mini/base=A40, small/medium=A100, large=A100_80"
+echo "Total jobs: 36 (3 schemas × 2 tokenizers × 6 sizes)"
 [ -n "$DRY_RUN" ] && echo "Mode: DRY RUN"
 echo "============================================================"
 echo
@@ -249,24 +249,33 @@ submit_job() {
 
 # Submit jobs for each schema (all model sizes, all tokenizers)
 # Each submit_job creates a SEPARATE Slurm job
-# Total: 3 schemas × 2 tokenizers × 3 sizes = 18 separate jobs
+# Total: 3 schemas × 2 tokenizers × 6 sizes = 36 separate jobs
 for schema in $SCHEMAS; do
     echo ">>> Schema: $schema"
     echo
 
-    # Small TCT (separate job)
+    # Tiny TCT/UTF8 (A40, no dropout)
+    submit_job "$schema tiny tct --gpu=a40"
+    submit_job "$schema tiny utf8 --gpu=a40"
+
+    # Mini TCT/UTF8 (A40, no dropout)
+    submit_job "$schema mini tct --gpu=a40"
+    submit_job "$schema mini utf8 --gpu=a40"
+
+    # Base TCT/UTF8 (A40, no dropout)
+    submit_job "$schema base tct --gpu=a40"
+    submit_job "$schema base utf8 --gpu=a40"
+
+    # Small TCT/UTF8 (A100, dropout=0.2)
     submit_job "$schema small tct --dropout=$DROPOUT"
-    # Small UTF8 (separate job)
     submit_job "$schema small utf8 --dropout=$DROPOUT"
 
-    # Medium TCT (separate job)
+    # Medium TCT/UTF8 (A100, dropout=0.2)
     submit_job "$schema medium tct --dropout=$DROPOUT"
-    # Medium UTF8 (separate job)
     submit_job "$schema medium utf8 --dropout=$DROPOUT"
 
-    # Large TCT (separate job, A100_80 for memory)
+    # Large TCT/UTF8 (A100_80 for memory, dropout=0.2)
     submit_job "$schema large tct --gpu=a100_80 --dropout=$DROPOUT"
-    # Large UTF8 (separate job, A100_80 for memory)
     submit_job "$schema large utf8 --gpu=a100_80 --dropout=$DROPOUT"
 
     echo
