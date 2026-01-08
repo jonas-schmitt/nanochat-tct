@@ -28,6 +28,7 @@ os.environ["PYTORCH_ALLOC_CONF"] = "expandable_segments:True,garbage_collection_
 os.environ["TORCHINDUCTOR_CACHE_DIR"] = "/tmp/torchinductor_cache"
 
 import gc
+import math
 import shutil
 import json
 import sys
@@ -163,21 +164,8 @@ elif eff_batch is not None:
 else:
     grad_accum = model_cfg["gradient_accumulation"]
 
-# Learning rate with automatic batch size scaling (sqrt rule)
-# Base LRs calibrated for batch 64: small=4e-4, medium=3e-4, large=2e-4
-# Scales with sqrt(actual_batch/64) if batch differs from reference
-REFERENCE_BATCH = 64  # LR values in config are calibrated for this batch size
+# Effective batch size (for logging)
 actual_eff_batch = B * grad_accum * ddp_world_size
-base_lr = model_cfg["learning_rate"]  # Model-specific base LR
-if learning_rate_override is not None:
-    learning_rate = learning_rate_override
-elif actual_eff_batch != REFERENCE_BATCH:
-    # Scale LR with sqrt of batch ratio
-    import math
-    scale = math.sqrt(actual_eff_batch / REFERENCE_BATCH)
-    learning_rate = base_lr * scale
-else:
-    learning_rate = base_lr
 weight_decay = model_cfg["weight_decay"]
 beta1 = model_cfg["beta1"]
 beta2 = model_cfg["beta2"]
@@ -208,9 +196,7 @@ print0(f"Batch size: {B}")
 print0(f"Gradient accumulation: {grad_accum}")
 print0(f"Effective batch size: {B * grad_accum * ddp_world_size}")
 lr_sched_effective = lr_schedule if lr_schedule else model_cfg.get("lr_schedule", "constant")
-lr_sched_desc = "constant" if lr_sched_effective == "constant" else f"cosine decay to {learning_rate * 0.1:.1e}"
-lr_scaled_note = f" (scaled from {base_lr:.1e} for batch {actual_eff_batch})" if actual_eff_batch != REFERENCE_BATCH and learning_rate_override is None else ""
-print0(f"Learning rate: {learning_rate:.4e} ({lr_sched_desc}){lr_scaled_note}")
+print0(f"LR schedule: {lr_sched_effective}")
 print0()
 print0(f"Epochs: {num_epochs}")
 print0(f"Steps per epoch: {steps_per_epoch}")
@@ -350,6 +336,17 @@ if use_muon:
     adamw_optimizer, muon_optimizer = optimizers
 else:
     # Plain AdamW for all parameters (simpler, for comparison)
+    # Calculate learning rate with sqrt scaling for batch size
+    REFERENCE_BATCH = 64  # LR values in config are calibrated for this batch size
+    base_lr = model_cfg["learning_rate"]
+    if learning_rate_override is not None:
+        learning_rate = learning_rate_override
+    elif actual_eff_batch != REFERENCE_BATCH:
+        scale = math.sqrt(actual_eff_batch / REFERENCE_BATCH)
+        learning_rate = base_lr * scale
+    else:
+        learning_rate = base_lr
+
     print0(f"Optimizer: AdamW (all params, lr={learning_rate:.2e})")
     optimizer = torch.optim.AdamW(
         model.parameters(),
@@ -429,9 +426,6 @@ print0(f"First batch shape: x={x.shape}, y={y.shape}")
 print0()
 
 # Learning rate scheduler
-import math
-min_lr = learning_rate * 0.1  # Decay to 10% of max LR
-# Use CLI override if provided, otherwise use config default
 lr_schedule_actual = lr_schedule if lr_schedule else model_cfg.get("lr_schedule", "constant")
 
 def get_lr_multiplier(step):
@@ -445,10 +439,6 @@ def get_lr_multiplier(step):
     # Cosine decay phase (decay to 10% of max)
     progress = (step - warmup_steps) / max(1, total_steps - warmup_steps)
     return 0.1 + 0.5 * 0.9 * (1 + math.cos(math.pi * progress))
-
-def get_lr(step):
-    """Get absolute LR for plain AdamW (backward compatibility)."""
-    return learning_rate * get_lr_multiplier(step)
 
 def get_muon_momentum(step):
     """Momentum scheduler for Muon - ramps from 0.85 to 0.95 over first 300 steps."""
