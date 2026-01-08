@@ -133,12 +133,14 @@ TARGET_EFFECTIVE_BATCH = 64
 
 # Reference batch sizes: max micro batch that fits on 24GB VRAM (RTX 4090/3090)
 # These scale linearly with available VRAM (computed in compute_batch_config)
+# Smaller models (tiny/mini/base) use larger batches to maximize GPU utilization
+# and eliminate gradient accumulation overhead
 REFERENCE_VRAM_GB = 24
 REFERENCE_BATCH_SIZES = {
     2048: {
-        "tiny": 32,        # d=256, L=6, SwiGLU 2.5x, ~5M model
-        "mini": 32,        # d=384, L=8, SwiGLU 2.5x, ~15M model
-        "base": 16,        # d=512, L=10, SwiGLU 2.5x, ~32M model
+        "tiny": 128,       # d=256, L=6, SwiGLU 2.5x, ~5M model - no grad_accum needed
+        "mini": 64,        # d=384, L=8, SwiGLU 2.5x, ~15M model - no grad_accum needed
+        "base": 32,        # d=512, L=10, SwiGLU 2.5x, ~32M model - minimal grad_accum
         "small": 16,       # d=512, L=16, SwiGLU 2.5x, ~50M model
         "small-wide": 16,  # d=768, L=7, SwiGLU 2.5x, ~50M model (fewer layers = similar memory)
         "medium": 8,       # d=768, L=16, SwiGLU 3.0x, ~126M model
@@ -191,8 +193,8 @@ def compute_batch_config(model_size: str, context_size: int, gpu_memory_gb: floa
     # Find largest power-of-2 batch size that:
     # 1. Fits in GPU memory (≤ max_batch)
     # 2. Divides target evenly OR equals target
-    # Valid batch sizes: 1, 2, 4, 8, 16, 32
-    valid_batches = [b for b in [32, 16, 8, 4, 2, 1] if b <= max_batch]
+    # Valid batch sizes: 1, 2, 4, 8, 16, 32, 64, 128, 256
+    valid_batches = [b for b in [256, 128, 64, 32, 16, 8, 4, 2, 1] if b <= max_batch]
 
     if not valid_batches:
         batch_size = 1
