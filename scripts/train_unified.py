@@ -292,14 +292,16 @@ if device_type == "cuda":
     torch.cuda.empty_cache()
     torch.cuda.reset_peak_memory_stats()
     torch.cuda.synchronize()
-    # Clear stale inductor cache that might cause memory issues
-    inductor_cache = Path("/tmp/torchinductor_cache")
-    if inductor_cache.exists():
-        try:
-            shutil.rmtree(inductor_cache)
-            print0("Cleared torch inductor cache")
-        except Exception as e:
-            print0(f"Warning: Could not clear inductor cache: {e}")
+    # Clear stale inductor cache for larger models (OOM risk from stale cache)
+    # Keep cache for tiny/mini/base (faster startup, lower OOM risk)
+    if model_size not in ["tiny", "mini", "base"]:
+        inductor_cache = Path("/tmp/torchinductor_cache")
+        if inductor_cache.exists():
+            try:
+                shutil.rmtree(inductor_cache)
+                print0("Cleared torch inductor cache (large model)")
+            except Exception as e:
+                print0(f"Warning: Could not clear inductor cache: {e}")
 
 orig_model = model
 if use_torch_compile:
