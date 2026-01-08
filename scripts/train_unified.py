@@ -578,6 +578,9 @@ for step in range(start_step, total_steps + 1):
         break
 
     # Training step
+    # Mark CUDA graph step boundary to prevent tensor overwrite errors with torch.compile
+    if use_torch_compile and device_type == "cuda":
+        torch.compiler.cudagraph_mark_step_begin()
     synchronize()
     t0 = time.time()
 
