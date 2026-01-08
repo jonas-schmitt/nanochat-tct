@@ -100,7 +100,7 @@ scale_lr_by_batch = False  # optional: scale AdamW LRs by sqrt(batch/524K)
 # RunPod detection
 is_runpod = os.environ.get("RUNPOD_POD_ID") is not None
 
-save_every_pct = 10  # 10% checkpoint frequency for all platforms (override with CLI)
+save_every_pct = None  # None => 5% for tiny/mini/base, 10% for small+ (override with CLI)
 num_eval_batches = 100  # number of batches for validation
 reshuffle_data = True   # reshuffle train+val data randomly (fixes sequential split)
 gradient_checkpointing = False  # trade compute for memory (enable with --gradient_checkpointing=True)
@@ -186,6 +186,10 @@ beta2 = model_cfg["beta2"]
 steps_per_epoch = get_epoch_steps(train_tokens, T, B, grad_accum, ddp_world_size)
 total_steps = steps_per_epoch * num_epochs
 warmup_steps = get_warmup_steps(train_tokens, T, B, grad_accum, ddp_world_size, warmup_fraction)
+
+# Checkpoint frequency: 5% for tiny/mini/base (more checkpoints), 10% for small+ (fewer)
+if save_every_pct is None:
+    save_every_pct = 5 if model_size in ["tiny", "mini", "base"] else 10
 save_interval = max(1, total_steps * save_every_pct // 100)
 
 print0("=" * 80)
