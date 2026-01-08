@@ -256,6 +256,9 @@ class GPT(nn.Module):
         dmodel_lr_scale = (model_dim / 768) ** -0.5
         if rank == 0:
             print(f"Scaling the LR for the AdamW parameters ∝1/√({model_dim}/768) = {dmodel_lr_scale:.6f}")
+        # AdamW for embeddings (Muon doesn't work well for 1D params)
+        # β1=0.8 (lower than typical 0.9 for stability with Muon)
+        # β2=0.95 (standard for LLM training)
         adam_groups = [
             dict(params=lm_head_params, lr=unembedding_lr * dmodel_lr_scale),
             dict(params=embedding_params, lr=embedding_lr * dmodel_lr_scale),
@@ -264,7 +267,12 @@ class GPT(nn.Module):
         AdamWFactory = DistAdamW if ddp else partial(torch.optim.AdamW, fused=True)
         adamw_optimizer = AdamWFactory(adam_groups, **adamw_kwargs)
         # Create the Muon optimizer for the linear layers
-        muon_kwargs = dict(lr=matrix_lr, momentum=0.95)
+        # Hyperparameters from Jordan (2024) and Essential AI (2025):
+        # - lr=0.02 is batch-invariant (no scaling needed)
+        # - momentum=0.95 (ramped from 0.85 over 300 steps in training loop)
+        # - nesterov=True for faster convergence
+        # - ns_steps=5 Newton-Schulz iterations for orthogonalization
+        muon_kwargs = dict(lr=matrix_lr, momentum=0.95, nesterov=True, ns_steps=5)
         MuonFactory = DistMuon if ddp else Muon
         muon_optimizer = MuonFactory(matrix_params, **muon_kwargs)
         # Combine them the two optimizers into one list
