@@ -646,6 +646,13 @@ print0(f"Total time: {total_training_time/60:.1f}m ({total_training_time/3600:.2
 print0(f"Min val loss: {min_val_loss:.4f}")
 print0()
 
+# Write completion marker (used by run.sh to detect finished experiments)
+if master_process:
+    output_dirname = model_tag if model_tag else f"{schema}_{tokenizer}_{model_size}"
+    complete_marker = checkpoint_base / output_dirname / "COMPLETE"
+    complete_marker.write_text(f"Training completed at step {total_steps}, min_val_loss={min_val_loss:.4f}\n")
+    print0(f"Completion marker: {complete_marker}")
+
 # Cleanup
 del model, orig_model, optimizers, train_loader
 gc.collect()

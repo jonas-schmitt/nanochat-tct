@@ -197,8 +197,8 @@ for size in $SIZES; do
             [ -n "$EFF_BATCH" ] && exp_name="${exp_name}_batch${EFF_BATCH}"
             log_file="$LOG_DIR/${exp_name}.log"
 
-            # Skip if already completed
-            if [ -f "${CHECKPOINT_DIR}/${exp_name}/best.pt" ]; then
+            # Skip if already completed (COMPLETE marker written at end of training)
+            if [ -f "${CHECKPOINT_DIR}/${exp_name}/COMPLETE" ]; then
                 echo "[SKIP] $exp_name (already completed)"
                 continue
             fi
