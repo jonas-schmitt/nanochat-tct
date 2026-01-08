@@ -14,14 +14,21 @@ Preset architectures (sized for vocab=1000):
 SwiGLU: Gated linear unit with 3 FFN matrices (gate, up, down) instead of 2.
 Used by LLaMA, Mistral, etc. for better performance.
 
-Dropout scales with model size: 0.0 for tiny/mini, 0.1 for base, 0.2 for small+.
-Smaller models at Chinchilla-optimal ratios don't need dropout regularization.
+Regularization scales with model size:
+- Tiny/Mini/Base: dropout=0.0-0.1, weight_decay=0.0 (near Chinchilla-optimal)
+- Small+: dropout=0.2, weight_decay=0.1 (overparameterized, needs regularization)
 
-Token/param ratios for 117M token dataset (kubernetes):
-- Tiny:  ~21x (optimal per Chinchilla)
-- Mini:  ~8x  (good generalization)
-- Base:  ~4x  (balanced)
-- Small: ~2x  (may overfit)
+Token/param ratios for 117M token dataset (kubernetes, single epoch):
+- Tiny:  ~21x (Chinchilla optimal)
+- Mini:  ~8x  (good capacity)
+- Base:  ~4x  (moderate)
+- Small: ~2x  (overparameterized)
+
+With 100 epochs (~3-5x effective multiplier due to diminishing returns):
+- Tiny:  61-102x effective ratio
+- Mini:  23-38x effective ratio (close to optimal)
+- Base:  11-18x effective ratio
+- Small: 7-11x effective ratio
 
 The SAME architecture is used for ALL schemas and tokenizers.
 Reference: kubernetes (vocab=1000)
@@ -41,7 +48,8 @@ TINY_ARCH = {
     "n_heads": 4,  # head_dim=64
     "ffn_mult": 2.5,  # SwiGLU multiplier
     "use_swiglu": True,
-    "dropout": 0.0,  # No dropout - Chinchilla optimal, no spare capacity
+    "dropout": 0.0,  # No dropout - Chinchilla optimal
+    "weight_decay": 0.0,  # No weight decay - Chinchilla optimal
     "transformer_params": "~5M",
 }
 
@@ -52,6 +60,7 @@ MINI_ARCH = {
     "ffn_mult": 2.5,  # SwiGLU multiplier
     "use_swiglu": True,
     "dropout": 0.0,  # No dropout - good token/param ratio
+    "weight_decay": 0.0,  # No weight decay - good token/param ratio
     "transformer_params": "~15M",
 }
 
@@ -61,7 +70,8 @@ BASE_ARCH = {
     "n_heads": 8,  # head_dim=64
     "ffn_mult": 2.5,  # SwiGLU multiplier
     "use_swiglu": True,
-    "dropout": 0.1,  # Light dropout - moderately over-parameterized
+    "dropout": 0.1,  # Light dropout - near Chinchilla optimal
+    "weight_decay": 0.0,  # No weight decay - near Chinchilla optimal
     "transformer_params": "~32M",
 }
 
@@ -71,7 +81,8 @@ SMALL_ARCH = {
     "n_heads": 8,  # head_dim=64
     "ffn_mult": 2.5,  # SwiGLU multiplier to hit ~50M target
     "use_swiglu": True,
-    "dropout": 0.2,  # Dropout for regularization
+    "dropout": 0.2,  # Dropout for overparameterized model
+    "weight_decay": 0.1,  # Weight decay for overparameterized model
     "transformer_params": "~50M",
 }
 
@@ -85,7 +96,8 @@ SMALL_WIDE_ARCH = {
     "n_heads": 12,  # head_dim=64
     "ffn_mult": 3.0,  # Higher FFN capacity
     "use_swiglu": True,
-    "dropout": 0.2,  # Dropout for regularization
+    "dropout": 0.2,  # Dropout for overparameterized model
+    "weight_decay": 0.1,  # Weight decay for overparameterized model
     "transformer_params": "~48M",  # 48.37M - similar to SMALL_ARCH
 }
 
@@ -95,7 +107,8 @@ MEDIUM_ARCH = {
     "n_heads": 12,  # head_dim=64
     "ffn_mult": 3.0,  # SwiGLU multiplier to hit ~125M target
     "use_swiglu": True,
-    "dropout": 0.2,  # Dropout for regularization
+    "dropout": 0.2,  # Dropout for overparameterized model
+    "weight_decay": 0.1,  # Weight decay for overparameterized model
     "transformer_params": "~125M",
 }
 
@@ -105,7 +118,8 @@ LARGE_ARCH = {
     "n_heads": 16,  # head_dim=64
     "ffn_mult": 3.25,  # SwiGLU multiplier to hit ~350M target
     "use_swiglu": True,
-    "dropout": 0.2,  # Dropout for regularization
+    "dropout": 0.2,  # Dropout for overparameterized model
+    "weight_decay": 0.1,  # Weight decay for overparameterized model
     "transformer_params": "~350M",
 }
 
@@ -212,10 +226,10 @@ def compute_batch_config(model_size: str, context_size: int, gpu_memory_gb: floa
     }
 
 # Common training hyperparameters (all configs)
+# Note: weight_decay is model-specific (in ARCH dicts), not here
 COMMON_TRAINING = {
     "learning_rate": 4e-4,  # Base LR (overridden by LR_ADJUSTMENTS per model size)
     "lr_schedule": "cosine",  # Cosine decay with warmup
-    "weight_decay": 0.1,
     "beta1": 0.9,
     "beta2": 0.95,
     "grad_clip": 1.0,
