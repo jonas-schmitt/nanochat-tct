@@ -472,6 +472,7 @@ min_val_loss = resumed_min_val_loss
 smooth_train_loss = resumed_smooth_train_loss
 ema_beta = 0.9
 total_training_time = 0
+is_best = False  # Track if current checkpoint is best (set during eval)
 
 for step in range(start_step, total_steps + 1):
     current_epoch = step // steps_per_epoch
@@ -479,6 +480,7 @@ for step in range(start_step, total_steps + 1):
     last_step = step == total_steps
 
     # Evaluation at epoch boundaries
+    is_best = False  # Reset for this step
     if last_step or (epoch_step == 0 and current_epoch > 0 and current_epoch % eval_every_epoch == 0):
         val_loss = evaluate()
         val_ppl = torch.exp(torch.tensor(val_loss)).item()
@@ -488,7 +490,7 @@ for step in range(start_step, total_steps + 1):
         print0(f"Epoch {current_epoch:3d} | Step {step:6d} | Val loss: {val_loss:.4f} | Val ppl: {val_ppl:.2f}" +
                (" (best)" if is_best else ""))
 
-    # Checkpointing
+    # Checkpointing - reuse is_best from eval block above (don't recalculate!)
     if master_process and (last_step or (step > 0 and step % save_interval == 0)):
         save_checkpoint(
             step=step,
@@ -496,7 +498,7 @@ for step in range(start_step, total_steps + 1):
             val_loss=val_loss if 'val_loss' in locals() else 0.0,
             min_val_loss_current=min_val_loss,
             smooth_train_loss_current=smooth_train_loss,
-            is_best=val_loss < min_val_loss if 'val_loss' in locals() else False
+            is_best=is_best,
         )
 
     if last_step:
