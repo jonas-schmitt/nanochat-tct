@@ -61,7 +61,7 @@ if [ -z "$SCHEMAS" ]; then
     echo "Options:"
     echo "  resume              Resume from latest checkpoint"
     echo "  --epochs=N          Override max epochs (default: schema-specific)"
-    echo "  --dropout=0.2       Set dropout (default: 0.2)"
+    echo "  --dropout=X         Override dropout (default: model-dependent)"
     echo "  --lr_schedule=X     LR schedule: cosine (default) or constant"
     echo "  constant            Shorthand for --lr_schedule=constant"
     echo "  --eff_batch=N       Effective batch size (default: 64)"
@@ -76,7 +76,7 @@ if [ -z "$SCHEMAS" ]; then
     echo "  bash scripts/run.sh kubernetes small tct"
     echo "  bash scripts/run.sh kubernetes tsconfig resume"
     echo "  bash scripts/run.sh kubernetes --epochs=50          # Shorter training"
-    echo "  bash scripts/run.sh kubernetes --dropout=0.2        # Custom dropout"
+    echo "  bash scripts/run.sh kubernetes tiny mini base       # Run smaller models"
     echo "  bash scripts/run.sh kubernetes constant             # No LR decay"
     exit 1
 fi
@@ -166,11 +166,7 @@ echo "Schemas: $SCHEMAS"
 echo "Sizes: $SIZES"
 echo "Tokenizers: ${FILTER_TOKENIZER:-$TOKENIZERS}"
 [ -n "$EPOCHS_OVERRIDE" ] && echo "Epochs: $EPOCHS_OVERRIDE (override)"
-if [ -n "$DROPOUT" ]; then
-    echo "Dropout: $DROPOUT"
-else
-    echo "Dropout: 0.2 (default)"
-fi
+[ -n "$DROPOUT" ] && echo "Dropout: $DROPOUT (override)"
 [ -n "$LR_SCHEDULE" ] && echo "LR Schedule: $LR_SCHEDULE"
 [ -n "$EFF_BATCH" ] && echo "Effective batch: $EFF_BATCH"
 [ -n "$RESUME_MODE" ] && echo "Mode: RESUME"
