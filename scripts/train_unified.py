@@ -89,6 +89,11 @@ dropout = 0.2           # dropout for regularization (combined with batch 64)
 learning_rate_override = None  # None => use config default, or e.g. 3e-4
 resume_from_epoch = 0   # resume training from this epoch (0 = start fresh)
 eval_every_epoch = 1    # evaluate every N epochs
+# Muon optimizer settings (from original nanochat)
+use_muon = True         # use Muon for transformer layers, AdamW for embeddings
+matrix_lr = 0.02        # learning rate for transformer layers (Muon)
+embedding_lr = 0.2      # learning rate for token embeddings (AdamW)
+unembedding_lr = 0.004  # learning rate for lm_head (AdamW)
 # RunPod detection
 is_runpod = os.environ.get("RUNPOD_POD_ID") is not None
 
@@ -299,19 +304,49 @@ else:
 num_params = sum(p.numel() for p in model.parameters())
 print0(f"Number of parameters: {num_params:,}")
 
-# Initialize optimizer
-optimizer = torch.optim.AdamW(
-    model.parameters(),
-    lr=learning_rate,
-    betas=(beta1, beta2),
-    weight_decay=weight_decay,
-)
+# Initialize optimizer(s)
+if use_muon:
+    # Muon for transformer layers, AdamW for embeddings (original nanochat setup)
+    # Scale LRs by 1/sqrt(d_model/768) as in original nanochat
+    d_model = model_cfg["d_model"]
+    dmodel_lr_scale = (d_model / 768) ** -0.5
+    print0(f"Optimizer: Muon + AdamW (d_model LR scale: {dmodel_lr_scale:.4f})")
+    print0(f"  Muon LR (transformer): {matrix_lr}")
+    print0(f"  AdamW LR (embeddings): {embedding_lr * dmodel_lr_scale:.6f}")
+    print0(f"  AdamW LR (lm_head): {unembedding_lr * dmodel_lr_scale:.6f}")
+    optimizers = orig_model.setup_optimizers(
+        unembedding_lr=unembedding_lr,
+        embedding_lr=embedding_lr,
+        matrix_lr=matrix_lr,
+        weight_decay=weight_decay,
+    )
+    adamw_optimizer, muon_optimizer = optimizers
+else:
+    # Plain AdamW for all parameters (simpler, for comparison)
+    print0(f"Optimizer: AdamW (all params, lr={learning_rate:.2e})")
+    optimizer = torch.optim.AdamW(
+        model.parameters(),
+        lr=learning_rate,
+        betas=(beta1, beta2),
+        weight_decay=weight_decay,
+    )
+    optimizers = [optimizer]
 
 # Restore optimizer state if resuming with new checkpoint format
 if resumed_checkpoint is not None and "optimizer_state_dict" in resumed_checkpoint:
     print0("Restoring optimizer state...")
-    optimizer.load_state_dict(resumed_checkpoint["optimizer_state_dict"])
-    print0("  Optimizer state restored (momentum/velocity preserved)")
+    opt_states = resumed_checkpoint["optimizer_state_dict"]
+    if isinstance(opt_states, list):
+        # New format: list of optimizer states
+        for opt, state in zip(optimizers, opt_states):
+            opt.load_state_dict(state)
+    else:
+        # Old format: single optimizer state (only works with use_muon=False)
+        if not use_muon:
+            optimizers[0].load_state_dict(opt_states)
+        else:
+            print0("  Warning: Old checkpoint format, cannot restore Muon optimizer state")
+    print0("  Optimizer state restored")
     # Clean up checkpoint data now that we're done with it
     del resumed_checkpoint
     gc.collect()
@@ -372,16 +407,26 @@ min_lr = learning_rate * 0.1  # Decay to 10% of max LR
 # Use CLI override if provided, otherwise use config default
 lr_schedule_actual = lr_schedule if lr_schedule else model_cfg.get("lr_schedule", "constant")
 
-def get_lr(step):
+def get_lr_multiplier(step):
+    """Get LR multiplier (0 to 1) for the given step. Applied to all optimizers."""
     # Warmup phase
     if step < warmup_steps:
-        return learning_rate * (step + 1) / warmup_steps
+        return (step + 1) / warmup_steps
     # After warmup: constant or cosine decay
     if lr_schedule_actual == "constant":
-        return learning_rate
-    # Cosine decay phase
+        return 1.0
+    # Cosine decay phase (decay to 10% of max)
     progress = (step - warmup_steps) / max(1, total_steps - warmup_steps)
-    return min_lr + 0.5 * (learning_rate - min_lr) * (1 + math.cos(math.pi * progress))
+    return 0.1 + 0.5 * 0.9 * (1 + math.cos(math.pi * progress))
+
+def get_lr(step):
+    """Get absolute LR for plain AdamW (backward compatibility)."""
+    return learning_rate * get_lr_multiplier(step)
+
+def get_muon_momentum(step):
+    """Momentum scheduler for Muon - ramps from 0.85 to 0.95 over first 300 steps."""
+    frac = min(step / 300, 1)
+    return (1 - frac) * 0.85 + frac * 0.95
 
 # Checkpoint saving - includes optimizer state for proper resume
 def save_checkpoint(step, epoch, val_loss, min_val_loss_current, smooth_train_loss_current, is_best=False):
@@ -396,12 +441,13 @@ def save_checkpoint(step, epoch, val_loss, min_val_loss_current, smooth_train_lo
     checkpoint_path = checkpoint_dir / f"epoch_{epoch:03d}.pt"
     checkpoint_data = {
         "model_state_dict": orig_model.state_dict(),
-        "optimizer_state_dict": optimizer.state_dict(),
+        "optimizer_state_dict": [opt.state_dict() for opt in optimizers],  # List of optimizer states
         "step": step,
         "epoch": epoch,
         "val_loss": val_loss,
         "min_val_loss": min_val_loss_current,
         "smooth_train_loss": smooth_train_loss_current,
+        "use_muon": use_muon,  # Track which optimizer setup was used
     }
     torch.save(checkpoint_data, checkpoint_path)
 
@@ -523,12 +569,18 @@ for step in range(start_step, total_steps + 1):
     if grad_clip > 0.0:
         torch.nn.utils.clip_grad_norm_(orig_model.parameters(), grad_clip)
 
-    # Optimizer step
-    lr = get_lr(step)
-    for param_group in optimizer.param_groups:
-        param_group["lr"] = lr
+    # Optimizer step - update LR for all optimizers, momentum for Muon
+    lrm = get_lr_multiplier(step)
+    for opt in optimizers:
+        for group in opt.param_groups:
+            group["lr"] = group["initial_lr"] * lrm
+    if use_muon:
+        muon_momentum = get_muon_momentum(step)
+        for group in muon_optimizer.param_groups:
+            group["momentum"] = muon_momentum
 
-    optimizer.step()
+    for opt in optimizers:
+        opt.step()
     model.zero_grad(set_to_none=True)
 
     synchronize()
@@ -542,13 +594,16 @@ for step in range(start_step, total_steps + 1):
     if step > start_step + 10:
         total_training_time += dt
 
+    # Get current LR for logging (use first optimizer's first group as representative)
+    current_lr = optimizers[0].param_groups[0]["lr"]
+
     if step % 10 == 0:
         pct_done = 100 * step / total_steps
         tok_per_sec = int(B * T * grad_accum * ddp_world_size / dt)
         train_ppl = torch.exp(torch.tensor(debiased_smooth_loss)).item()
         print0(f"E{current_epoch:02d} step {step:06d}/{total_steps:06d} ({pct_done:.1f}%) | "
                f"loss: {debiased_smooth_loss:.4f} | ppl: {train_ppl:.1f} | "
-               f"lr: {lr:.2e} | dt: {dt*1000:.0f}ms | tok/s: {tok_per_sec:,}")
+               f"lr: {current_lr:.2e} | dt: {dt*1000:.0f}ms | tok/s: {tok_per_sec:,}")
 
     # Periodic memory cleanup to prevent fragmentation
     if step % 1000 == 0 and device_type == "cuda":
@@ -567,7 +622,7 @@ print0(f"Min val loss: {min_val_loss:.4f}")
 print0()
 
 # Cleanup
-del model, orig_model, optimizer, train_loader
+del model, orig_model, optimizers, train_loader
 gc.collect()
 if device_type == "cuda":
     torch.cuda.empty_cache()

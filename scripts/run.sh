@@ -63,6 +63,7 @@ if [ -z "$SCHEMAS" ]; then
     echo "  constant            Shorthand for --lr_schedule=constant"
     echo "  --eff_batch=N       Effective batch size (default: 64)"
     echo "  --grad_ckpt         Enable gradient checkpointing (saves memory, ~4% slower)"
+    echo "  --use_muon=False    Disable Muon optimizer (default: True, uses Muon+AdamW)"
     echo ""
     echo "Examples:"
     echo "  bash scripts/run.sh kubernetes"
