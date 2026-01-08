@@ -45,12 +45,11 @@ Recommendations:
 
 === Regularization ===
 
-Regularization scales with overparameterization:
-- Tiny/Mini/Base: dropout=0.0-0.1, weight_decay=0.0
-- Small+: dropout=0.2, weight_decay=0.1
+Clean split based on overparameterization:
+- Tiny/Mini/Base: dropout=0.0, weight_decay=0.0 (no regularization)
+- Small+: dropout=0.2, weight_decay=0.1 (regularized)
 
-Note: Same config used for all schemas. For eslintrc, even tiny may
-benefit from light regularization, but we keep configs simple.
+Add regularization to smaller models only if validation curves show overfitting.
 
 === Architecture Notes ===
 
@@ -94,8 +93,8 @@ BASE_ARCH = {
     "n_heads": 8,  # head_dim=64
     "ffn_mult": 2.5,  # SwiGLU multiplier
     "use_swiglu": True,
-    "dropout": 0.1,  # Light dropout - near Chinchilla optimal
-    "weight_decay": 0.0,  # No weight decay - near Chinchilla optimal
+    "dropout": 0.0,  # No dropout - test first, add if needed
+    "weight_decay": 0.0,  # No weight decay - test first, add if needed
     "transformer_params": "~32M",
 }
 
