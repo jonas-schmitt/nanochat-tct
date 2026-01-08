@@ -291,21 +291,21 @@ MODEL_CONFIGS = {
         **TINY_ARCH,
         **COMMON_TRAINING,
         "learning_rate": LR_ADJUSTMENTS["tiny"],
-        "epochs_multiplier": 1.5,  # 150 epochs (Chinchilla-optimal training)
+        "epochs_multiplier": 1.5,  # 150 epochs (extended training for small models)
         "description": "Tiny model (~5M with vocab=1k), 6 layers - best token/param ratio",
     },
     "mini": {
         **MINI_ARCH,
         **COMMON_TRAINING,
         "learning_rate": LR_ADJUSTMENTS["mini"],
-        "epochs_multiplier": 1.5,  # 150 epochs (Chinchilla-optimal training)
+        "epochs_multiplier": 1.5,  # 150 epochs (extended training for small models)
         "description": "Mini model (~15M with vocab=1k), 8 layers - good generalization",
     },
     "base": {
         **BASE_ARCH,
         **COMMON_TRAINING,
         "learning_rate": LR_ADJUSTMENTS["base"],
-        "epochs_multiplier": 1.5,  # 150 epochs (Chinchilla-optimal training)
+        "epochs_multiplier": 1.5,  # 150 epochs (extended training for small models)
         "description": "Base model (~32M with vocab=1k), 10 layers - balanced",
     },
     "small": {
