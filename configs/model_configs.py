@@ -14,21 +14,45 @@ Preset architectures (sized for vocab=1000):
 SwiGLU: Gated linear unit with 3 FFN matrices (gate, up, down) instead of 2.
 Used by LLaMA, Mistral, etc. for better performance.
 
-Regularization scales with model size:
-- Tiny/Mini/Base: dropout=0.0-0.1, weight_decay=0.0 (near Chinchilla-optimal)
-- Small+: dropout=0.2, weight_decay=0.1 (overparameterized, needs regularization)
+=== Model Selection Guide ===
 
-Token/param ratios for 117M token dataset (kubernetes, single epoch):
-- Tiny:  ~21x (Chinchilla optimal)
-- Mini:  ~8x  (good capacity)
-- Base:  ~4x  (moderate)
-- Small: ~2x  (overparameterized)
+Single-epoch token/param ratio determines overfitting risk:
+- >10x: Capacity-limited (may underfit)
+- 5-10x: Good balance
+- 2-5x: Overparameterized (needs regularization)
+- 1-2x: Severely overparameterized (will likely overfit)
+- <1x: More parameters than tokens (extreme overfitting)
 
-With 100 epochs (~3-5x effective multiplier due to diminishing returns):
-- Tiny:  61-102x effective ratio
-- Mini:  23-38x effective ratio (close to optimal)
-- Base:  11-18x effective ratio
-- Small: 7-11x effective ratio
+Note: Multi-epoch training (100 epochs) does NOT change these ratios.
+Repeated data provides optimization benefit but no new unique information.
+
+Single-epoch ratios by schema:
+
+                    eslintrc    kubernetes/tsconfig
+    Model   Params  (21.5M)     (117M)
+    ------  ------  ----------  -------------------
+    tiny    5.6M    3.8x        21x    ✓ recommended
+    mini    15.1M   1.4x        7.8x   ✓ recommended
+    base    32.2M   0.7x        3.6x   ~ borderline
+    small   50.3M   0.4x        2.3x   ! overparameterized
+    medium  125M    0.2x        0.9x   ✗ not recommended
+    large   350M    0.06x       0.3x   ✗ not recommended
+
+Recommendations:
+- eslintrc: Use tiny only (even tiny is overparameterized at 3.8x)
+- kubernetes/tsconfig: Use tiny or mini (base is borderline)
+- medium/large: Not recommended for any schema (severe overfitting)
+
+=== Regularization ===
+
+Regularization scales with overparameterization:
+- Tiny/Mini/Base: dropout=0.0-0.1, weight_decay=0.0
+- Small+: dropout=0.2, weight_decay=0.1
+
+Note: Same config used for all schemas. For eslintrc, even tiny may
+benefit from light regularization, but we keep configs simple.
+
+=== Architecture Notes ===
 
 The SAME architecture is used for ALL schemas and tokenizers.
 Reference: kubernetes (vocab=1000)
