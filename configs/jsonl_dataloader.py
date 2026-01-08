@@ -21,7 +21,7 @@ BOS Token Behavior (when use_bos=True):
 - PAD token is prepended as BOS to each sequence
 - Model learns P(first_token | BOS), enabling true unconditional generation
 - During generation, start with [BOS] and sample the first token
-- Only TRAILING pads are masked in loss; position 0 (BOS) is NOT masked
+- All PAD tokens in targets are masked (set to -1, ignored by cross_entropy)
 """
 
 import json
@@ -170,7 +170,7 @@ class JSONLDataset(Dataset):
             - BOS (pad_token_id) is prepended to sequence
             - inputs[0] = BOS, targets[0] = first real token
             - Model learns P(first_token | BOS) for unconditional generation
-            - Only TRAILING pads are masked, not the BOS at position 0
+            - All PAD tokens in targets are masked (set to -1)
         """
         tokens = self.sequences[idx]
 
@@ -191,12 +191,10 @@ class JSONLDataset(Dataset):
         inputs = tokens[:-1].clone()   # First context_size tokens
         targets = tokens[1:].clone()   # Last context_size tokens
 
-        # Replace TRAILING padding in targets with -1 (ignored in loss via ignore_index)
-        # When use_bos=True: DON'T mask position 0 - that's where we predict first token from BOS
-        mask = inputs == self.pad_token_id
-        if self.use_bos:
-            mask[0] = False  # Never mask position 0 (BOS position)
-        targets[mask] = -1
+        # Mask all PAD tokens in targets (ignored in loss via ignore_index=-1)
+        # PAD tokens should never appear in real tokenized data, only as padding
+        # This correctly handles the shift between inputs and targets
+        targets[targets == self.pad_token_id] = -1
 
         # Convert inputs to int32 (model expects this)
         inputs = inputs.to(dtype=torch.int32)
@@ -374,11 +372,9 @@ def create_reshuffled_dataloaders(
             inputs = tokens[:-1].clone()
             targets = tokens[1:].clone()
 
-            # Mask TRAILING pads only; don't mask position 0 (BOS) if use_bos
-            mask = inputs == self.pad_token_id
-            if self.use_bos:
-                mask[0] = False  # Never mask position 0 (BOS position)
-            targets[mask] = -1
+            # Mask all PAD tokens in targets (ignored in loss via ignore_index=-1)
+            # PAD tokens should never appear in real tokenized data, only as padding
+            targets[targets == self.pad_token_id] = -1
 
             inputs = inputs.to(dtype=torch.int32)
             return inputs, targets
