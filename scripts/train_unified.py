@@ -105,7 +105,7 @@ num_eval_batches = 100  # number of batches for validation
 reshuffle_data = True   # reshuffle train+val data randomly (fixes sequential split)
 gradient_checkpointing = False  # trade compute for memory (enable with --gradient_checkpointing=True)
 use_torch_compile = True        # disable with --use_torch_compile=False for debugging OOM
-compile_mode = "default"        # "default", "reduce-overhead", or "max-autotune" (slower compile, faster run)
+compile_mode = "max-autotune"   # "default", "reduce-overhead", or "max-autotune" (slower compile, faster run)
 
 # CLI override
 config_keys = [k for k,v in globals().items() if not k.startswith('_') and isinstance(v, (int, float, bool, str, type(None)))]
