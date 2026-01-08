@@ -173,19 +173,21 @@ echo "Tokenizers: ${FILTER_TOKENIZER:-$TOKENIZERS}"
 echo "============================================================"
 echo
 
-for SCHEMA in $SCHEMAS; do
-    # Use override if provided, otherwise schema default
-    if [ -n "$EPOCHS_OVERRIDE" ]; then
-        EPOCHS="$EPOCHS_OVERRIDE"
-    else
-        EPOCHS=$(get_epochs "$SCHEMA")
-    fi
-
+# Loop order: size → schema → tokenizer
+# This ensures tct vs utf8 comparison for each size completes before moving to next size
+for size in $SIZES; do
     echo "============================================================"
-    echo "$SCHEMA ($EPOCHS epochs)"
+    echo "Model size: $size"
     echo "============================================================"
 
-    for size in $SIZES; do
+    for SCHEMA in $SCHEMAS; do
+        # Use override if provided, otherwise schema default
+        if [ -n "$EPOCHS_OVERRIDE" ]; then
+            EPOCHS="$EPOCHS_OVERRIDE"
+        else
+            EPOCHS=$(get_epochs "$SCHEMA")
+        fi
+
         for tokenizer in $TOKENIZERS; do
             [ -n "$FILTER_TOKENIZER" ] && [ "$tokenizer" != "$FILTER_TOKENIZER" ] && continue
 
