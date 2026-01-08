@@ -31,7 +31,7 @@ SMALL_ARCH = {
     "n_heads": 8,  # head_dim=64
     "ffn_mult": 2.5,  # SwiGLU multiplier to hit ~50M target
     "use_swiglu": True,
-    "dropout": 0.1,  # Dropout for regularization
+    "dropout": 0.2,  # Dropout for regularization
     "transformer_params": "~50M",
 }
 
@@ -45,7 +45,7 @@ SMALL_WIDE_ARCH = {
     "n_heads": 12,  # head_dim=64
     "ffn_mult": 3.0,  # Higher FFN capacity
     "use_swiglu": True,
-    "dropout": 0.1,  # Dropout for regularization
+    "dropout": 0.2,  # Dropout for regularization
     "transformer_params": "~48M",  # 48.37M - similar to SMALL_ARCH
 }
 
@@ -55,7 +55,7 @@ MEDIUM_ARCH = {
     "n_heads": 12,  # head_dim=64
     "ffn_mult": 3.0,  # SwiGLU multiplier to hit ~125M target
     "use_swiglu": True,
-    "dropout": 0.1,  # Dropout for regularization
+    "dropout": 0.2,  # Dropout for regularization
     "transformer_params": "~125M",
 }
 
@@ -65,7 +65,7 @@ LARGE_ARCH = {
     "n_heads": 16,  # head_dim=64
     "ffn_mult": 3.25,  # SwiGLU multiplier to hit ~350M target
     "use_swiglu": True,
-    "dropout": 0.1,  # Dropout for regularization
+    "dropout": 0.2,  # Dropout for regularization
     "transformer_params": "~350M",
 }
 

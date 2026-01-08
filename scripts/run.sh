@@ -58,7 +58,7 @@ if [ -z "$SCHEMAS" ]; then
     echo "Options:"
     echo "  resume              Resume from latest checkpoint"
     echo "  --epochs=N          Override max epochs (default: schema-specific)"
-    echo "  --dropout=0.1       Set dropout (default: 0.1)"
+    echo "  --dropout=0.2       Set dropout (default: 0.2)"
     echo "  --lr_schedule=X     LR schedule: cosine (default) or constant"
     echo "  constant            Shorthand for --lr_schedule=constant"
     echo "  --eff_batch=N       Effective batch size (default: 64)"
@@ -161,7 +161,7 @@ echo "Tokenizers: ${FILTER_TOKENIZER:-$TOKENIZERS}"
 if [ -n "$DROPOUT" ]; then
     echo "Dropout: $DROPOUT"
 else
-    echo "Dropout: 0.1 (default)"
+    echo "Dropout: 0.2 (default)"
 fi
 [ -n "$LR_SCHEDULE" ] && echo "LR Schedule: $LR_SCHEDULE"
 [ -n "$EFF_BATCH" ] && echo "Effective batch: $EFF_BATCH"

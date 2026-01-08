@@ -530,11 +530,16 @@ def generate_samples_tct(
     Unlike UTF8+XGrammar, TCT has no explicit EOS token - sequences are complete
     when they reach a target length. We generate max_tokens and decode.
 
+    The model was trained with BOS token (pad token = vocab_size - 1) prepended
+    to all sequences. Generation starts with BOS and lets model predict first
+    real token from scratch.
+
     Args:
         model: The GPT model
         tct_module: TCT tokenizer module (encode/decode/decode_prefix/vocab_size)
         num_samples: Number of samples to generate
         first_token_distribution: Dict mapping token_id -> probability for first token
+            (used for UTF8 generation, kept for API compatibility but ignored here)
         max_tokens: Maximum tokens per sample (should match typical training lengths)
         temperature: Sampling temperature
         top_k: Top-k sampling parameter
@@ -554,19 +559,17 @@ def generate_samples_tct(
     decode_partial = 0
     decode_empty = 0
 
-    # Prepare first token sampling
-    first_tokens = list(first_token_distribution.keys())
-    first_probs = list(first_token_distribution.values())
+    # BOS token is pad token = vocab_size - 1 (matches training setup)
+    bos_token = tct_module.vocab_size() - 1
 
     iterator = tqdm(range(num_samples), desc="Generating TCT samples") if show_progress else range(num_samples)
 
     for _ in iterator:
-        # Sample first token from empirical distribution (NOT hardcoded!)
-        first_token = random.choices(first_tokens, weights=first_probs, k=1)[0]
-        generated_tokens = [first_token]
+        # Start with BOS token (model trained with BOS prepended)
+        generated_tokens = [bos_token]
 
-        # Generate max_tokens - 1 more (we already have first token)
-        for step in range(max_tokens - 1):
+        # Generate max_tokens (model predicts first real token after BOS)
+        for step in range(max_tokens):
             # Get model logits for next token
             input_ids = torch.tensor([generated_tokens], device=device)
 
@@ -589,8 +592,10 @@ def generate_samples_tct(
 
         # Decode result using decode_prefix which handles extra tokens gracefully
         # (model may generate tokens beyond the complete JSON)
+        # Skip the BOS token (first token) - only decode the generated content
         try:
-            json_out, consumed, is_complete = tct_module.decode_prefix(generated_tokens)
+            tokens_to_decode = generated_tokens[1:]  # Skip BOS
+            json_out, consumed, is_complete = tct_module.decode_prefix(tokens_to_decode)
 
             if is_complete and json_out and json_out != "{}":
                 # Complete, non-empty JSON - count as success
@@ -1079,7 +1084,7 @@ def main():
                         help="Number of samples to generate for distribution comparison")
     parser.add_argument("--max_seq_len", type=int, default=2048,
                         help="Maximum sequence length for BPB evaluation (default: 2048, training length)")
-    parser.add_argument("--max_gen_tokens", type=int, default=512,
+    parser.add_argument("--max_gen_tokens", type=int, default=2048,
                         help="Maximum tokens per generated sample")
     parser.add_argument("--temperature", type=float, default=0.7,
                         help="Sampling temperature for generation")

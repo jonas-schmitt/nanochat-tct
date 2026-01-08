@@ -22,7 +22,7 @@ SMALL_2048_CONFIG = {
     "d_model": 384,
     "n_layers": 10,             # 10 layers (from k8s_33M_200k training)
     "n_heads": 6,
-    "dropout": 0.1,
+    "dropout": 0.2,
 
     # Training (adjusted for 2048 context - half of 4096)
     "batch_size": 16,            # Balanced for 2048 context
@@ -58,7 +58,7 @@ SMALL_1024_CONFIG = {
     "d_model": 384,
     "n_layers": 8,
     "n_heads": 6,
-    "dropout": 0.1,
+    "dropout": 0.2,
 
     # Training (optimized for 100k steps)
     "batch_size": 32,          # Doubled from 16 (fits in 8GB, more stable gradients)
@@ -94,7 +94,7 @@ SMALL_4096_CONFIG = {
     "d_model": 384,
     "n_layers": 8,
     "n_heads": 6,
-    "dropout": 0.1,
+    "dropout": 0.2,
 
     # Training (adjusted for 4096 context - uses more memory)
     "batch_size": 8,             # Reduced from 32 due to 4× context size
@@ -130,7 +130,7 @@ MEDIUM_1024_CONFIG = {
     "d_model": 512,
     "n_layers": 14,
     "n_heads": 8,
-    "dropout": 0.1,
+    "dropout": 0.2,
 
     # Training
     "batch_size": 16,
@@ -166,7 +166,7 @@ MEDIUM_2048_CONFIG = {
     "d_model": 512,
     "n_layers": 14,
     "n_heads": 8,
-    "dropout": 0.1,
+    "dropout": 0.2,
 
     # Training (adjusted for 2048 context)
     "batch_size": 4,              # Reduced due to 2048 context
@@ -202,7 +202,7 @@ MEDIUM_4096_CONFIG = {
     "d_model": 576,             # Wider for richer embeddings (72 dim per head)
     "n_layers": 16,             # Deep for hierarchical structure
     "n_heads": 8,
-    "dropout": 0.1,
+    "dropout": 0.2,
 
     # Training (adjusted for 4096 context + 87M model)
     "batch_size": 4,              # Reduced due to 4096 context + larger model
@@ -238,7 +238,7 @@ LARGE_1024_CONFIG = {
     "d_model": 768,
     "n_layers": 16,
     "n_heads": 12,
-    "dropout": 0.1,
+    "dropout": 0.2,
     "use_swiglu": True,  # SwiGLU activation for +15% params, 3-8% quality boost
 
     # Training
@@ -277,7 +277,7 @@ BPE_SMALL_2048_CONFIG = {
     "d_model": 450,              # Wider than TCT (450 vs 384)
     "n_layers": 10,              # Deeper than TCT (10 vs 8)
     "n_heads": 6,                # 450/6 = 75 dim per head
-    "dropout": 0.1,
+    "dropout": 0.2,
 
     # Training
     "batch_size": 16,
@@ -315,7 +315,7 @@ BPE_169_SMALL_2048_CONFIG = {
     "d_model": 384,              # Same as TCT
     "n_layers": 10,              # Same as TCT (from k8s_33M_200k config.json)
     "n_heads": 6,                # Same as TCT (384/6 = 64 dim per head)
-    "dropout": 0.1,
+    "dropout": 0.2,
 
     # Training - match TCT training parameters exactly
     "batch_size": 4,              # Same as TCT
