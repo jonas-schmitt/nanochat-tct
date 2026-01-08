@@ -175,12 +175,12 @@ TARGET_EFFECTIVE_BATCH = 64
 REFERENCE_VRAM_GB = 24
 REFERENCE_BATCH_SIZES = {
     2048: {
-        "tiny": 128,       # d=256, L=6, SwiGLU 2.5x, ~5M model - no grad_accum needed
-        "mini": 64,        # d=384, L=8, SwiGLU 2.5x, ~15M model - no grad_accum needed
-        "base": 32,        # d=512, L=10, SwiGLU 2.5x, ~32M model - minimal grad_accum
+        "tiny": 128,       # d=256, L=6, SwiGLU 3.0x, ~5M model - no grad_accum needed
+        "mini": 64,        # d=384, L=8, SwiGLU 3.0x, ~15M model - no grad_accum needed
+        "base": 32,        # d=512, L=10, SwiGLU 3.0x, ~34M model - minimal grad_accum
         "small": 16,       # d=512, L=16, SwiGLU 2.5x, ~50M model
-        "small-wide": 16,  # d=768, L=7, SwiGLU 2.5x, ~50M model (fewer layers = similar memory)
-        "medium": 8,       # d=768, L=16, SwiGLU 3.0x, ~126M model
+        "small-wide": 16,  # d=768, L=6, SwiGLU 3.0x, ~48M model
+        "medium": 8,       # d=768, L=16, SwiGLU 3.0x, ~125M model
         "large": 4,        # d=1024, L=24, SwiGLU 3.25x, ~350M model
     },
 }
