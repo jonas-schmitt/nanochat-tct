@@ -416,24 +416,34 @@ def generate_samples_xgrammar(
 ) -> List[str]:
     """Generate samples using UTF8-BPE model with XGrammar constraints.
 
+    Uses KV-cache for efficient autoregressive generation.
+
     Args:
         first_token_distribution: Dict mapping token_id -> probability for first token
 
     Returns:
         List of generated JSON strings (only valid ones)
     """
-    import time
     import random
     import torch
     import torch.nn.functional as F
     import xgrammar
     from tqdm import tqdm
+    from nanochat.engine import KVCache
 
     device = next(model.parameters()).device
     generated_texts = []
     valid_count = 0
     empty_count = 0
     failed_count = 0
+
+    # Get model config for KV cache
+    cfg = model.config
+    kv_kwargs = {
+        "num_heads": cfg.n_kv_head,
+        "head_dim": cfg.n_embd // cfg.n_head,
+        "num_layers": cfg.n_layer,
+    }
 
     # Prepare first token sampling
     first_tokens = list(first_token_distribution.keys())
@@ -443,14 +453,21 @@ def generate_samples_xgrammar(
 
     for _ in iterator:
         try:
-            # Create fresh matcher for each generation
+            # Create fresh matcher and KV cache for each generation
             matcher = xgrammar.GrammarMatcher(compiled_grammar)
             bitmask = xgrammar.allocate_token_bitmask(1, tokenizer_info.vocab_size)
+            kv_cache = KVCache(batch_size=1, seq_len=max_tokens, **kv_kwargs)
 
             # Sample first token from empirical distribution (fair comparison with TCT)
             start_token = random.choices(first_tokens, weights=first_probs, k=1)[0]
             generated_tokens = [start_token]
             matcher.accept_token(start_token)
+
+            # Prefill with first token
+            input_ids = torch.tensor([[start_token]], device=device)
+            with torch.no_grad():
+                logits = model(input_ids, kv_cache=kv_cache)
+                logits = logits[0, -1, :]
 
             for step in range(max_tokens - 1):
                 if matcher.is_terminated():
@@ -459,13 +476,6 @@ def generate_samples_xgrammar(
                 # Get allowed tokens from grammar
                 xgrammar.reset_token_bitmask(bitmask)
                 matcher.fill_next_token_bitmask(bitmask)
-
-                # Get model logits
-                input_ids = torch.tensor([generated_tokens], device=device)
-
-                with torch.no_grad():
-                    logits = model(input_ids)
-                    logits = logits[0, -1, :]
 
                 # Apply grammar mask
                 logits_batch = logits.unsqueeze(0)
@@ -484,9 +494,15 @@ def generate_samples_xgrammar(
                 probs = F.softmax(logits, dim=-1)
                 next_token = torch.multinomial(probs, num_samples=1).item()
 
-                # Accept token
+                # Accept token and append
                 matcher.accept_token(next_token)
                 generated_tokens.append(next_token)
+
+                # Get next logits using KV cache (only process new token)
+                input_ids = torch.tensor([[next_token]], device=device)
+                with torch.no_grad():
+                    logits = model(input_ids, kv_cache=kv_cache)
+                    logits = logits[0, -1, :]
 
             # Decode
             text = utf8_decoder.decode(generated_tokens)
@@ -530,6 +546,8 @@ def generate_samples_tct(
     Unlike UTF8+XGrammar, TCT has no explicit EOS token - sequences are complete
     when they reach a target length. We generate max_tokens and decode.
 
+    Uses KV-cache for efficient autoregressive generation.
+
     The model was trained with BOS token (pad token = vocab_size - 1) prepended
     to all sequences. Generation starts with BOS and lets model predict first
     real token from scratch.
@@ -552,6 +570,7 @@ def generate_samples_tct(
     import torch.nn.functional as F
     from tqdm import tqdm
     import random
+    from nanochat.engine import KVCache
 
     device = next(model.parameters()).device
     generated_texts = []
@@ -559,24 +578,34 @@ def generate_samples_tct(
     decode_partial = 0
     decode_empty = 0
 
+    # Get model config for KV cache
+    cfg = model.config
+    kv_kwargs = {
+        "num_heads": cfg.n_kv_head,
+        "head_dim": cfg.n_embd // cfg.n_head,
+        "num_layers": cfg.n_layer,
+    }
+
     # BOS token is pad token = vocab_size - 1 (matches training setup)
     bos_token = tct_module.vocab_size() - 1
 
     iterator = tqdm(range(num_samples), desc="Generating TCT samples") if show_progress else range(num_samples)
 
     for _ in iterator:
+        # Create fresh KV cache for each sample
+        kv_cache = KVCache(batch_size=1, seq_len=max_tokens + 1, **kv_kwargs)
+
         # Start with BOS token (model trained with BOS prepended)
         generated_tokens = [bos_token]
 
+        # Prefill with BOS token
+        input_ids = torch.tensor([[bos_token]], device=device)
+        with torch.no_grad():
+            logits = model(input_ids, kv_cache=kv_cache)
+            logits = logits[0, -1, :]
+
         # Generate max_tokens (model predicts first real token after BOS)
         for step in range(max_tokens):
-            # Get model logits for next token
-            input_ids = torch.tensor([generated_tokens], device=device)
-
-            with torch.no_grad():
-                logits = model(input_ids)
-                logits = logits[0, -1, :]  # Last position
-
             # Apply temperature and top-k
             if temperature > 0:
                 logits = logits / temperature
@@ -589,6 +618,12 @@ def generate_samples_tct(
             probs = F.softmax(logits, dim=-1)
             next_token = torch.multinomial(probs, num_samples=1).item()
             generated_tokens.append(next_token)
+
+            # Get next logits using KV cache (only process new token)
+            input_ids = torch.tensor([[next_token]], device=device)
+            with torch.no_grad():
+                logits = model(input_ids, kv_cache=kv_cache)
+                logits = logits[0, -1, :]
 
         # Decode result using decode_prefix which handles extra tokens gracefully
         # (model may generate tokens beyond the complete JSON)
