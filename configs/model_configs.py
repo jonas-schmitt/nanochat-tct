@@ -186,11 +186,11 @@ REFERENCE_BATCH_SIZES = {
     2048: {
         "tiny": 128,       # d=256, L=6, SwiGLU 3.0x, ~5M model - no grad_accum needed
         "mini": 128,       # d=384, L=8, SwiGLU 3.0x, ~15M model - no grad_accum needed
-        "base": 32,        # d=512, L=10, SwiGLU 3.0x, ~34M model - grad_accum=2 for eff=64
-        "small": 16,       # d=512, L=14, SwiGLU 3.0x, ~48M model
-        "small-wide": 16,  # d=768, L=6, SwiGLU 3.0x, ~48M model
-        "medium": 8,       # d=768, L=16, SwiGLU 3.0x, ~125M model
-        "large": 4,        # d=1024, L=24, SwiGLU 3.25x, ~350M model
+        "base": 64,        # d=512, L=10, SwiGLU 3.0x, ~34M model - no grad_accum needed
+        "small": 32,       # d=512, L=14, SwiGLU 3.0x, ~48M model - grad_accum=2 for eff=64
+        "small-wide": 32,  # d=768, L=6, SwiGLU 3.0x, ~48M model - grad_accum=2 for eff=64
+        "medium": 16,      # d=768, L=16, SwiGLU 3.0x, ~125M model - grad_accum=4 for eff=64
+        "large": 8,        # d=1024, L=24, SwiGLU 3.25x, ~350M model - grad_accum=8 for eff=64
     },
 }
 
