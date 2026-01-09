@@ -411,6 +411,13 @@ def compute_constrained_bpb(
             logits = model(input_ids)  # [1, T-1, V]
             logits = logits[0]  # [T-1, V]
 
+        # Accept the first token to initialize grammar state
+        # (the model predicts tokens[t+1] given tokens[0:t+1])
+        try:
+            matcher.accept_token(tokens[0])
+        except Exception:
+            continue  # Skip sequences that grammar can't parse
+
         # Process each position
         for t in range(len(tokens) - 1):
             target_token = tokens[t + 1]
@@ -421,7 +428,7 @@ def compute_constrained_bpb(
             raw_loss = -raw_log_probs[target_token].item()
             total_raw_loss += raw_loss
 
-            # Get valid token mask from grammar
+            # Get valid token mask from grammar (after accepting tokens[0:t+1])
             xgrammar.reset_token_bitmask(bitmask)
             matcher.fill_next_token_bitmask(bitmask)
 
@@ -443,7 +450,7 @@ def compute_constrained_bpb(
             total_constrained_loss += constrained_loss
             total_tokens += 1
 
-            # Advance grammar state
+            # Advance grammar state to include current target
             try:
                 matcher.accept_token(target_token)
             except Exception:
