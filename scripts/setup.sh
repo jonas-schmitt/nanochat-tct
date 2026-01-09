@@ -367,7 +367,9 @@ mkdir -p "$CODE_DIR/checkpoints"
 mkdir -p "$CODE_DIR/logs"
 
 # Required datasets (must match schema_configs.py)
-DATASETS="tsconfig-tct-base tsconfig-utf8-base-matched eslintrc-tct-bpe-500 eslintrc-utf8-bpe-500 kubernetes-tct-bpe-1k kubernetes-utf8-bpe-1k"
+# bpe-matched baseline (default): TCT and UTF8 compression-matched to each other
+# o200k-matched baseline: TCT and UTF8 compression-matched to o200k (GPT-4o)
+DATASETS="tsconfig-tct-base tsconfig-utf8-base-matched tsconfig-tct-o200k-matched tsconfig-utf8-o200k-matched eslintrc-tct-bpe-500 eslintrc-utf8-bpe-500 eslintrc-tct-o200k-matched eslintrc-utf8-o200k-matched kubernetes-tct-bpe-1k kubernetes-utf8-bpe-1k kubernetes-tct-o200k-matched kubernetes-utf8-o200k-matched"
 
 # Always extract datasets from archives (ensures data matches repo)
 extract_dataset() {

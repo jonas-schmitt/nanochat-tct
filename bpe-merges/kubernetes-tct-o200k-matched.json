@@ -1,0 +1,3052 @@
+{
+  "schema": "kubernetes-tct-o200k-matched",
+  "base_vocab_size": 257,
+  "merges": [
+    {
+      "pair": [
+        32,
+        32
+      ],
+      "new_token": 257,
+      "frequency": 38187785
+    },
+    {
+      "pair": [
+        257,
+        257
+      ],
+      "new_token": 258,
+      "frequency": 17025906
+    },
+    {
+      "pair": [
+        0,
+        0
+      ],
+      "new_token": 259,
+      "frequency": 10834652
+    },
+    {
+      "pair": [
+        258,
+        258
+      ],
+      "new_token": 260,
+      "frequency": 5826198
+    },
+    {
+      "pair": [
+        101,
+        114
+      ],
+      "new_token": 261,
+      "frequency": 3320158
+    },
+    {
+      "pair": [
+        105,
+        110
+      ],
+      "new_token": 262,
+      "frequency": 2912187
+    },
+    {
+      "pair": [
+        58,
+        32
+      ],
+      "new_token": 263,
+      "frequency": 2710981
+    },
+    {
+      "pair": [
+        101,
+        115
+      ],
+      "new_token": 264,
+      "frequency": 2498348
+    },
+    {
+      "pair": [
+        111,
+        110
+      ],
+      "new_token": 265,
+      "frequency": 2466931
+    },
+    {
+      "pair": [
+        10,
+        260
+      ],
+      "new_token": 266,
+      "frequency": 2412714
+    },
+    {
+      "pair": [
+        259,
+        259
+      ],
+      "new_token": 267,
+      "frequency": 2309636
+    },
+    {
+      "pair": [
+        34,
+        263
+      ],
+      "new_token": 268,
+      "frequency": 1980078
+    },
+    {
+      "pair": [
+        97,
+        116
+      ],
+      "new_token": 269,
+      "frequency": 1975524
+    },
+    {
+      "pair": [
+        115,
+        116
+      ],
+      "new_token": 270,
+      "frequency": 1907904
+    },
+    {
+      "pair": [
+        259,
+        0
+      ],
+      "new_token": 271,
+      "frequency": 1849467
+    },
+    {
+      "pair": [
+        101,
+        256
+      ],
+      "new_token": 272,
+      "frequency": 1781331
+    },
+    {
+      "pair": [
+        111,
+        114
+      ],
+      "new_token": 273,
+      "frequency": 1779804
+    },
+    {
+      "pair": [
+        101,
+        32
+      ],
+      "new_token": 274,
+      "frequency": 1680039
+    },
+    {
+      "pair": [
+        114,
+        101
+      ],
+      "new_token": 275,
+      "frequency": 1518148
+    },
+    {
+      "pair": [
+        97,
+        108
+      ],
+      "new_token": 276,
+      "frequency": 1468510
+    },
+    {
+      "pair": [
+        116,
+        104
+      ],
+      "new_token": 277,
+      "frequency": 1358949
+    },
+    {
+      "pair": [
+        116,
+        121
+      ],
+      "new_token": 278,
+      "frequency": 1327487
+    },
+    {
+      "pair": [
+        116,
+        105
+      ],
+      "new_token": 279,
+      "frequency": 1255444
+    },
+    {
+      "pair": [
+        101,
+        110
+      ],
+      "new_token": 280,
+      "frequency": 1233202
+    },
+    {
+      "pair": [
+        44,
+        266
+      ],
+      "new_token": 281,
+      "frequency": 1224150
+    },
+    {
+      "pair": [
+        0,
+        1
+      ],
+      "new_token": 282,
+      "frequency": 1217551
+    },
+    {
+      "pair": [
+        10,
+        258
+      ],
+      "new_token": 283,
+      "frequency": 1175267
+    },
+    {
+      "pair": [
+        278,
+        112
+      ],
+      "new_token": 284,
+      "frequency": 1163323
+    },
+    {
+      "pair": [
+        101,
+        99
+      ],
+      "new_token": 285,
+      "frequency": 1118720
+    },
+    {
+      "pair": [
+        257,
+        34
+      ],
+      "new_token": 286,
+      "frequency": 1115363
+    },
+    {
+      "pair": [
+        262,
+        103
+      ],
+      "new_token": 287,
+      "frequency": 1081841
+    },
+    {
+      "pair": [
+        101,
+        116
+      ],
+      "new_token": 288,
+      "frequency": 1057682
+    },
+    {
+      "pair": [
+        114,
+        111
+      ],
+      "new_token": 289,
+      "frequency": 982437
+    },
+    {
+      "pair": [
+        284,
+        272
+      ],
+      "new_token": 290,
+      "frequency": 934817
+    },
+    {
+      "pair": [
+        97,
+        110
+      ],
+      "new_token": 291,
+      "frequency": 911661
+    },
+    {
+      "pair": [
+        290,
+        3
+      ],
+      "new_token": 292,
+      "frequency": 909506
+    },
+    {
+      "pair": [
+        115,
+        32
+      ],
+      "new_token": 293,
+      "frequency": 900668
+    },
+    {
+      "pair": [
+        97,
+        109
+      ],
+      "new_token": 294,
+      "frequency": 898698
+    },
+    {
+      "pair": [
+        256,
+        5
+      ],
+      "new_token": 295,
+      "frequency": 895531
+    },
+    {
+      "pair": [
+        97,
+        112
+      ],
+      "new_token": 296,
+      "frequency": 820403
+    },
+    {
+      "pair": [
+        97,
+        114
+      ],
+      "new_token": 297,
+      "frequency": 728368
+    },
+    {
+      "pair": [
+        99,
+        265
+      ],
+      "new_token": 298,
+      "frequency": 727258
+    },
+    {
+      "pair": [
+        101,
+        108
+      ],
+      "new_token": 299,
+      "frequency": 706390
+    },
+    {
+      "pair": [
+        270,
+        114
+      ],
+      "new_token": 300,
+      "frequency": 695835
+    },
+    {
+      "pair": [
+        102,
+        105
+      ],
+      "new_token": 301,
+      "frequency": 689320
+    },
+    {
+      "pair": [
+        101,
+        100
+      ],
+      "new_token": 302,
+      "frequency": 673631
+    },
+    {
+      "pair": [
+        268,
+        34
+      ],
+      "new_token": 303,
+      "frequency": 670231
+    },
+    {
+      "pair": [
+        114,
+        105
+      ],
+      "new_token": 304,
+      "frequency": 637502
+    },
+    {
+      "pair": [
+        32,
+        277
+      ],
+      "new_token": 305,
+      "frequency": 632030
+    },
+    {
+      "pair": [
+        97,
+        99
+      ],
+      "new_token": 306,
+      "frequency": 619992
+    },
+    {
+      "pair": [
+        300,
+        287
+      ],
+      "new_token": 307,
+      "frequency": 618601
+    },
+    {
+      "pair": [
+        256,
+        259
+      ],
+      "new_token": 308,
+      "frequency": 604234
+    },
+    {
+      "pair": [
+        117,
+        108
+      ],
+      "new_token": 309,
+      "frequency": 598773
+    },
+    {
+      "pair": [
+        100,
+        101
+      ],
+      "new_token": 310,
+      "frequency": 584923
+    },
+    {
+      "pair": [
+        0,
+        2
+      ],
+      "new_token": 311,
+      "frequency": 573227
+    },
+    {
+      "pair": [
+        110,
+        294
+      ],
+      "new_token": 312,
+      "frequency": 565151
+    },
+    {
+      "pair": [
+        111,
+        108
+      ],
+      "new_token": 313,
+      "frequency": 562522
+    },
+    {
+      "pair": [
+        279,
+        265
+      ],
+      "new_token": 314,
+      "frequency": 562341
+    },
+    {
+      "pair": [
+        307,
+        256
+      ],
+      "new_token": 315,
+      "frequency": 555651
+    },
+    {
+      "pair": [
+        285,
+        116
+      ],
+      "new_token": 316,
+      "frequency": 550498
+    },
+    {
+      "pair": [
+        117,
+        98
+      ],
+      "new_token": 317,
+      "frequency": 548689
+    },
+    {
+      "pair": [
+        105,
+        265
+      ],
+      "new_token": 318,
+      "frequency": 542552
+    },
+    {
+      "pair": [
+        112,
+        289
+      ],
+      "new_token": 319,
+      "frequency": 533712
+    },
+    {
+      "pair": [
+        116,
+        111
+      ],
+      "new_token": 320,
+      "frequency": 526114
+    },
+    {
+      "pair": [
+        111,
+        117
+      ],
+      "new_token": 321,
+      "frequency": 520685
+    },
+    {
+      "pair": [
+        260,
+        260
+      ],
+      "new_token": 322,
+      "frequency": 518919
+    },
+    {
+      "pair": [
+        296,
+        112
+      ],
+      "new_token": 323,
+      "frequency": 509538
+    },
+    {
+      "pair": [
+        45,
+        45
+      ],
+      "new_token": 324,
+      "frequency": 496406
+    },
+    {
+      "pair": [
+        115,
+        101
+      ],
+      "new_token": 325,
+      "frequency": 493471
+    },
+    {
+      "pair": [
+        44,
+        283
+      ],
+      "new_token": 326,
+      "frequency": 493321
+    },
+    {
+      "pair": [
+        111,
+        98
+      ],
+      "new_token": 327,
+      "frequency": 492747
+    },
+    {
+      "pair": [
+        112,
+        261
+      ],
+      "new_token": 328,
+      "frequency": 490364
+    },
+    {
+      "pair": [
+        256,
+        271
+      ],
+      "new_token": 329,
+      "frequency": 487477
+    },
+    {
+      "pair": [
+        101,
+        109
+      ],
+      "new_token": 330,
+      "frequency": 472531
+    },
+    {
+      "pair": [
+        105,
+        99
+      ],
+      "new_token": 331,
+      "frequency": 466844
+    },
+    {
+      "pair": [
+        105,
+        111
+      ],
+      "new_token": 332,
+      "frequency": 464618
+    },
+    {
+      "pair": [
+        305,
+        274
+      ],
+      "new_token": 333,
+      "frequency": 461820
+    },
+    {
+      "pair": [
+        280,
+        116
+      ],
+      "new_token": 334,
+      "frequency": 459828
+    },
+    {
+      "pair": [
+        282,
+        292
+      ],
+      "new_token": 335,
+      "frequency": 454109
+    },
+    {
+      "pair": [
+        108,
+        111
+      ],
+      "new_token": 336,
+      "frequency": 448298
+    },
+    {
+      "pair": [
+        73,
+        67
+      ],
+      "new_token": 337,
+      "frequency": 445853
+    },
+    {
+      "pair": [
+        105,
+        116
+      ],
+      "new_token": 338,
+      "frequency": 435838
+    },
+    {
+      "pair": [
+        97,
+        100
+      ],
+      "new_token": 339,
+      "frequency": 426002
+    },
+    {
+      "pair": [
+        262,
+        116
+      ],
+      "new_token": 340,
+      "frequency": 423866
+    },
+    {
+      "pair": [
+        34,
+        281
+      ],
+      "new_token": 341,
+      "frequency": 417441
+    },
+    {
+      "pair": [
+        326,
+        286
+      ],
+      "new_token": 342,
+      "frequency": 406583
+    },
+    {
+      "pair": [
+        107,
+        317
+      ],
+      "new_token": 343,
+      "frequency": 403701
+    },
+    {
+      "pair": [
+        114,
+        264
+      ],
+      "new_token": 344,
+      "frequency": 402760
+    },
+    {
+      "pair": [
+        106,
+        316
+      ],
+      "new_token": 345,
+      "frequency": 396107
+    },
+    {
+      "pair": [
+        97,
+        103
+      ],
+      "new_token": 346,
+      "frequency": 393600
+    },
+    {
+      "pair": [
+        115,
+        104
+      ],
+      "new_token": 347,
+      "frequency": 392943
+    },
+    {
+      "pair": [
+        65,
+        103
+      ],
+      "new_token": 348,
+      "frequency": 392072
+    },
+    {
+      "pair": [
+        97,
+        98
+      ],
+      "new_token": 349,
+      "frequency": 391406
+    },
+    {
+      "pair": [
+        108,
+        101
+      ],
+      "new_token": 350,
+      "frequency": 388891
+    },
+    {
+      "pair": [
+        99,
+        104
+      ],
+      "new_token": 351,
+      "frequency": 387547
+    },
+    {
+      "pair": [
+        46,
+        332
+      ],
+      "new_token": 352,
+      "frequency": 386211
+    },
+    {
+      "pair": [
+        261,
+        118
+      ],
+      "new_token": 353,
+      "frequency": 385374
+    },
+    {
+      "pair": [
+        44,
+        32
+      ],
+      "new_token": 354,
+      "frequency": 384500
+    },
+    {
+      "pair": [
+        256,
+        1
+      ],
+      "new_token": 355,
+      "frequency": 380415
+    },
+    {
+      "pair": [
+        117,
+        115
+      ],
+      "new_token": 356,
+      "frequency": 373529
+    },
+    {
+      "pair": [
+        256,
+        267
+      ],
+      "new_token": 357,
+      "frequency": 364428
+    },
+    {
+      "pair": [
+        258,
+        34
+      ],
+      "new_token": 358,
+      "frequency": 359030
+    },
+    {
+      "pair": [
+        112,
+        314
+      ],
+      "new_token": 359,
+      "frequency": 358593
+    },
+    {
+      "pair": [
+        335,
+        315
+      ],
+      "new_token": 360,
+      "frequency": 356655
+    },
+    {
+      "pair": [
+        327,
+        345
+      ],
+      "new_token": 361,
+      "frequency": 353108
+    },
+    {
+      "pair": [
+        112,
+        111
+      ],
+      "new_token": 362,
+      "frequency": 352283
+    },
+    {
+      "pair": [
+        117,
+        101
+      ],
+      "new_token": 363,
+      "frequency": 349911
+    },
+    {
+      "pair": [
+        105,
+        293
+      ],
+      "new_token": 364,
+      "frequency": 349139
+    },
+    {
+      "pair": [
+        337,
+        348
+      ],
+      "new_token": 365,
+      "frequency": 340410
+    },
+    {
+      "pair": [
+        100,
+        264
+      ],
+      "new_token": 366,
+      "frequency": 338819
+    },
+    {
+      "pair": [
+        301,
+        103
+      ],
+      "new_token": 367,
+      "frequency": 338347
+    },
+    {
+      "pair": [
+        111,
+        109
+      ],
+      "new_token": 368,
+      "frequency": 337396
+    },
+    {
+      "pair": [
+        113,
+        117
+      ],
+      "new_token": 369,
+      "frequency": 333769
+    },
+    {
+      "pair": [
+        352,
+        47
+      ],
+      "new_token": 370,
+      "frequency": 332311
+    },
+    {
+      "pair": [
+        116,
+        114
+      ],
+      "new_token": 371,
+      "frequency": 331250
+    },
+    {
+      "pair": [
+        267,
+        267
+      ],
+      "new_token": 372,
+      "frequency": 327251
+    },
+    {
+      "pair": [
+        261,
+        110
+      ],
+      "new_token": 373,
+      "frequency": 325984
+    },
+    {
+      "pair": [
+        269,
+        318
+      ],
+      "new_token": 374,
+      "frequency": 319018
+    },
+    {
+      "pair": [
+        102,
+        276
+      ],
+      "new_token": 375,
+      "frequency": 315483
+    },
+    {
+      "pair": [
+        118,
+        276
+      ],
+      "new_token": 376,
+      "frequency": 311351
+    },
+    {
+      "pair": [
+        108,
+        117
+      ],
+      "new_token": 377,
+      "frequency": 303412
+    },
+    {
+      "pair": [
+        109,
+        101
+      ],
+      "new_token": 378,
+      "frequency": 301699
+    },
+    {
+      "pair": [
+        108,
+        105
+      ],
+      "new_token": 379,
+      "frequency": 301197
+    },
+    {
+      "pair": [
+        121,
+        32
+      ],
+      "new_token": 380,
+      "frequency": 301171
+    },
+    {
+      "pair": [
+        118,
+        49
+      ],
+      "new_token": 381,
+      "frequency": 301144
+    },
+    {
+      "pair": [
+        99,
+        304
+      ],
+      "new_token": 382,
+      "frequency": 298939
+    },
+    {
+      "pair": [
+        102,
+        273
+      ],
+      "new_token": 383,
+      "frequency": 298307
+    },
+    {
+      "pair": [
+        97,
+        115
+      ],
+      "new_token": 384,
+      "frequency": 294857
+    },
+    {
+      "pair": [
+        375,
+        325
+      ],
+      "new_token": 385,
+      "frequency": 292090
+    },
+    {
+      "pair": [
+        100,
+        32
+      ],
+      "new_token": 386,
+      "frequency": 291077
+    },
+    {
+      "pair": [
+        101,
+        120
+      ],
+      "new_token": 387,
+      "frequency": 288192
+    },
+    {
+      "pair": [
+        295,
+        311
+      ],
+      "new_token": 388,
+      "frequency": 287857
+    },
+    {
+      "pair": [
+        115,
+        268
+      ],
+      "new_token": 389,
+      "frequency": 286220
+    },
+    {
+      "pair": [
+        295,
+        0
+      ],
+      "new_token": 390,
+      "frequency": 282179
+    },
+    {
+      "pair": [
+        46,
+        32
+      ],
+      "new_token": 391,
+      "frequency": 281348
+    },
+    {
+      "pair": [
+        111,
+        102
+      ],
+      "new_token": 392,
+      "frequency": 280111
+    },
+    {
+      "pair": [
+        110,
+        111
+      ],
+      "new_token": 393,
+      "frequency": 279893
+    },
+    {
+      "pair": [
+        298,
+        367
+      ],
+      "new_token": 394,
+      "frequency": 279692
+    },
+    {
+      "pair": [
+        361,
+        256
+      ],
+      "new_token": 395,
+      "frequency": 278424
+    },
+    {
+      "pair": [
+        10,
+        257
+      ],
+      "new_token": 396,
+      "frequency": 278086
+    },
+    {
+      "pair": [
+        116,
+        32
+      ],
+      "new_token": 397,
+      "frequency": 277791
+    },
+    {
+      "pair": [
+        256,
+        3
+      ],
+      "new_token": 398,
+      "frequency": 277492
+    },
+    {
+      "pair": [
+        271,
+        1
+      ],
+      "new_token": 399,
+      "frequency": 275616
+    },
+    {
+      "pair": [
+        309,
+        108
+      ],
+      "new_token": 400,
+      "frequency": 274909
+    },
+    {
+      "pair": [
+        288,
+        264
+      ],
+      "new_token": 401,
+      "frequency": 273328
+    },
+    {
+      "pair": [
+        48,
+        48
+      ],
+      "new_token": 402,
+      "frequency": 272669
+    },
+    {
+      "pair": [
+        373,
+        401
+      ],
+      "new_token": 403,
+      "frequency": 271124
+    },
+    {
+      "pair": [
+        123,
+        266
+      ],
+      "new_token": 404,
+      "frequency": 267431
+    },
+    {
+      "pair": [
+        366,
+        382
+      ],
+      "new_token": 405,
+      "frequency": 265508
+    },
+    {
+      "pair": [
+        92,
+        34
+      ],
+      "new_token": 406,
+      "frequency": 265217
+    },
+    {
+      "pair": [
+        365,
+        365
+      ],
+      "new_token": 407,
+      "frequency": 264309
+    },
+    {
+      "pair": [
+        343,
+        403
+      ],
+      "new_token": 408,
+      "frequency": 261767
+    },
+    {
+      "pair": [
+        302,
+        32
+      ],
+      "new_token": 409,
+      "frequency": 261056
+    },
+    {
+      "pair": [
+        298,
+        116
+      ],
+      "new_token": 410,
+      "frequency": 258145
+    },
+    {
+      "pair": [
+        279,
+        264
+      ],
+      "new_token": 411,
+      "frequency": 254726
+    },
+    {
+      "pair": [
+        109,
+        269
+      ],
+      "new_token": 412,
+      "frequency": 254435
+    },
+    {
+      "pair": [
+        65,
+        65
+      ],
+      "new_token": 413,
+      "frequency": 253601
+    },
+    {
+      "pair": [
+        107,
+        101
+      ],
+      "new_token": 414,
+      "frequency": 253590
+    },
+    {
+      "pair": [
+        110,
+        400
+      ],
+      "new_token": 415,
+      "frequency": 253107
+    },
+    {
+      "pair": [
+        121,
+        256
+      ],
+      "new_token": 416,
+      "frequency": 252274
+    },
+    {
+      "pair": [
+        283,
+        257
+      ],
+      "new_token": 417,
+      "frequency": 249895
+    },
+    {
+      "pair": [
+        115,
+        353
+      ],
+      "new_token": 418,
+      "frequency": 248513
+    },
+    {
+      "pair": [
+        328,
+        411
+      ],
+      "new_token": 419,
+      "frequency": 247818
+    },
+    {
+      "pair": [
+        275,
+        100
+      ],
+      "new_token": 420,
+      "frequency": 245857
+    },
+    {
+      "pair": [
+        99,
+        101
+      ],
+      "new_token": 421,
+      "frequency": 245450
+    },
+    {
+      "pair": [
+        405,
+        359
+      ],
+      "new_token": 422,
+      "frequency": 244776
+    },
+    {
+      "pair": [
+        266,
+        322
+      ],
+      "new_token": 423,
+      "frequency": 244536
+    },
+    {
+      "pair": [
+        115,
+        47
+      ],
+      "new_token": 424,
+      "frequency": 243683
+    },
+    {
+      "pair": [
+        256,
+        282
+      ],
+      "new_token": 425,
+      "frequency": 242906
+    },
+    {
+      "pair": [
+        117,
+        109
+      ],
+      "new_token": 426,
+      "frequency": 240264
+    },
+    {
+      "pair": [
+        320,
+        32
+      ],
+      "new_token": 427,
+      "frequency": 237030
+    },
+    {
+      "pair": [
+        114,
+        97
+      ],
+      "new_token": 428,
+      "frequency": 236593
+    },
+    {
+      "pair": [
+        321,
+        114
+      ],
+      "new_token": 429,
+      "frequency": 234631
+    },
+    {
+      "pair": [
+        295,
+        360
+      ],
+      "new_token": 430,
+      "frequency": 233080
+    },
+    {
+      "pair": [
+        104,
+        116
+      ],
+      "new_token": 431,
+      "frequency": 232229
+    },
+    {
+      "pair": [
+        319,
+        419
+      ],
+      "new_token": 432,
+      "frequency": 231185
+    },
+    {
+      "pair": [
+        99,
+        368
+      ],
+      "new_token": 433,
+      "frequency": 227446
+    },
+    {
+      "pair": [
+        97,
+        32
+      ],
+      "new_token": 434,
+      "frequency": 226452
+    },
+    {
+      "pair": [
+        101,
+        45
+      ],
+      "new_token": 435,
+      "frequency": 225093
+    },
+    {
+      "pair": [
+        281,
+        286
+      ],
+      "new_token": 436,
+      "frequency": 224551
+    },
+    {
+      "pair": [
+        105,
+        100
+      ],
+      "new_token": 437,
+      "frequency": 223443
+    },
+    {
+      "pair": [
+        275,
+        369
+      ],
+      "new_token": 438,
+      "frequency": 223046
+    },
+    {
+      "pair": [
+        45,
+        32
+      ],
+      "new_token": 439,
+      "frequency": 220423
+    },
+    {
+      "pair": [
+        292,
+        395
+      ],
+      "new_token": 440,
+      "frequency": 219444
+    },
+    {
+      "pair": [
+        261,
+        115
+      ],
+      "new_token": 441,
+      "frequency": 216458
+    },
+    {
+      "pair": [
+        381,
+        308
+      ],
+      "new_token": 442,
+      "frequency": 214740
+    },
+    {
+      "pair": [
+        323,
+        256
+      ],
+      "new_token": 443,
+      "frequency": 214110
+    },
+    {
+      "pair": [
+        268,
+        385
+      ],
+      "new_token": 444,
+      "frequency": 211307
+    },
+    {
+      "pair": [
+        116,
+        112
+      ],
+      "new_token": 445,
+      "frequency": 209644
+    },
+    {
+      "pair": [
+        100,
+        269
+      ],
+      "new_token": 446,
+      "frequency": 208277
+    },
+    {
+      "pair": [
+        117,
+        110
+      ],
+      "new_token": 447,
+      "frequency": 207561
+    },
+    {
+      "pair": [
+        115,
+        45
+      ],
+      "new_token": 448,
+      "frequency": 205947
+    },
+    {
+      "pair": [
+        105,
+        108
+      ],
+      "new_token": 449,
+      "frequency": 204800
+    },
+    {
+      "pair": [
+        97,
+        262
+      ],
+      "new_token": 450,
+      "frequency": 202659
+    },
+    {
+      "pair": [
+        390,
+        3
+      ],
+      "new_token": 451,
+      "frequency": 202202
+    },
+    {
+      "pair": [
+        98,
+        111
+      ],
+      "new_token": 452,
+      "frequency": 201497
+    },
+    {
+      "pair": [
+        273,
+        116
+      ],
+      "new_token": 453,
+      "frequency": 201097
+    },
+    {
+      "pair": [
+        115,
+        112
+      ],
+      "new_token": 454,
+      "frequency": 200550
+    },
+    {
+      "pair": [
+        117,
+        114
+      ],
+      "new_token": 455,
+      "frequency": 199618
+    },
+    {
+      "pair": [
+        101,
+        263
+      ],
+      "new_token": 456,
+      "frequency": 199211
+    },
+    {
+      "pair": [
+        35,
+        35
+      ],
+      "new_token": 457,
+      "frequency": 194646
+    },
+    {
+      "pair": [
+        261,
+        32
+      ],
+      "new_token": 458,
+      "frequency": 194184
+    },
+    {
+      "pair": [
+        312,
+        272
+      ],
+      "new_token": 459,
+      "frequency": 191999
+    },
+    {
+      "pair": [
+        100,
+        105
+      ],
+      "new_token": 460,
+      "frequency": 191635
+    },
+    {
+      "pair": [
+        371,
+        363
+      ],
+      "new_token": 461,
+      "frequency": 189622
+    },
+    {
+      "pair": [
+        431,
+        445
+      ],
+      "new_token": 462,
+      "frequency": 188379
+    },
+    {
+      "pair": [
+        266,
+        258
+      ],
+      "new_token": 463,
+      "frequency": 187444
+    },
+    {
+      "pair": [
+        281,
+        34
+      ],
+      "new_token": 464,
+      "frequency": 183015
+    },
+    {
+      "pair": [
+        261,
+        256
+      ],
+      "new_token": 465,
+      "frequency": 181209
+    },
+    {
+      "pair": [
+        8,
+        259
+      ],
+      "new_token": 466,
+      "frequency": 181057
+    },
+    {
+      "pair": [
+        46,
+        49
+      ],
+      "new_token": 467,
+      "frequency": 178101
+    },
+    {
+      "pair": [
+        271,
+        15
+      ],
+      "new_token": 468,
+      "frequency": 177262
+    },
+    {
+      "pair": [
+        349,
+        299
+      ],
+      "new_token": 469,
+      "frequency": 175858
+    },
+    {
+      "pair": [
+        268,
+        415
+      ],
+      "new_token": 470,
+      "frequency": 175030
+    },
+    {
+      "pair": [
+        115,
+        105
+      ],
+      "new_token": 471,
+      "frequency": 173967
+    },
+    {
+      "pair": [
+        104,
+        111
+      ],
+      "new_token": 472,
+      "frequency": 172572
+    },
+    {
+      "pair": [
+        117,
+        112
+      ],
+      "new_token": 473,
+      "frequency": 172333
+    },
+    {
+      "pair": [
+        115,
+        58
+      ],
+      "new_token": 474,
+      "frequency": 171727
+    },
+    {
+      "pair": [
+        376,
+        117
+      ],
+      "new_token": 475,
+      "frequency": 171019
+    },
+    {
+      "pair": [
+        112,
+        108
+      ],
+      "new_token": 476,
+      "frequency": 170804
+    },
+    {
+      "pair": [
+        438,
+        105
+      ],
+      "new_token": 477,
+      "frequency": 170719
+    },
+    {
+      "pair": [
+        81,
+        85
+      ],
+      "new_token": 478,
+      "frequency": 169054
+    },
+    {
+      "pair": [
+        10,
+        35
+      ],
+      "new_token": 479,
+      "frequency": 168799
+    },
+    {
+      "pair": [
+        422,
+        398
+      ],
+      "new_token": 480,
+      "frequency": 167681
+    },
+    {
+      "pair": [
+        258,
+        286
+      ],
+      "new_token": 481,
+      "frequency": 167307
+    },
+    {
+      "pair": [
+        105,
+        109
+      ],
+      "new_token": 482,
+      "frequency": 165609
+    },
+    {
+      "pair": [
+        256,
+        4
+      ],
+      "new_token": 483,
+      "frequency": 165010
+    },
+    {
+      "pair": [
+        468,
+        259
+      ],
+      "new_token": 484,
+      "frequency": 164824
+    },
+    {
+      "pair": [
+        115,
+        285
+      ],
+      "new_token": 485,
+      "frequency": 164487
+    },
+    {
+      "pair": [
+        102,
+        97
+      ],
+      "new_token": 486,
+      "frequency": 164479
+    },
+    {
+      "pair": [
+        112,
+        306
+      ],
+      "new_token": 487,
+      "frequency": 163286
+    },
+    {
+      "pair": [
+        119,
+        273
+      ],
+      "new_token": 488,
+      "frequency": 162923
+    },
+    {
+      "pair": [
+        280,
+        100
+      ],
+      "new_token": 489,
+      "frequency": 162427
+    },
+    {
+      "pair": [
+        256,
+        0
+      ],
+      "new_token": 490,
+      "frequency": 162362
+    },
+    {
+      "pair": [
+        115,
+        46
+      ],
+      "new_token": 491,
+      "frequency": 161830
+    },
+    {
+      "pair": [
+        261,
+        45
+      ],
+      "new_token": 492,
+      "frequency": 160733
+    },
+    {
+      "pair": [
+        408,
+        370
+      ],
+      "new_token": 493,
+      "frequency": 159441
+    },
+    {
+      "pair": [
+        324,
+        324
+      ],
+      "new_token": 494,
+      "frequency": 159352
+    },
+    {
+      "pair": [
+        440,
+        432
+      ],
+      "new_token": 495,
+      "frequency": 157913
+    },
+    {
+      "pair": [
+        70,
+        66
+      ],
+      "new_token": 496,
+      "frequency": 157524
+    },
+    {
+      "pair": [
+        264,
+        32
+      ],
+      "new_token": 497,
+      "frequency": 155841
+    },
+    {
+      "pair": [
+        268,
+        49
+      ],
+      "new_token": 498,
+      "frequency": 155592
+    },
+    {
+      "pair": [
+        266,
+        260
+      ],
+      "new_token": 499,
+      "frequency": 155049
+    },
+    {
+      "pair": [
+        269,
+        273
+      ],
+      "new_token": 500,
+      "frequency": 154901
+    },
+    {
+      "pair": [
+        109,
+        97
+      ],
+      "new_token": 501,
+      "frequency": 154684
+    },
+    {
+      "pair": [
+        377,
+        270
+      ],
+      "new_token": 502,
+      "frequency": 154281
+    },
+    {
+      "pair": [
+        101,
+        103
+      ],
+      "new_token": 503,
+      "frequency": 153800
+    },
+    {
+      "pair": [
+        264,
+        116
+      ],
+      "new_token": 504,
+      "frequency": 153005
+    },
+    {
+      "pair": [
+        97,
+        117
+      ],
+      "new_token": 505,
+      "frequency": 152488
+    },
+    {
+      "pair": [
+        1,
+        271
+      ],
+      "new_token": 506,
+      "frequency": 151268
+    },
+    {
+      "pair": [
+        341,
+        286
+      ],
+      "new_token": 507,
+      "frequency": 150164
+    },
+    {
+      "pair": [
+        69,
+        82
+      ],
+      "new_token": 508,
+      "frequency": 150083
+    },
+    {
+      "pair": [
+        108,
+        469
+      ],
+      "new_token": 509,
+      "frequency": 149835
+    },
+    {
+      "pair": [
+        410,
+        450
+      ],
+      "new_token": 510,
+      "frequency": 149823
+    },
+    {
+      "pair": [
+        264,
+        487
+      ],
+      "new_token": 511,
+      "frequency": 147350
+    },
+    {
+      "pair": [
+        414,
+        121
+      ],
+      "new_token": 512,
+      "frequency": 146695
+    },
+    {
+      "pair": [
+        107,
+        56
+      ],
+      "new_token": 513,
+      "frequency": 146504
+    },
+    {
+      "pair": [
+        110,
+        116
+      ],
+      "new_token": 514,
+      "frequency": 143909
+    },
+    {
+      "pair": [
+        99,
+        107
+      ],
+      "new_token": 515,
+      "frequency": 143510
+    },
+    {
+      "pair": [
+        297,
+        428
+      ],
+      "new_token": 516,
+      "frequency": 142212
+    },
+    {
+      "pair": [
+        105,
+        102
+      ],
+      "new_token": 517,
+      "frequency": 141610
+    },
+    {
+      "pair": [
+        477,
+        420
+      ],
+      "new_token": 518,
+      "frequency": 140907
+    },
+    {
+      "pair": [
+        268,
+        461
+      ],
+      "new_token": 519,
+      "frequency": 140349
+    },
+    {
+      "pair": [
+        392,
+        32
+      ],
+      "new_token": 520,
+      "frequency": 140294
+    },
+    {
+      "pair": [
+        111,
+        103
+      ],
+      "new_token": 521,
+      "frequency": 139891
+    },
+    {
+      "pair": [
+        115,
+        256
+      ],
+      "new_token": 522,
+      "frequency": 139663
+    },
+    {
+      "pair": [
+        336,
+        103
+      ],
+      "new_token": 523,
+      "frequency": 139525
+    },
+    {
+      "pair": [
+        478,
+        496
+      ],
+      "new_token": 524,
+      "frequency": 139324
+    },
+    {
+      "pair": [
+        362,
+        100
+      ],
+      "new_token": 525,
+      "frequency": 138556
+    },
+    {
+      "pair": [
+        442,
+        2
+      ],
+      "new_token": 526,
+      "frequency": 137690
+    },
+    {
+      "pair": [
+        109,
+        288
+      ],
+      "new_token": 527,
+      "frequency": 137619
+    },
+    {
+      "pair": [
+        48,
+        46
+      ],
+      "new_token": 528,
+      "frequency": 137350
+    },
+    {
+      "pair": [
+        279,
+        378
+      ],
+      "new_token": 529,
+      "frequency": 137248
+    },
+    {
+      "pair": [
+        84,
+        104
+      ],
+      "new_token": 530,
+      "frequency": 135914
+    },
+    {
+      "pair": [
+        111,
+        112
+      ],
+      "new_token": 531,
+      "frequency": 135378
+    },
+    {
+      "pair": [
+        269,
+        104
+      ],
+      "new_token": 532,
+      "frequency": 135047
+    },
+    {
+      "pair": [
+        45,
+        99
+      ],
+      "new_token": 533,
+      "frequency": 134740
+    },
+    {
+      "pair": [
+        383,
+        412
+      ],
+      "new_token": 534,
+      "frequency": 134453
+    },
+    {
+      "pair": [
+        98,
+        274
+      ],
+      "new_token": 535,
+      "frequency": 134429
+    },
+    {
+      "pair": [
+        111,
+        328
+      ],
+      "new_token": 536,
+      "frequency": 134182
+    },
+    {
+      "pair": [
+        103,
+        262
+      ],
+      "new_token": 537,
+      "frequency": 133771
+    },
+    {
+      "pair": [
+        275,
+        116
+      ],
+      "new_token": 538,
+      "frequency": 133584
+    },
+    {
+      "pair": [
+        288,
+        99
+      ],
+      "new_token": 539,
+      "frequency": 131775
+    },
+    {
+      "pair": [
+        418,
+        331
+      ],
+      "new_token": 540,
+      "frequency": 131583
+    },
+    {
+      "pair": [
+        105,
+        277
+      ],
+      "new_token": 541,
+      "frequency": 130936
+    },
+    {
+      "pair": [
+        524,
+        524
+      ],
+      "new_token": 542,
+      "frequency": 130629
+    },
+    {
+      "pair": [
+        47,
+        47
+      ],
+      "new_token": 543,
+      "frequency": 130407
+    },
+    {
+      "pair": [
+        112,
+        453
+      ],
+      "new_token": 544,
+      "frequency": 130396
+    },
+    {
+      "pair": [
+        267,
+        271
+      ],
+      "new_token": 545,
+      "frequency": 130189
+    },
+    {
+      "pair": [
+        486,
+        309
+      ],
+      "new_token": 546,
+      "frequency": 129871
+    },
+    {
+      "pair": [
+        287,
+        32
+      ],
+      "new_token": 547,
+      "frequency": 129753
+    },
+    {
+      "pair": [
+        108,
+        108
+      ],
+      "new_token": 548,
+      "frequency": 128713
+    },
+    {
+      "pair": [
+        312,
+        511
+      ],
+      "new_token": 549,
+      "frequency": 128189
+    },
+    {
+      "pair": [
+        270,
+        269
+      ],
+      "new_token": 550,
+      "frequency": 127722
+    },
+    {
+      "pair": [
+        488,
+        107
+      ],
+      "new_token": 551,
+      "frequency": 126707
+    },
+    {
+      "pair": [
+        389,
+        91
+      ],
+      "new_token": 552,
+      "frequency": 126023
+    },
+    {
+      "pair": [
+        518,
+        483
+      ],
+      "new_token": 553,
+      "frequency": 125225
+    },
+    {
+      "pair": [
+        111,
+        119
+      ],
+      "new_token": 554,
+      "frequency": 124318
+    },
+    {
+      "pair": [
+        429,
+        421
+      ],
+      "new_token": 555,
+      "frequency": 122971
+    },
+    {
+      "pair": [
+        61,
+        61
+      ],
+      "new_token": 556,
+      "frequency": 122600
+    },
+    {
+      "pair": [
+        5,
+        360
+      ],
+      "new_token": 557,
+      "frequency": 121730
+    },
+    {
+      "pair": [
+        536,
+        500
+      ],
+      "new_token": 558,
+      "frequency": 121480
+    },
+    {
+      "pair": [
+        105,
+        115
+      ],
+      "new_token": 559,
+      "frequency": 121391
+    },
+    {
+      "pair": [
+        266,
+        257
+      ],
+      "new_token": 560,
+      "frequency": 120586
+    },
+    {
+      "pair": [
+        88,
+        88
+      ],
+      "new_token": 561,
+      "frequency": 120140
+    },
+    {
+      "pair": [
+        82,
+        101
+      ],
+      "new_token": 562,
+      "frequency": 119336
+    },
+    {
+      "pair": [
+        34,
+        342
+      ],
+      "new_token": 563,
+      "frequency": 119083
+    },
+    {
+      "pair": [
+        46,
+        256
+      ],
+      "new_token": 564,
+      "frequency": 118876
+    },
+    {
+      "pair": [
+        78,
+        294
+      ],
+      "new_token": 565,
+      "frequency": 117467
+    },
+    {
+      "pair": [
+        109,
+        291
+      ],
+      "new_token": 566,
+      "frequency": 117061
+    },
+    {
+      "pair": [
+        109,
+        262
+      ],
+      "new_token": 567,
+      "frequency": 116342
+    },
+    {
+      "pair": [
+        296,
+        105
+      ],
+      "new_token": 568,
+      "frequency": 116046
+    },
+    {
+      "pair": [
+        388,
+        292
+      ],
+      "new_token": 569,
+      "frequency": 115310
+    },
+    {
+      "pair": [
+        111,
+        116
+      ],
+      "new_token": 570,
+      "frequency": 115303
+    },
+    {
+      "pair": [
+        441,
+        318
+      ],
+      "new_token": 571,
+      "frequency": 113693
+    },
+    {
+      "pair": [
+        82,
+        69
+      ],
+      "new_token": 572,
+      "frequency": 113434
+    },
+    {
+      "pair": [
+        101,
+        303
+      ],
+      "new_token": 573,
+      "frequency": 113176
+    },
+    {
+      "pair": [
+        103,
+        288
+      ],
+      "new_token": 574,
+      "frequency": 112692
+    },
+    {
+      "pair": [
+        413,
+        413
+      ],
+      "new_token": 575,
+      "frequency": 112345
+    },
+    {
+      "pair": [
+        46,
+        493
+      ],
+      "new_token": 576,
+      "frequency": 111360
+    },
+    {
+      "pair": [
+        105,
+        122
+      ],
+      "new_token": 577,
+      "frequency": 111249
+    },
+    {
+      "pair": [
+        258,
+        257
+      ],
+      "new_token": 578,
+      "frequency": 111086
+    },
+    {
+      "pair": [
+        376,
+        363
+      ],
+      "new_token": 579,
+      "frequency": 110317
+    },
+    {
+      "pair": [
+        128,
+        399
+      ],
+      "new_token": 580,
+      "frequency": 110158
+    },
+    {
+      "pair": [
+        281,
+        358
+      ],
+      "new_token": 581,
+      "frequency": 109571
+    },
+    {
+      "pair": [
+        479,
+        32
+      ],
+      "new_token": 582,
+      "frequency": 108956
+    },
+    {
+      "pair": [
+        99,
+        502
+      ],
+      "new_token": 583,
+      "frequency": 108760
+    },
+    {
+      "pair": [
+        357,
+        0
+      ],
+      "new_token": 584,
+      "frequency": 108666
+    },
+    {
+      "pair": [
+        99,
+        264
+      ],
+      "new_token": 585,
+      "frequency": 108387
+    },
+    {
+      "pair": [
+        340,
+        503
+      ],
+      "new_token": 586,
+      "frequency": 107765
+    },
+    {
+      "pair": [
+        99,
+        112
+      ],
+      "new_token": 587,
+      "frequency": 107558
+    },
+    {
+      "pair": [
+        109,
+        111
+      ],
+      "new_token": 588,
+      "frequency": 107327
+    },
+    {
+      "pair": [
+        104,
+        101
+      ],
+      "new_token": 589,
+      "frequency": 107119
+    },
+    {
+      "pair": [
+        77,
+        69
+      ],
+      "new_token": 590,
+      "frequency": 107107
+    },
+    {
+      "pair": [
+        108,
+        262
+      ],
+      "new_token": 591,
+      "frequency": 106905
+    },
+    {
+      "pair": [
+        275,
+        102
+      ],
+      "new_token": 592,
+      "frequency": 106869
+    },
+    {
+      "pair": [
+        98,
+        117
+      ],
+      "new_token": 593,
+      "frequency": 106169
+    },
+    {
+      "pair": [
+        516,
+        416
+      ],
+      "new_token": 594,
+      "frequency": 106062
+    },
+    {
+      "pair": [
+        273,
+        32
+      ],
+      "new_token": 595,
+      "frequency": 106060
+    },
+    {
+      "pair": [
+        310,
+        546
+      ],
+      "new_token": 596,
+      "frequency": 105788
+    },
+    {
+      "pair": [
+        313,
+        101
+      ],
+      "new_token": 597,
+      "frequency": 102754
+    },
+    {
+      "pair": [
+        117,
+        270
+      ],
+      "new_token": 598,
+      "frequency": 101998
+    },
+    {
+      "pair": [
+        118,
+        261
+      ],
+      "new_token": 599,
+      "frequency": 101179
+    },
+    {
+      "pair": [
+        505,
+        277
+      ],
+      "new_token": 600,
+      "frequency": 100711
+    },
+    {
+      "pair": [
+        108,
+        32
+      ],
+      "new_token": 601,
+      "frequency": 100662
+    },
+    {
+      "pair": [
+        34,
+        58
+      ],
+      "new_token": 602,
+      "frequency": 99807
+    },
+    {
+      "pair": [
+        277,
+        274
+      ],
+      "new_token": 603,
+      "frequency": 99522
+    },
+    {
+      "pair": [
+        105,
+        112
+      ],
+      "new_token": 604,
+      "frequency": 99021
+    },
+    {
+      "pair": [
+        338,
+        330
+      ],
+      "new_token": 605,
+      "frequency": 98888
+    },
+    {
+      "pair": [
+        45,
+        394
+      ],
+      "new_token": 606,
+      "frequency": 98601
+    },
+    {
+      "pair": [
+        346,
+        101
+      ],
+      "new_token": 607,
+      "frequency": 98573
+    },
+    {
+      "pair": [
+        102,
+        262
+      ],
+      "new_token": 608,
+      "frequency": 98459
+    },
+    {
+      "pair": [
+        47,
+        539
+      ],
+      "new_token": 609,
+      "frequency": 97664
+    },
+    {
+      "pair": [
+        597,
+        291
+      ],
+      "new_token": 610,
+      "frequency": 97044
+    },
+    {
+      "pair": [
+        452,
+        610
+      ],
+      "new_token": 611,
+      "frequency": 96666
+    },
+    {
+      "pair": [
+        513,
+        115
+      ],
+      "new_token": 612,
+      "frequency": 96561
+    },
+    {
+      "pair": [
+        41,
+        32
+      ],
+      "new_token": 613,
+      "frequency": 96312
+    },
+    {
+      "pair": [
+        116,
+        273
+      ],
+      "new_token": 614,
+      "frequency": 95824
+    },
+    {
+      "pair": [
+        609,
+        47
+      ],
+      "new_token": 615,
+      "frequency": 94712
+    },
+    {
+      "pair": [
+        281,
+        260
+      ],
+      "new_token": 616,
+      "frequency": 94675
+    },
+    {
+      "pair": [
+        306,
+        107
+      ],
+      "new_token": 617,
+      "frequency": 93948
+    },
+    {
+      "pair": [
+        291,
+        386
+      ],
+      "new_token": 618,
+      "frequency": 93330
+    },
+    {
+      "pair": [
+        393,
+        310
+      ],
+      "new_token": 619,
+      "frequency": 93285
+    },
+    {
+      "pair": [
+        69,
+        120
+      ],
+      "new_token": 620,
+      "frequency": 93144
+    },
+    {
+      "pair": [
+        109,
+        330
+      ],
+      "new_token": 621,
+      "frequency": 92806
+    },
+    {
+      "pair": [
+        106,
+        327
+      ],
+      "new_token": 622,
+      "frequency": 92654
+    },
+    {
+      "pair": [
+        284,
+        456
+      ],
+      "new_token": 623,
+      "frequency": 92365
+    },
+    {
+      "pair": [
+        312,
+        101
+      ],
+      "new_token": 624,
+      "frequency": 92222
+    },
+    {
+      "pair": [
+        32,
+        34
+      ],
+      "new_token": 625,
+      "frequency": 92203
+    },
+    {
+      "pair": [
+        323,
+        576
+      ],
+      "new_token": 626,
+      "frequency": 91901
+    },
+    {
+      "pair": [
+        83,
+        84
+      ],
+      "new_token": 627,
+      "frequency": 91806
+    },
+    {
+      "pair": [
+        454,
+        285
+      ],
+      "new_token": 628,
+      "frequency": 91147
+    },
+    {
+      "pair": [
+        378,
+        277
+      ],
+      "new_token": 629,
+      "frequency": 90936
+    },
+    {
+      "pair": [
+        97,
+        347
+      ],
+      "new_token": 630,
+      "frequency": 90800
+    },
+    {
+      "pair": [
+        107,
+        262
+      ],
+      "new_token": 631,
+      "frequency": 90572
+    },
+    {
+      "pair": [
+        99,
+        276
+      ],
+      "new_token": 632,
+      "frequency": 90401
+    },
+    {
+      "pair": [
+        97,
+        118
+      ],
+      "new_token": 633,
+      "frequency": 90105
+    },
+    {
+      "pair": [
+        407,
+        407
+      ],
+      "new_token": 634,
+      "frequency": 90015
+    },
+    {
+      "pair": [
+        259,
+        1
+      ],
+      "new_token": 635,
+      "frequency": 89992
+    },
+    {
+      "pair": [
+        105,
+        270
+      ],
+      "new_token": 636,
+      "frequency": 89791
+    }
+  ],
+  "metadata": {
+    "trained_on_instances": 246439,
+    "training_date": "2026-01-09",
+    "max_merges": 380,
+    "dict_size": 0
+  }
+}

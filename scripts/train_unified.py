@@ -75,6 +75,7 @@ print_banner()
 device_type = ""        # cuda|cpu|mps (empty => autodetect)
 schema = "kubernetes"   # tsconfig, eslintrc, kubernetes
 tokenizer = "tct"       # tct or utf8
+baseline = "bpe-matched"  # bpe-matched or o200k-matched
 model_size = "small"    # small, medium, large
 epochs = None           # None => use schema default
 data_root = None        # None => ~/Desktop/data
@@ -122,17 +123,33 @@ checkpoint_base = Path(checkpoint_base)
 # Load schema config
 schema_cfg = get_schema_config(schema, data_root)
 
-# Select tokenizer-specific settings
+# Select tokenizer-specific settings based on baseline
 if tokenizer == "tct":
-    vocab_size = schema_cfg["tct_vocab_size"]
-    data_path = schema_cfg["data_path_tct"]
-    partner_data_path = schema_cfg.get("data_path_utf8")  # For coordinated filtering
+    if baseline == "o200k-matched":
+        data_path = schema_cfg["data_path_tct_o200k"]
+        partner_data_path = schema_cfg.get("data_path_utf8_o200k")
+    else:
+        data_path = schema_cfg["data_path_tct"]
+        partner_data_path = schema_cfg.get("data_path_utf8")
 elif tokenizer == "utf8":
-    vocab_size = schema_cfg["utf8_vocab_size"]
-    data_path = schema_cfg["data_path_utf8"]
-    partner_data_path = schema_cfg.get("data_path_tct")  # For coordinated filtering
+    if baseline == "o200k-matched":
+        data_path = schema_cfg["data_path_utf8_o200k"]
+        partner_data_path = schema_cfg.get("data_path_tct_o200k")
+    else:
+        data_path = schema_cfg["data_path_utf8"]
+        partner_data_path = schema_cfg.get("data_path_tct")
 else:
     raise ValueError(f"Unknown tokenizer: '{tokenizer}'. Use 'tct' or 'utf8'")
+
+# Read vocab size from data metadata (handles all baselines dynamically)
+metadata_path = data_path / "metadata.json"
+if metadata_path.exists():
+    with open(metadata_path) as f:
+        metadata = json.load(f)
+    vocab_size = metadata.get("base_vocab_size", 0) + 1  # +1 for pad token
+else:
+    # Fallback to schema config (only works for bpe-matched baseline)
+    vocab_size = schema_cfg[f"{tokenizer}_vocab_size"]
 
 context_size = schema_cfg["context_size"]
 base_epochs = epochs if epochs is not None else schema_cfg["default_epochs"]
@@ -181,10 +198,12 @@ if save_every_pct is None:
 save_interval = max(1, total_steps * save_every_pct // 100)
 
 print0("=" * 80)
-print0(f"EXPERIMENT: {schema} / {tokenizer}-BPE / {model_size}")
+baseline_suffix = " (o200k)" if baseline == "o200k-matched" else ""
+print0(f"EXPERIMENT: {schema} / {tokenizer}-BPE{baseline_suffix} / {model_size}")
 print0("=" * 80)
 print0(f"Schema: {schema}")
 print0(f"Tokenizer: {tokenizer}-BPE")
+print0(f"Baseline: {baseline}")
 print0(f"Data path: {data_path}")
 print0(f"Vocab size: {vocab_size:,}")
 print0(f"Context size: {T}")

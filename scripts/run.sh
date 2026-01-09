@@ -27,6 +27,7 @@ EFF_BATCH=""
 GRAD_CKPT=""
 EPOCHS_OVERRIDE=""
 COMPILE_MODE=""
+BASELINE=""
 
 for arg in "$@"; do
     case $arg in
@@ -45,6 +46,8 @@ for arg in "$@"; do
         epochs=*) EPOCHS_OVERRIDE="${arg#epochs=}" ;;
         --compile_mode=*) COMPILE_MODE="${arg#--compile_mode=}" ;;
         --max-autotune) COMPILE_MODE="max-autotune" ;;
+        --baseline=*) BASELINE="${arg#--baseline=}" ;;
+        o200k|o200k-matched) BASELINE="o200k-matched" ;;
     esac
 done
 
@@ -53,11 +56,12 @@ SCHEMAS="${SCHEMAS# }"
 FILTER_SIZES="${FILTER_SIZES# }"
 
 if [ -z "$SCHEMAS" ]; then
-    echo "Usage: bash scripts/run.sh <schema>... [size]... [tokenizer] [resume] [options]"
+    echo "Usage: bash scripts/run.sh <schema>... [size]... [tokenizer] [baseline] [resume] [options]"
     echo ""
     echo "Schemas: kubernetes, tsconfig, eslintrc"
     echo "Sizes: tiny, mini, base, small, small-wide, medium, large"
     echo "Tokenizers: tct, utf8"
+    echo "Baselines: bpe-matched (default), o200k (or o200k-matched)"
     echo "Options:"
     echo "  resume              Resume from latest checkpoint"
     echo "  --epochs=N          Override max epochs (default: schema-specific)"
@@ -69,6 +73,8 @@ if [ -z "$SCHEMAS" ]; then
     echo "  --compile_mode=X    Compile mode: default, reduce-overhead, max-autotune (default)"
     echo "  --use_muon=False    Disable Muon optimizer (default: True, uses Muon+AdamW)"
     echo "  --scale_lr_by_batch Scale AdamW LRs by sqrt(batch/524K) (default: False)"
+    echo "  --baseline=X        Baseline: bpe-matched (default) or o200k-matched"
+    echo "  o200k               Shorthand for --baseline=o200k-matched"
     echo ""
     echo "Examples:"
     echo "  bash scripts/run.sh kubernetes"
@@ -78,6 +84,7 @@ if [ -z "$SCHEMAS" ]; then
     echo "  bash scripts/run.sh kubernetes --epochs=50          # Shorter training"
     echo "  bash scripts/run.sh kubernetes tiny mini base       # Run smaller models"
     echo "  bash scripts/run.sh kubernetes constant             # No LR decay"
+    echo "  bash scripts/run.sh kubernetes tct utf8 o200k       # o200k baseline"
     exit 1
 fi
 
@@ -133,6 +140,7 @@ get_epochs() {
 # tiny/mini/base recommended for limited data, small/medium/large for larger datasets
 DEFAULT_SIZES="small medium large"
 TOKENIZERS="${TOKENIZERS:-tct utf8}"
+BASELINE="${BASELINE:-bpe-matched}"
 
 # =============================================================================
 # Helper functions
@@ -165,6 +173,7 @@ echo "Data: $DATA_DIR"
 echo "Schemas: $SCHEMAS"
 echo "Sizes: $SIZES"
 echo "Tokenizers: ${FILTER_TOKENIZER:-$TOKENIZERS}"
+echo "Baseline: $BASELINE"
 [ -n "$EPOCHS_OVERRIDE" ] && echo "Epochs: $EPOCHS_OVERRIDE (override)"
 [ -n "$DROPOUT" ] && echo "Dropout: $DROPOUT (override)"
 [ -n "$LR_SCHEDULE" ] && echo "LR Schedule: $LR_SCHEDULE"
@@ -191,7 +200,9 @@ for size in $SIZES; do
         for tokenizer in $TOKENIZERS; do
             [ -n "$FILTER_TOKENIZER" ] && [ "$tokenizer" != "$FILTER_TOKENIZER" ] && continue
 
+            # Build experiment name with o200k suffix for o200k baseline
             exp_name="${SCHEMA}_${tokenizer}_${size}"
+            [ "$BASELINE" = "o200k-matched" ] && exp_name="${SCHEMA}_${tokenizer}_o200k_${size}"
             [ -n "$DROPOUT" ] && exp_name="${exp_name}_drop${DROPOUT}"
             [ "$LR_SCHEDULE" = "constant" ] && exp_name="${exp_name}_constlr"
             [ -n "$EFF_BATCH" ] && exp_name="${exp_name}_batch${EFF_BATCH}"
@@ -226,8 +237,9 @@ for size in $SIZES; do
             [ -n "$EFF_BATCH" ] && EXTRA_ARGS="$EXTRA_ARGS --eff_batch=$EFF_BATCH"
             [ -n "$GRAD_CKPT" ] && EXTRA_ARGS="$EXTRA_ARGS --gradient_checkpointing=$GRAD_CKPT"
             [ -n "$COMPILE_MODE" ] && EXTRA_ARGS="$EXTRA_ARGS --compile_mode=$COMPILE_MODE"
-            # Use custom model_tag if we have custom settings
-            [ -n "$DROPOUT" ] || [ -n "$LR_SCHEDULE" ] || [ -n "$EFF_BATCH" ] && EXTRA_ARGS="$EXTRA_ARGS --model_tag=$exp_name"
+            [ "$BASELINE" = "o200k-matched" ] && EXTRA_ARGS="$EXTRA_ARGS --baseline=$BASELINE"
+            # Use custom model_tag if we have custom settings or o200k baseline
+            [ -n "$DROPOUT" ] || [ -n "$LR_SCHEDULE" ] || [ -n "$EFF_BATCH" ] || [ "$BASELINE" = "o200k-matched" ] && EXTRA_ARGS="$EXTRA_ARGS --model_tag=$exp_name"
 
             python -m scripts.train_unified \
                 --schema="$SCHEMA" \

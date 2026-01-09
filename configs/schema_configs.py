@@ -62,9 +62,12 @@ SCHEMA_CONFIGS = {
         "p95": 561,
         "p99": 1108,
 
-        # Data directories
+        # Data directories (bpe-matched baseline)
         "data_dir_tct": "tsconfig-tct-base",
         "data_dir_utf8": "tsconfig-utf8-base-matched",
+        # Data directories (o200k-matched baseline)
+        "data_dir_tct_o200k": "tsconfig-tct-o200k-matched",
+        "data_dir_utf8_o200k": "tsconfig-utf8-o200k-matched",
 
         # Schema info
         "complexity": "low",
@@ -97,9 +100,12 @@ SCHEMA_CONFIGS = {
         "p95": 713,
         "p99": 1858,
 
-        # Data directories
+        # Data directories (bpe-matched baseline)
         "data_dir_tct": "eslintrc-tct-bpe-500",
         "data_dir_utf8": "eslintrc-utf8-bpe-500",
+        # Data directories (o200k-matched baseline)
+        "data_dir_tct_o200k": "eslintrc-tct-o200k-matched",
+        "data_dir_utf8_o200k": "eslintrc-utf8-o200k-matched",
 
         # Schema info
         "complexity": "medium",
@@ -132,9 +138,12 @@ SCHEMA_CONFIGS = {
         "p95": 1006,
         "p99": 7271,
 
-        # Data directories
+        # Data directories (bpe-matched baseline)
         "data_dir_tct": "kubernetes-tct-bpe-1k",
         "data_dir_utf8": "kubernetes-utf8-bpe-1k",
+        # Data directories (o200k-matched baseline)
+        "data_dir_tct_o200k": "kubernetes-tct-o200k-matched",
+        "data_dir_utf8_o200k": "kubernetes-utf8-o200k-matched",
 
         # Schema info
         "complexity": "high",
@@ -167,9 +176,12 @@ def get_schema_config(schema: str, data_root: Path = None) -> dict:
     config = SCHEMA_CONFIGS[schema].copy()
     data_root = Path(data_root) if data_root else DEFAULT_DATA_ROOT
 
-    # Resolve data paths
+    # Resolve data paths (bpe-matched baseline)
     config["data_path_tct"] = data_root / config["data_dir_tct"] if config.get("data_dir_tct") else None
     config["data_path_utf8"] = data_root / config["data_dir_utf8"] if config.get("data_dir_utf8") else None
+    # Resolve data paths (o200k-matched baseline)
+    config["data_path_tct_o200k"] = data_root / config["data_dir_tct_o200k"] if config.get("data_dir_tct_o200k") else None
+    config["data_path_utf8_o200k"] = data_root / config["data_dir_utf8_o200k"] if config.get("data_dir_utf8_o200k") else None
 
     # Override vocab sizes from data metadata when available
     # This ensures model vocab matches actual tokenized data
