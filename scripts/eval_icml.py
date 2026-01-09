@@ -50,6 +50,83 @@ from typing import Any, Dict, List, Optional
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 
+def compute_generation_batch_size(model, max_tokens: int, verbose: bool = False) -> int:
+    """Compute optimal batch size for generation based on model size and GPU memory.
+
+    Uses similar approach to training batch sizing in configs/model_configs.py:
+    - Reference batch sizes for 24GB VRAM
+    - Scale proportionally to actual GPU memory
+    - Account for KV-cache memory growth during generation
+
+    Formula:
+        KV-cache per sample = 2 * n_layers * seq_len * n_kv_heads * head_dim * 4 bytes
+        Available = GPU_memory - model_weights - safety_margin
+        max_batch = Available / KV_cache_per_sample
+
+    Args:
+        model: The GPT model (to get config and device)
+        max_tokens: Maximum sequence length for generation
+        verbose: Print calculation details
+
+    Returns:
+        Optimal batch size (power of 2, min 1, max 512)
+    """
+    import torch
+
+    cfg = model.config
+    device = next(model.parameters()).device
+
+    # Get GPU memory
+    if device.type == "cuda":
+        gpu_memory = torch.cuda.get_device_properties(device).total_memory
+        # Get current allocated memory
+        allocated = torch.cuda.memory_allocated(device)
+    else:
+        # CPU fallback - use reasonable batch size
+        return 16
+
+    # Calculate model memory (already allocated)
+    model_params = sum(p.numel() * p.element_size() for p in model.parameters())
+
+    # Calculate KV-cache memory per sample
+    # KV cache shape: [n_layers, 2, batch, n_kv_heads, seq_len, head_dim]
+    # Each entry is float32 (4 bytes)
+    head_dim = cfg.n_embd // cfg.n_head
+    kv_cache_per_sample = (
+        2  # K and V
+        * cfg.n_layer
+        * cfg.n_kv_head
+        * max_tokens
+        * head_dim
+        * 4  # bytes per float32
+    )
+
+    # Available memory for KV-cache (leave 30% headroom for activations/overhead)
+    safety_factor = 0.7
+    available = (gpu_memory - allocated) * safety_factor
+
+    # Calculate max batch size
+    if kv_cache_per_sample > 0:
+        max_batch = int(available / kv_cache_per_sample)
+    else:
+        max_batch = 512
+
+    if verbose:
+        print(f"    GPU memory: {gpu_memory/1e9:.1f}GB total, {allocated/1e9:.2f}GB allocated")
+        print(f"    Available for KV-cache: {available/1e9:.2f}GB (with 30% headroom)")
+        print(f"    KV-cache per sample: {kv_cache_per_sample/1e6:.1f}MB")
+        print(f"    Max batch before capping: {max_batch}")
+
+    # Round down to power of 2, clamp to [1, 512]
+    # Small models can use very large batches for better GPU utilization
+    valid_batches = [512, 256, 128, 64, 32, 16, 8, 4, 2, 1]
+    for b in valid_batches:
+        if b <= max_batch:
+            return b
+
+    return 1
+
+
 def normalize_json(json_str: str) -> str:
     """Normalize JSON string to minified canonical form (sorted keys, no whitespace).
 
@@ -413,7 +490,7 @@ def generate_samples_xgrammar(
     temperature: float = 0.7,
     top_k: int = 50,
     show_progress: bool = True,
-    batch_size: int = 16,
+    batch_size: int = None,
 ) -> List[str]:
     """Generate samples using UTF8-BPE model with XGrammar constraints.
 
@@ -423,7 +500,7 @@ def generate_samples_xgrammar(
 
     Args:
         first_token_distribution: Dict mapping token_id -> probability for first token
-        batch_size: Batch size for parallel generation (default 16)
+        batch_size: Batch size for generation (None = auto-compute based on GPU memory)
 
     Returns:
         List of generated JSON strings (only valid ones)
@@ -448,6 +525,12 @@ def generate_samples_xgrammar(
         "head_dim": cfg.n_embd // cfg.n_head,
         "num_layers": cfg.n_layer,
     }
+
+    # Auto-compute batch size based on model and GPU memory
+    if batch_size is None:
+        batch_size = compute_generation_batch_size(model, max_tokens, verbose=show_progress)
+        if show_progress:
+            print(f"  Auto batch size: {batch_size} (based on model={cfg.n_embd}d x {cfg.n_layer}L, seq={max_tokens})")
 
     # Prepare first token sampling
     first_tokens = list(first_token_distribution.keys())
@@ -559,7 +642,7 @@ def generate_samples_tct(
     temperature: float = 0.7,
     top_k: int = 50,
     show_progress: bool = True,
-    batch_size: int = 16,
+    batch_size: int = None,
 ) -> List[str]:
     """Generate samples using TCT model with batched generation.
 
@@ -584,7 +667,7 @@ def generate_samples_tct(
         temperature: Sampling temperature
         top_k: Top-k sampling parameter
         show_progress: Whether to show progress bar
-        batch_size: Batch size for parallel generation (default 16)
+        batch_size: Batch size for generation (None = auto-compute based on GPU memory)
 
     Returns:
         List of generated JSON strings (all valid by construction)
@@ -607,6 +690,12 @@ def generate_samples_tct(
         "head_dim": cfg.n_embd // cfg.n_head,
         "num_layers": cfg.n_layer,
     }
+
+    # Auto-compute batch size based on model and GPU memory
+    if batch_size is None:
+        batch_size = compute_generation_batch_size(model, max_tokens, verbose=show_progress)
+        if show_progress:
+            print(f"  Auto batch size: {batch_size} (based on model={cfg.n_embd}d x {cfg.n_layer}L, seq={max_tokens})")
 
     # BOS token is pad token = vocab_size - 1 (matches training setup)
     bos_token = tct_module.vocab_size() - 1
