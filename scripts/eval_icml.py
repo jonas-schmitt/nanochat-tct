@@ -491,7 +491,8 @@ def generate_samples_xgrammar(
     top_k: int = 50,
     show_progress: bool = True,
     batch_size: int = None,
-) -> List[str]:
+    use_compile: bool = False,  # Disabled: torch.compile + KV-cache causes segfaults
+) -> tuple:
     """Generate samples using UTF8-BPE model with XGrammar constraints.
 
     Uses KV-cache and batched generation for efficient GPU utilization.
@@ -501,9 +502,14 @@ def generate_samples_xgrammar(
     Args:
         first_token_distribution: Dict mapping token_id -> probability for first token
         batch_size: Batch size for generation (None = auto-compute based on GPU memory)
+        use_compile: Whether to use torch.compile for faster inference
 
     Returns:
-        List of generated JSON strings (only valid ones)
+        Tuple of (generated_texts, stats_dict) where stats_dict contains:
+        - completed: Number of samples where grammar terminated normally
+        - truncated: Number of samples that hit max_tokens before completion
+        - empty: Number of samples that were empty
+        - failed: Number of samples that failed to decode
     """
     import random
     import torch
@@ -513,8 +519,23 @@ def generate_samples_xgrammar(
     from nanochat.engine import KVCache
 
     device = next(model.parameters()).device
+
+    # torch.compile with KV-cache can cause segfaults - disabled by default
+    # The issue is that reduce-overhead mode still triggers cudagraphs warnings
+    # and can crash on some GPU/driver combinations
+    if use_compile and not getattr(model, '_compiled', False):
+        if show_progress:
+            print("  Compiling model with torch.compile(mode='reduce-overhead')...")
+        try:
+            model = torch.compile(model, mode="reduce-overhead")
+            model._compiled = True
+        except Exception as e:
+            if show_progress:
+                print(f"  torch.compile failed: {e}, continuing without compilation")
+
     generated_texts = []
-    valid_count = 0
+    completed_count = 0  # Grammar terminated normally
+    truncated_count = 0  # Hit max_tokens before grammar termination
     empty_count = 0
     failed_count = 0
 
@@ -561,6 +582,7 @@ def generate_samples_xgrammar(
 
             # Track which samples are still active (not terminated)
             active = [True] * current_batch_size
+            terminated = [False] * current_batch_size  # Track if grammar terminated vs truncated
 
             # Prefill with first tokens (batched)
             input_ids = torch.tensor(start_tokens, device=device).unsqueeze(1)  # [batch, 1]
@@ -578,6 +600,7 @@ def generate_samples_xgrammar(
                     if active[i]:
                         if matchers[i].is_terminated():
                             active[i] = False
+                            terminated[i] = True  # Properly completed
                             continue
                         xgrammar.reset_token_bitmask(bitmasks[i])
                         matchers[i].fill_next_token_bitmask(bitmasks[i])
@@ -610,14 +633,17 @@ def generate_samples_xgrammar(
                     logits = logits[:, -1, :]
 
             # Decode and validate each sample
-            for tokens in batch_tokens:
+            for i, tokens in enumerate(batch_tokens):
                 try:
                     text = utf8_decoder.decode(tokens)
                     import json
                     parsed = json.loads(text)
                     if parsed and parsed != {}:
                         generated_texts.append(text)
-                        valid_count += 1
+                        if terminated[i]:
+                            completed_count += 1
+                        else:
+                            truncated_count += 1  # Valid JSON but hit max_tokens
                     else:
                         empty_count += 1
                 except (json.JSONDecodeError, Exception):
@@ -627,10 +653,187 @@ def generate_samples_xgrammar(
             failed_count += current_batch_size
             continue
 
-    if show_progress:
-        print(f"  Generated: {valid_count} valid, {empty_count} empty (excluded), {failed_count} failed")
+    stats = {
+        "completed": completed_count,
+        "truncated": truncated_count,
+        "empty": empty_count,
+        "failed": failed_count,
+        "total": num_samples,
+        "completion_rate": completed_count / num_samples if num_samples > 0 else 0,
+    }
 
-    return generated_texts
+    if show_progress:
+        print(f"  Completed: {completed_count}/{num_samples} ({stats['completion_rate']:.1%})")
+        print(f"  Truncated: {truncated_count} (valid but hit max_tokens)")
+        print(f"  Empty: {empty_count}, Failed: {failed_count}")
+
+    return generated_texts, stats
+
+
+def generate_samples_utf8_raw(
+    model,
+    utf8_decoder,
+    first_token_distribution: Dict[int, float],
+    num_samples: int,
+    max_tokens: int = 512,
+    temperature: float = 0.7,
+    top_k: int = 50,
+    show_progress: bool = True,
+    batch_size: int = None,
+    use_compile: bool = False,  # Disabled: torch.compile + KV-cache causes segfaults
+) -> tuple:
+    """Generate samples using UTF8-BPE model WITHOUT any grammar constraints.
+
+    This is the raw model output - no XGrammar masking.
+    Used as a baseline to show what the model generates without constraints.
+
+    Args:
+        first_token_distribution: Dict mapping token_id -> probability for first token
+        batch_size: Batch size for generation (None = auto-compute based on GPU memory)
+        use_compile: Whether to use torch.compile for faster inference
+
+    Returns:
+        Tuple of (generated_texts, stats_dict) where stats_dict contains:
+        - valid_json: Number of samples that are valid JSON
+        - valid_nonempty: Number of samples that are valid non-empty JSON
+        - invalid: Number of samples that failed JSON parsing
+        - empty: Number of samples that were empty objects
+    """
+    import random
+    import torch
+    import torch.nn.functional as F
+    from tqdm import tqdm
+    from nanochat.engine import KVCache
+
+    device = next(model.parameters()).device
+
+    # torch.compile with KV-cache can cause segfaults - disabled by default
+    if use_compile and not getattr(model, '_compiled', False):
+        if show_progress:
+            print("  Compiling model with torch.compile(mode='reduce-overhead')...")
+        try:
+            model = torch.compile(model, mode="reduce-overhead")
+            model._compiled = True
+        except Exception as e:
+            if show_progress:
+                print(f"  torch.compile failed: {e}, continuing without compilation")
+
+    generated_texts = []
+    valid_json_count = 0
+    valid_nonempty_count = 0
+    invalid_count = 0
+    empty_count = 0
+
+    # Get model config for KV cache
+    cfg = model.config
+    kv_kwargs = {
+        "num_heads": cfg.n_kv_head,
+        "head_dim": cfg.n_embd // cfg.n_head,
+        "num_layers": cfg.n_layer,
+    }
+
+    # Auto-compute batch size based on model and GPU memory
+    if batch_size is None:
+        batch_size = compute_generation_batch_size(model, max_tokens, verbose=show_progress)
+        if show_progress:
+            print(f"  Auto batch size: {batch_size}")
+
+    # Prepare first token sampling
+    first_tokens = list(first_token_distribution.keys())
+    first_probs = list(first_token_distribution.values())
+
+    # EOS token for this vocabulary
+    eos_token = utf8_decoder.eos_token_id()
+
+    # Process in batches
+    num_batches = (num_samples + batch_size - 1) // batch_size
+    iterator = tqdm(range(num_batches), desc="Generating raw UTF8 samples") if show_progress else range(num_batches)
+
+    for batch_idx in iterator:
+        start_idx = batch_idx * batch_size
+        end_idx = min(start_idx + batch_size, num_samples)
+        current_batch_size = end_idx - start_idx
+
+        try:
+            kv_cache = KVCache(batch_size=current_batch_size, seq_len=max_tokens, **kv_kwargs)
+
+            # Sample first tokens for each sample
+            start_tokens = random.choices(first_tokens, weights=first_probs, k=current_batch_size)
+            batch_tokens = [[t] for t in start_tokens]
+
+            # Track which samples are still active (not hit EOS)
+            active = [True] * current_batch_size
+
+            # Prefill with first tokens (batched)
+            input_ids = torch.tensor(start_tokens, device=device).unsqueeze(1)
+            with torch.no_grad():
+                logits = model(input_ids, kv_cache=kv_cache)
+                logits = logits[:, -1, :]
+
+            for step in range(max_tokens - 1):
+                if not any(active):
+                    break
+
+                # Apply temperature and top-k (batched) - NO grammar masking
+                if temperature > 0:
+                    logits = logits / temperature
+
+                if top_k is not None and top_k > 0:
+                    v, _ = torch.topk(logits, min(top_k, logits.size(-1)), dim=-1)
+                    logits[logits < v[:, -1:]] = float('-inf')
+
+                # Sample next tokens
+                probs = F.softmax(logits, dim=-1)
+                next_tokens = torch.multinomial(probs, num_samples=1)
+                next_tokens_list = next_tokens.squeeze(-1).tolist()
+
+                # Update state
+                for i, tok in enumerate(next_tokens_list):
+                    if active[i]:
+                        if tok == eos_token:
+                            active[i] = False
+                        else:
+                            batch_tokens[i].append(tok)
+
+                # Get next logits using KV cache (batched)
+                with torch.no_grad():
+                    logits = model(next_tokens, kv_cache=kv_cache)
+                    logits = logits[:, -1, :]
+
+            # Decode and validate each sample
+            for tokens in batch_tokens:
+                try:
+                    text = utf8_decoder.decode(tokens)
+                    import json
+                    parsed = json.loads(text)
+                    valid_json_count += 1
+                    if parsed and parsed != {}:
+                        generated_texts.append(text)
+                        valid_nonempty_count += 1
+                    else:
+                        empty_count += 1
+                except (json.JSONDecodeError, Exception):
+                    invalid_count += 1
+
+        except Exception as e:
+            invalid_count += current_batch_size
+            continue
+
+    stats = {
+        "valid_json": valid_json_count,
+        "valid_nonempty": valid_nonempty_count,
+        "invalid": invalid_count,
+        "empty": empty_count,
+        "total": num_samples,
+        "validity_rate": valid_nonempty_count / num_samples if num_samples > 0 else 0,
+    }
+
+    if show_progress:
+        print(f"  Valid JSON: {valid_json_count}/{num_samples} ({valid_json_count/num_samples:.1%})")
+        print(f"  Valid non-empty: {valid_nonempty_count}/{num_samples} ({stats['validity_rate']:.1%})")
+        print(f"  Invalid: {invalid_count}, Empty: {empty_count}")
+
+    return generated_texts, stats
 
 
 def generate_samples_tct(
@@ -643,7 +846,8 @@ def generate_samples_tct(
     top_k: int = 50,
     show_progress: bool = True,
     batch_size: int = None,
-) -> List[str]:
+    use_compile: bool = False,  # Disabled: torch.compile + KV-cache causes segfaults
+) -> tuple:
     """Generate samples using TCT model with batched generation.
 
     TCT is inherently constrained - all outputs are valid by construction.
@@ -668,9 +872,13 @@ def generate_samples_tct(
         top_k: Top-k sampling parameter
         show_progress: Whether to show progress bar
         batch_size: Batch size for generation (None = auto-compute based on GPU memory)
+        use_compile: Whether to use torch.compile for faster inference
 
     Returns:
-        List of generated JSON strings (all valid by construction)
+        Tuple of (generated_texts, stats_dict) where stats_dict contains:
+        - completed: Number of samples where TCT decode completed fully
+        - partial: Number of samples that decoded partially (hit max_tokens)
+        - empty: Number of samples that decoded to empty objects
     """
     import torch
     import torch.nn.functional as F
@@ -678,10 +886,22 @@ def generate_samples_tct(
     from nanochat.engine import KVCache
 
     device = next(model.parameters()).device
+
+    # torch.compile with KV-cache can cause segfaults - disabled by default
+    if use_compile and not getattr(model, '_compiled', False):
+        if show_progress:
+            print("  Compiling model with torch.compile(mode='reduce-overhead')...")
+        try:
+            model = torch.compile(model, mode="reduce-overhead")
+            model._compiled = True
+        except Exception as e:
+            if show_progress:
+                print(f"  torch.compile failed: {e}, continuing without compilation")
+
     generated_texts = []
-    decode_success = 0
-    decode_partial = 0
-    decode_empty = 0
+    completed_count = 0  # TCT decode completed (is_complete=True)
+    partial_count = 0    # Decoded but not complete (hit max_tokens)
+    empty_count = 0
 
     # Get model config for KV cache
     cfg = model.config
@@ -765,20 +985,30 @@ def generate_samples_tct(
 
             if is_complete and json_out and json_out != "{}":
                 generated_texts.append(json_out)
-                decode_success += 1
+                completed_count += 1
             elif is_complete:
-                decode_empty += 1
+                empty_count += 1
             elif json_out and json_out != "{}":
-                decode_partial += 1
+                partial_count += 1
             else:
-                decode_empty += 1
+                empty_count += 1
         except Exception:
             continue
 
-    if show_progress:
-        print(f"  Generated: {decode_success} valid, {decode_empty} empty (excluded), {decode_partial} partial (excluded)")
+    stats = {
+        "completed": completed_count,
+        "partial": partial_count,
+        "empty": empty_count,
+        "total": num_samples,
+        "completion_rate": completed_count / num_samples if num_samples > 0 else 0,
+    }
 
-    return generated_texts
+    if show_progress:
+        print(f"  Completed: {completed_count}/{num_samples} ({stats['completion_rate']:.1%})")
+        print(f"  Partial: {partial_count} (decoded but hit max_tokens)")
+        print(f"  Empty: {empty_count}")
+
+    return generated_texts, stats
 
 
 def run_generation_quality_utf8(
@@ -847,7 +1077,7 @@ def run_generation_quality_utf8(
 
     # Generate samples from model
     print(f"\n  Generating {num_samples} samples with XGrammar constraints...")
-    generated_texts = generate_samples_xgrammar(
+    generated_texts, gen_stats = generate_samples_xgrammar(
         model=model,
         tokenizer_info=tokenizer_info,
         compiled_grammar=compiled_grammar,
@@ -897,6 +1127,7 @@ def run_generation_quality_utf8(
         "max_tokens": max_tokens,
         "validation_samples": real_result.num_valid,
         "generated_samples": gen_result.num_valid,
+        "generation_stats": gen_stats,
         "ground_truth_distributions": real_result.to_dict()["field_distributions"],
         "generated_distributions": gen_result.to_dict()["field_distributions"],
         "comparison": comparison.to_dict(),
@@ -961,7 +1192,7 @@ def run_generation_quality_tct(
 
     # Generate samples from TCT model
     print(f"\n  Generating {num_samples} samples with TCT model...")
-    generated_texts = generate_samples_tct(
+    generated_texts, gen_stats = generate_samples_tct(
         model=model,
         tct_module=tct_module,
         num_samples=num_samples,
@@ -1009,9 +1240,107 @@ def run_generation_quality_tct(
         "max_tokens": max_tokens,
         "validation_samples": real_result.num_valid,
         "generated_samples": gen_result.num_valid,
+        "generation_stats": gen_stats,
         "ground_truth_distributions": real_result.to_dict()["field_distributions"],
         "generated_distributions": gen_result.to_dict()["field_distributions"],
         "comparison": comparison.to_dict(),
+    }
+
+
+def run_generation_quality_utf8_raw(
+    model,
+    schema: str,
+    merge_table: Path,
+    data_dir: Path,
+    num_samples: int,
+    device: str,
+    temperature: float = 0.7,
+    max_tokens: int = 512,
+    normalize_json_output: bool = True,
+) -> Dict[str, Any]:
+    """Run generation quality evaluation for UTF8-BPE model WITHOUT XGrammar.
+
+    This shows raw model output without any grammar constraints.
+    """
+    from nanochat.field_extractors import get_extractor
+    from nanochat.distribution_metrics import compare_extraction_results
+    from nanochat.xgrammar_tokenizer import UTF8BPEDecoder
+
+    print("\n" + "=" * 60)
+    print("GENERATION QUALITY EVALUATION (UTF8-BPE RAW - No XGrammar)")
+    print("=" * 60)
+
+    # Get field extractor
+    extractor = get_extractor(schema)
+    print(f"  Schema: {schema}")
+    print(f"  Fields defined: {len(extractor.field_definitions)}")
+
+    # Build decoder
+    utf8_decoder = UTF8BPEDecoder(merge_table)
+
+    # Compute first token distribution for fair comparison
+    print("  Computing first token distribution for generation...")
+    first_token_dist = compute_first_token_distribution(data_dir)
+    print(f"  First tokens: {len(first_token_dist)} unique")
+
+    # Load and decode validation samples for ground truth distribution
+    print(f"\n  Extracting ground truth distribution from validation data...")
+    validation_tokens = load_validation_tokens(data_dir, num_samples)
+    val_texts = [utf8_decoder.decode(tokens) for tokens in validation_tokens]
+
+    if normalize_json_output:
+        val_texts = [normalize_json(t) for t in val_texts]
+
+    real_result = extractor.extract_from_samples(val_texts)
+    print(f"  Validation samples: {real_result.num_valid}/{real_result.num_samples} valid")
+
+    # Generate samples from model (no grammar constraints!)
+    print(f"\n  Generating {num_samples} samples WITHOUT grammar constraints...")
+    generated_texts, gen_stats = generate_samples_utf8_raw(
+        model=model,
+        utf8_decoder=utf8_decoder,
+        first_token_distribution=first_token_dist,
+        num_samples=num_samples,
+        max_tokens=max_tokens,
+        temperature=temperature,
+        show_progress=True,
+    )
+
+    if normalize_json_output:
+        generated_texts = [normalize_json(t) for t in generated_texts]
+
+    # Extract fields from generated samples
+    print(f"\n  Extracting fields from {len(generated_texts)} generated samples...")
+    gen_result = extractor.extract_from_samples(generated_texts)
+    print(f"  Generated samples: {gen_result.num_valid}/{gen_result.num_samples} valid")
+
+    # Compare distributions (if we have any valid samples)
+    if gen_result.num_valid > 0:
+        print("\n  Comparing distributions...")
+        comparison = compare_extraction_results(real_result, gen_result)
+
+        print(f"\n  Distribution Comparison Summary:")
+        print(f"    Mean KL divergence:  {comparison.mean_kl:.4f}")
+        print(f"    Mean TV distance:    {comparison.mean_tv:.4f}")
+        print(f"    Mean coverage:       {comparison.mean_coverage:.2%}")
+        print(f"    Mode match rate:     {comparison.mode_match_rate:.2%}")
+
+        comparison_dict = comparison.to_dict()
+    else:
+        print("\n  No valid samples generated - cannot compare distributions")
+        comparison_dict = {"mean_kl": float('inf'), "mean_tv": 1.0, "mean_coverage": 0.0, "mode_match_rate": 0.0}
+
+    return {
+        "schema": schema,
+        "model_type": "utf8_raw",
+        "temperature": temperature,
+        "max_tokens": max_tokens,
+        "validation_samples": real_result.num_valid,
+        "generated_samples": gen_result.num_valid,
+        "generation_stats": gen_stats,
+        "ground_truth_distributions": real_result.to_dict()["field_distributions"],
+        "generated_distributions": gen_result.to_dict()["field_distributions"],
+        "comparison": comparison_dict,
     }
 
 
@@ -1368,6 +1697,21 @@ def main():
 
         # Run generation quality (unless --bpb_only)
         if not args.bpb_only:
+            # Raw UTF8 generation (no grammar constraints)
+            raw_gen_results = run_generation_quality_utf8_raw(
+                model=model,
+                schema=args.schema,
+                merge_table=merge_table,
+                data_dir=utf8_data_dir,
+                num_samples=args.num_gen_samples,
+                device=args.device,
+                temperature=args.temperature,
+                max_tokens=args.max_gen_tokens,
+                normalize_json_output=args.normalize_bytes,
+            )
+            results["utf8_raw_generation"] = raw_gen_results
+
+            # UTF8 + XGrammar generation (grammar constrained)
             gen_results = run_generation_quality_utf8(
                 model=model,
                 schema=args.schema,
