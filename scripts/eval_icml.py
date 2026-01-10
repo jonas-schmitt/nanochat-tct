@@ -42,6 +42,7 @@ Usage:
 import argparse
 import json
 import sys
+import time
 from dataclasses import asdict
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -637,6 +638,9 @@ def generate_samples_xgrammar(
     num_batches = (num_samples + batch_size - 1) // batch_size
     iterator = tqdm(range(num_batches), desc="Generating samples") if show_progress else range(num_batches)
 
+    total_tokens_generated = 0
+    gen_start_time = time.time()
+
     for batch_idx in iterator:
         # Calculate actual batch size for this batch
         start_idx = batch_idx * batch_size
@@ -726,6 +730,13 @@ def generate_samples_xgrammar(
             failed_count += current_batch_size
             continue
 
+        # Count tokens generated in this batch
+        total_tokens_generated += sum(len(tokens) for tokens in batch_tokens)
+
+    gen_elapsed_time = time.time() - gen_start_time
+    tokens_per_second = total_tokens_generated / gen_elapsed_time if gen_elapsed_time > 0 else 0
+    samples_per_second = num_samples / gen_elapsed_time if gen_elapsed_time > 0 else 0
+
     stats = {
         "completed": completed_count,
         "truncated": truncated_count,
@@ -733,12 +744,17 @@ def generate_samples_xgrammar(
         "failed": failed_count,
         "total": num_samples,
         "completion_rate": completed_count / num_samples if num_samples > 0 else 0,
+        "generation_time_seconds": gen_elapsed_time,
+        "total_tokens_generated": total_tokens_generated,
+        "tokens_per_second": tokens_per_second,
+        "samples_per_second": samples_per_second,
     }
 
     if show_progress:
         print(f"  Completed: {completed_count}/{num_samples} ({stats['completion_rate']:.1%})")
         print(f"  Truncated: {truncated_count} (valid but hit max_tokens)")
         print(f"  Empty: {empty_count}, Failed: {failed_count}")
+        print(f"  Throughput: {tokens_per_second:.0f} tokens/sec ({samples_per_second:.2f} samples/sec)")
 
     return generated_texts, stats
 
@@ -820,6 +836,9 @@ def generate_samples_utf8_raw(
     num_batches = (num_samples + batch_size - 1) // batch_size
     iterator = tqdm(range(num_batches), desc="Generating raw UTF8 samples") if show_progress else range(num_batches)
 
+    total_tokens_generated = 0
+    gen_start_time = time.time()
+
     for batch_idx in iterator:
         start_idx = batch_idx * batch_size
         end_idx = min(start_idx + batch_size, num_samples)
@@ -889,6 +908,13 @@ def generate_samples_utf8_raw(
             invalid_count += current_batch_size
             continue
 
+        # Count tokens generated in this batch
+        total_tokens_generated += sum(len(tokens) for tokens in batch_tokens)
+
+    gen_elapsed_time = time.time() - gen_start_time
+    tokens_per_second = total_tokens_generated / gen_elapsed_time if gen_elapsed_time > 0 else 0
+    samples_per_second = num_samples / gen_elapsed_time if gen_elapsed_time > 0 else 0
+
     stats = {
         "valid_json": valid_json_count,
         "valid_nonempty": valid_nonempty_count,
@@ -896,12 +922,17 @@ def generate_samples_utf8_raw(
         "empty": empty_count,
         "total": num_samples,
         "validity_rate": valid_nonempty_count / num_samples if num_samples > 0 else 0,
+        "generation_time_seconds": gen_elapsed_time,
+        "total_tokens_generated": total_tokens_generated,
+        "tokens_per_second": tokens_per_second,
+        "samples_per_second": samples_per_second,
     }
 
     if show_progress:
         print(f"  Valid JSON: {valid_json_count}/{num_samples} ({valid_json_count/num_samples:.1%})")
         print(f"  Valid non-empty: {valid_nonempty_count}/{num_samples} ({stats['validity_rate']:.1%})")
         print(f"  Invalid: {invalid_count}, Empty: {empty_count}")
+        print(f"  Throughput: {tokens_per_second:.0f} tokens/sec ({samples_per_second:.2f} samples/sec)")
 
     return generated_texts, stats
 
@@ -995,6 +1026,8 @@ def generate_samples_tct(
     iterator = tqdm(range(num_batches), desc="Generating TCT samples") if show_progress else range(num_batches)
 
     all_generated_tokens = []
+    total_tokens_generated = 0
+    gen_start_time = time.time()
 
     for batch_idx in iterator:
         # Calculate actual batch size for this batch (last batch may be smaller)
@@ -1043,6 +1076,9 @@ def generate_samples_tct(
 
         # Store all generated token sequences from this batch
         all_generated_tokens.extend(batch_tokens)
+        total_tokens_generated += current_batch_size * max_tokens
+
+    gen_elapsed_time = time.time() - gen_start_time
 
     # Decode all samples (this is sequential, but decoding is fast)
     if show_progress:
@@ -1065,18 +1101,26 @@ def generate_samples_tct(
         except Exception:
             continue
 
+    tokens_per_second = total_tokens_generated / gen_elapsed_time if gen_elapsed_time > 0 else 0
+    samples_per_second = num_samples / gen_elapsed_time if gen_elapsed_time > 0 else 0
+
     stats = {
         "completed": completed_count,
         "partial": partial_count,
         "empty": empty_count,
         "total": num_samples,
         "completion_rate": completed_count / num_samples if num_samples > 0 else 0,
+        "generation_time_seconds": gen_elapsed_time,
+        "total_tokens_generated": total_tokens_generated,
+        "tokens_per_second": tokens_per_second,
+        "samples_per_second": samples_per_second,
     }
 
     if show_progress:
         print(f"  Completed: {completed_count}/{num_samples} ({stats['completion_rate']:.1%})")
         print(f"  Partial: {partial_count} (decoded but hit max_tokens)")
         print(f"  Empty: {empty_count}")
+        print(f"  Throughput: {tokens_per_second:.0f} tokens/sec ({samples_per_second:.2f} samples/sec)")
 
     return generated_texts, stats
 
@@ -1961,6 +2005,19 @@ def main():
         print(f"  {'Mean TV Distance':<20} {utf8.get('mean_tv', 0):>15.4f} {tct.get('mean_tv', 0):>15.4f}")
         print(f"  {'Coverage':<20} {utf8.get('mean_coverage', 0):>14.1%} {tct.get('mean_coverage', 0):>14.1%}")
         print(f"  {'Mode Match Rate':<20} {utf8.get('mode_match_rate', 0):>14.1%} {tct.get('mode_match_rate', 0):>14.1%}")
+
+        # Throughput comparison
+        utf8_stats = results["utf8_generation"].get("generation_stats", {})
+        tct_stats = results["tct_generation"].get("generation_stats", {})
+        if utf8_stats.get("tokens_per_second") and tct_stats.get("tokens_per_second"):
+            print(f"\nGeneration Throughput:")
+            print(f"  {'Metric':<20} {'UTF8+XGrammar':>15} {'TCT':>15}")
+            print(f"  {'-'*50}")
+            print(f"  {'Tokens/sec':<20} {utf8_stats.get('tokens_per_second', 0):>15.0f} {tct_stats.get('tokens_per_second', 0):>15.0f}")
+            print(f"  {'Samples/sec':<20} {utf8_stats.get('samples_per_second', 0):>15.2f} {tct_stats.get('samples_per_second', 0):>15.2f}")
+            print(f"  {'Time (sec)':<20} {utf8_stats.get('generation_time_seconds', 0):>15.1f} {tct_stats.get('generation_time_seconds', 0):>15.1f}")
+            speedup = tct_stats.get('tokens_per_second', 0) / utf8_stats.get('tokens_per_second', 1) if utf8_stats.get('tokens_per_second', 0) > 0 else 0
+            print(f"  {'TCT Speedup':<20} {speedup:>15.2f}x")
 
     # Save results
     if args.output:
