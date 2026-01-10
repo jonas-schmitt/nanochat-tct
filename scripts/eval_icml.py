@@ -1058,7 +1058,7 @@ def generate_samples_tct(
 
     generated_texts = []
     completed_count = 0  # TCT decode completed (is_complete=True)
-    partial_count = 0    # Decoded but not complete (hit max_tokens)
+    failed_count = 0     # Decode raised exception
     empty_count = 0
 
     # Get model config for KV cache
@@ -1186,18 +1186,17 @@ def generate_samples_tct(
             if idx == 0 and show_progress:
                 log(f"    First decode: {len(tokens_to_decode)} tokens: {tokens_to_decode[:20]}...")
                 sys.stdout.flush()
-            json_out, consumed, is_complete = tct_module.decode_prefix(tokens_to_decode)
+            # Use decode() instead of decode_prefix() - decode_prefix has a bug where
+            # it returns is_complete=True with empty arrays before all tokens are consumed
+            json_out, _, _ = tct_module.decode(tokens_to_decode)
 
-            if is_complete and json_out and json_out != "{}":
+            if json_out and json_out != "{}":
                 generated_texts.append(json_out)
                 completed_count += 1
-            elif is_complete:
-                empty_count += 1
-            elif json_out and json_out != "{}":
-                partial_count += 1
             else:
                 empty_count += 1
         except Exception:
+            failed_count += 1
             continue
 
     tokens_per_second = total_tokens_generated / gen_elapsed_time if gen_elapsed_time > 0 else 0
@@ -1205,8 +1204,8 @@ def generate_samples_tct(
 
     stats = {
         "completed": completed_count,
-        "partial": partial_count,
         "empty": empty_count,
+        "failed": failed_count,
         "total": num_samples,
         "completion_rate": completed_count / num_samples if num_samples > 0 else 0,
         "generation_time_seconds": gen_elapsed_time,
@@ -1217,8 +1216,7 @@ def generate_samples_tct(
 
     if show_progress:
         print(f"  Completed: {completed_count}/{num_samples} ({stats['completion_rate']:.1%})")
-        print(f"  Partial: {partial_count} (decoded but hit max_tokens)")
-        print(f"  Empty: {empty_count}")
+        print(f"  Empty: {empty_count}, Failed: {failed_count}")
         print(f"  Throughput: {tokens_per_second:.0f} tokens/sec ({samples_per_second:.2f} samples/sec)")
 
     return generated_texts, stats
