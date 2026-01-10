@@ -101,8 +101,8 @@ def compute_generation_batch_size(model, max_tokens: int, verbose: bool = False)
         * 4  # bytes per float32
     )
 
-    # Available memory for KV-cache (leave 30% headroom for activations/overhead)
-    safety_factor = 0.7
+    # Available memory for KV-cache (leave 10% headroom for activations/overhead)
+    safety_factor = 0.9
     available = (gpu_memory - allocated) * safety_factor
 
     # Calculate max batch size
@@ -113,7 +113,7 @@ def compute_generation_batch_size(model, max_tokens: int, verbose: bool = False)
 
     if verbose:
         print(f"    GPU memory: {gpu_memory/1e9:.1f}GB total, {allocated/1e9:.2f}GB allocated")
-        print(f"    Available for KV-cache: {available/1e9:.2f}GB (with 30% headroom)")
+        print(f"    Available for KV-cache: {available/1e9:.2f}GB (with 10% headroom)")
         print(f"    KV-cache per sample: {kv_cache_per_sample/1e6:.1f}MB")
         print(f"    Max batch before capping: {max_batch}")
 
@@ -332,6 +332,83 @@ def load_validation_tokens(data_dir: Path, max_samples: int = 1000) -> List[List
                 break
             tokens.append(json.loads(line))
     return tokens
+
+
+def load_validation_tokens_with_target(
+    utf8_data_dir: Path,
+    tct_data_dir: Optional[Path],
+    target_valid: int,
+    max_seq_len: int,
+    max_iterations: int = 10,
+) -> tuple:
+    """Load validation tokens, auto-increasing until target valid samples is reached.
+
+    Iteratively loads more samples until we have at least target_valid samples
+    that pass the sequence length filter for both tokenizers.
+
+    Args:
+        utf8_data_dir: Path to UTF8 data directory
+        tct_data_dir: Path to TCT data directory (or None for UTF8-only)
+        target_valid: Target number of valid samples
+        max_seq_len: Maximum sequence length filter
+        max_iterations: Maximum attempts to reach target
+
+    Returns:
+        Tuple of (utf8_tokens, tct_tokens, valid_indices) where tokens are filtered lists
+    """
+    # Start with 20% overshoot to account for filtering
+    current_request = int(target_valid * 1.2)
+
+    for iteration in range(max_iterations):
+        # Load samples
+        utf8_tokens = load_validation_tokens(utf8_data_dir, current_request)
+
+        if tct_data_dir:
+            tct_tokens = load_validation_tokens(tct_data_dir, current_request)
+            valid_indices = compute_valid_indices(utf8_tokens, tct_tokens, max_seq_len)
+        else:
+            tct_tokens = None
+            # For UTF8-only, compute valid indices based on length
+            valid_indices = [i for i, t in enumerate(utf8_tokens) if len(t) <= max_seq_len]
+
+        num_valid = len(valid_indices)
+
+        # Check if we've reached target
+        if num_valid >= target_valid:
+            # Trim to exactly target_valid
+            valid_indices = valid_indices[:target_valid]
+            utf8_tokens = [utf8_tokens[i] for i in valid_indices]
+            if tct_tokens:
+                tct_tokens = [tct_tokens[i] for i in valid_indices]
+            print(f"  Loaded {current_request} samples, {num_valid} valid, using {target_valid}")
+            return utf8_tokens, tct_tokens, valid_indices
+
+        # Check if we've exhausted available samples
+        if len(utf8_tokens) < current_request:
+            # Can't load more, use what we have
+            utf8_tokens = [utf8_tokens[i] for i in valid_indices]
+            if tct_tokens:
+                tct_tokens = [tct_tokens[i] for i in valid_indices]
+            print(f"  WARNING: Only {num_valid} valid samples available (requested {target_valid})")
+            return utf8_tokens, tct_tokens, valid_indices
+
+        # Estimate how many more we need
+        valid_ratio = num_valid / len(utf8_tokens) if utf8_tokens else 0.5
+        if valid_ratio > 0:
+            # Estimate total needed to get target_valid valid samples
+            estimated_needed = int(target_valid / valid_ratio * 1.1)  # 10% safety margin
+            current_request = max(current_request + target_valid, estimated_needed)
+        else:
+            current_request *= 2
+
+        print(f"  Iteration {iteration + 1}: {num_valid} valid from {len(utf8_tokens)}, trying {current_request}...")
+
+    # Fallback: return what we have
+    utf8_tokens = [utf8_tokens[i] for i in valid_indices]
+    if tct_tokens:
+        tct_tokens = [tct_tokens[i] for i in valid_indices]
+    print(f"  WARNING: After {max_iterations} iterations, only {len(valid_indices)} valid samples")
+    return utf8_tokens, tct_tokens, valid_indices
 
 
 def find_merge_table(schema: str, tokenizer: str = "utf8") -> Path:
@@ -553,9 +630,8 @@ def generate_samples_xgrammar(
         if show_progress:
             print(f"  Auto batch size: {batch_size} (based on model={cfg.n_embd}d x {cfg.n_layer}L, seq={max_tokens})")
 
-    # Prepare first token sampling
-    first_tokens = list(first_token_distribution.keys())
-    first_probs = list(first_token_distribution.values())
+    # BOS token is pad token = vocab_size - 1 (matches training setup, same as TCT)
+    bos_token = utf8_decoder.vocab_size() - 1
 
     # Process in batches
     num_batches = (num_samples + batch_size - 1) // batch_size
@@ -572,25 +648,22 @@ def generate_samples_xgrammar(
             matchers = [xgrammar.GrammarMatcher(compiled_grammar) for _ in range(current_batch_size)]
             bitmasks = [xgrammar.allocate_token_bitmask(1, tokenizer_info.vocab_size)
                        for _ in range(current_batch_size)]
-            kv_cache = KVCache(batch_size=current_batch_size, seq_len=max_tokens, **kv_kwargs)
+            kv_cache = KVCache(batch_size=current_batch_size, seq_len=max_tokens + 1, **kv_kwargs)
 
-            # Sample first tokens for each sample
-            start_tokens = random.choices(first_tokens, weights=first_probs, k=current_batch_size)
-            batch_tokens = [[t] for t in start_tokens]
-            for i, t in enumerate(start_tokens):
-                matchers[i].accept_token(t)
+            # Initialize with BOS tokens (same approach as TCT)
+            batch_tokens = [[] for _ in range(current_batch_size)]
 
             # Track which samples are still active (not terminated)
             active = [True] * current_batch_size
             terminated = [False] * current_batch_size  # Track if grammar terminated vs truncated
 
-            # Prefill with first tokens (batched)
-            input_ids = torch.tensor(start_tokens, device=device).unsqueeze(1)  # [batch, 1]
+            # Prefill with BOS token (model predicts first real token)
+            input_ids = torch.full((current_batch_size, 1), bos_token, device=device)
             with torch.no_grad():
                 logits = model(input_ids, kv_cache=kv_cache)
                 logits = logits[:, -1, :]  # [batch, vocab]
 
-            for step in range(max_tokens - 1):
+            for step in range(max_tokens):
                 # Check if all samples terminated
                 if not any(active):
                     break
@@ -738,10 +811,8 @@ def generate_samples_utf8_raw(
         if show_progress:
             print(f"  Auto batch size: {batch_size}")
 
-    # Prepare first token sampling
-    first_tokens = list(first_token_distribution.keys())
-    first_probs = list(first_token_distribution.values())
-
+    # BOS token is pad token = vocab_size - 1 (matches training setup, same as TCT)
+    bos_token = utf8_decoder.vocab_size() - 1
     # EOS token for this vocabulary
     eos_token = utf8_decoder.eos_token_id()
 
@@ -755,22 +826,21 @@ def generate_samples_utf8_raw(
         current_batch_size = end_idx - start_idx
 
         try:
-            kv_cache = KVCache(batch_size=current_batch_size, seq_len=max_tokens, **kv_kwargs)
+            kv_cache = KVCache(batch_size=current_batch_size, seq_len=max_tokens + 1, **kv_kwargs)
 
-            # Sample first tokens for each sample
-            start_tokens = random.choices(first_tokens, weights=first_probs, k=current_batch_size)
-            batch_tokens = [[t] for t in start_tokens]
+            # Initialize with BOS tokens (same approach as TCT)
+            batch_tokens = [[] for _ in range(current_batch_size)]
 
             # Track which samples are still active (not hit EOS)
             active = [True] * current_batch_size
 
-            # Prefill with first tokens (batched)
-            input_ids = torch.tensor(start_tokens, device=device).unsqueeze(1)
+            # Prefill with BOS token (model predicts first real token)
+            input_ids = torch.full((current_batch_size, 1), bos_token, device=device)
             with torch.no_grad():
                 logits = model(input_ids, kv_cache=kv_cache)
                 logits = logits[:, -1, :]
 
-            for step in range(max_tokens - 1):
+            for step in range(max_tokens):
                 if not any(active):
                     break
 
@@ -1630,11 +1700,6 @@ def main():
     utf8_decoder = UTF8BPEDecoder(merge_table)
     vocab_size = utf8_decoder.vocab_size()
 
-    # Pre-load validation tokens and compute valid indices for fair comparison
-    print("\n  Loading validation data...")
-    utf8_validation_tokens = load_validation_tokens(utf8_data_dir, args.num_samples)
-    print(f"  UTF8 validation tokens: {len(utf8_validation_tokens)} samples")
-
     # Try to find TCT data directory
     tct_data_dir = None
     if args.tct_checkpoint:
@@ -1643,29 +1708,20 @@ def main():
         except FileNotFoundError:
             pass
 
-    # If both tokenizations available, compute valid indices for fair comparison
-    if tct_data_dir:
-        tct_validation_tokens = load_validation_tokens(tct_data_dir, args.num_samples)
+    # Pre-load validation tokens with auto-increase to reach target valid samples
+    print(f"\n  Loading validation data (target: {args.num_samples} valid samples)...")
+    utf8_validation_tokens, tct_validation_tokens, valid_indices = load_validation_tokens_with_target(
+        utf8_data_dir=utf8_data_dir,
+        tct_data_dir=tct_data_dir,
+        target_valid=args.num_samples,
+        max_seq_len=args.max_seq_len,
+    )
+    print(f"  UTF8 validation tokens: {len(utf8_validation_tokens)} samples")
+    if tct_validation_tokens:
         print(f"  TCT validation tokens: {len(tct_validation_tokens)} samples")
-
-        # Compute valid indices (samples that fit in max_seq_len for BOTH tokenizers)
-        valid_indices = compute_valid_indices(
-            utf8_validation_tokens, tct_validation_tokens, args.max_seq_len
-        )
-        print(f"  Valid for both (max_seq_len={args.max_seq_len}): {len(valid_indices)} samples")
-
-        # Filter to valid indices only
-        utf8_validation_tokens = [utf8_validation_tokens[i] for i in valid_indices]
-        tct_validation_tokens = [tct_validation_tokens[i] for i in valid_indices]
-
-        results["num_valid_samples"] = len(valid_indices)
         results["tct_data_dir"] = str(tct_data_dir)
-    else:
-        tct_validation_tokens = None
-        # For UTF8-only evaluation, filter by max_seq_len
-        utf8_validation_tokens = [t for t in utf8_validation_tokens if len(t) <= args.max_seq_len]
-        print(f"  After filtering (max_seq_len={args.max_seq_len}): {len(utf8_validation_tokens)} samples")
-        results["num_valid_samples"] = len(utf8_validation_tokens)
+
+    results["num_valid_samples"] = len(utf8_validation_tokens)
 
     # Evaluate UTF8-BPE model (with constrained BPB)
     if args.utf8_checkpoint or args.random_model:
@@ -1778,10 +1834,14 @@ def main():
             if tct_data_dir_local:
                 tct_data_dir = tct_data_dir_local
                 print(f"  TCT data dir: {tct_data_dir}")
-                # Load and filter tokens (UTF8-only comparison path)
-                tct_validation_tokens = load_validation_tokens(tct_data_dir, args.num_samples)
-                tct_validation_tokens = [t for t in tct_validation_tokens if len(t) <= args.max_seq_len]
-                print(f"  TCT validation tokens: {len(tct_validation_tokens)} (filtered to max_seq_len={args.max_seq_len})")
+                # Load tokens with auto-increase to match target (TCT-only path)
+                tct_validation_tokens, _, _ = load_validation_tokens_with_target(
+                    utf8_data_dir=tct_data_dir,  # Use TCT path as "utf8" (single tokenizer path)
+                    tct_data_dir=None,  # No second tokenizer
+                    target_valid=args.num_samples,
+                    max_seq_len=args.max_seq_len,
+                )
+                print(f"  TCT validation tokens: {len(tct_validation_tokens)}")
             else:
                 print(f"  WARNING: No TCT data directory found. TCT BPB cannot be computed.")
 
