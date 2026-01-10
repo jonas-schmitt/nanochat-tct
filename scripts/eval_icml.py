@@ -276,33 +276,6 @@ def compute_valid_indices(
     return valid_indices
 
 
-def compute_first_token_distribution(data_dir: Path) -> Dict[int, float]:
-    """Compute empirical distribution of first tokens from training data.
-
-    TCT sequences start with different tokens depending on the schema variant
-    (e.g., Deployment, Service, Pod). This distribution should be used to
-    sample the first token during generation.
-
-    Returns:
-        Dict mapping token_id -> probability
-    """
-    from collections import Counter
-
-    all_path = data_dir / "all.jsonl"
-    if not all_path.exists():
-        raise FileNotFoundError(f"Training data not found: {all_path}")
-
-    first_tokens = Counter()
-    with open(all_path) as f:
-        for line in f:
-            tokens = json.loads(line)
-            if tokens:
-                first_tokens[tokens[0]] += 1
-
-    total = sum(first_tokens.values())
-    return {token: count / total for token, count in first_tokens.items()}
-
-
 def load_validation_tokens(data_dir: Path, max_samples: int = 1000) -> List[List[int]]:
     """Load validation tokens from JSONL file."""
     val_path = data_dir / "validate.jsonl"
@@ -610,7 +583,6 @@ def generate_samples_xgrammar(
     tokenizer_info,
     compiled_grammar,
     utf8_decoder,
-    first_token_distribution: Dict[int, float],
     num_samples: int,
     max_tokens: int = 512,
     temperature: float = 0.7,
@@ -625,8 +597,9 @@ def generate_samples_xgrammar(
     Each sample has its own grammar matcher state, but model forward passes
     are batched for better GPU throughput.
 
+    Generation always starts from BOS token (vocab_size - 1), same as training.
+
     Args:
-        first_token_distribution: Dict mapping token_id -> probability for first token
         batch_size: Batch size for generation (None = auto-compute based on GPU memory)
         use_compile: Whether to use torch.compile for faster inference
 
@@ -810,7 +783,6 @@ def generate_samples_xgrammar(
 def generate_samples_utf8_raw(
     model,
     utf8_decoder,
-    first_token_distribution: Dict[int, float],
     num_samples: int,
     max_tokens: int = 512,
     temperature: float = 0.7,
@@ -823,9 +795,9 @@ def generate_samples_utf8_raw(
 
     This is the raw model output - no XGrammar masking.
     Used as a baseline to show what the model generates without constraints.
+    Generation always starts from BOS token (vocab_size - 1), same as training.
 
     Args:
-        first_token_distribution: Dict mapping token_id -> probability for first token
         batch_size: Batch size for generation (None = auto-compute based on GPU memory)
         use_compile: Whether to use torch.compile for faster inference
 
@@ -989,7 +961,6 @@ def generate_samples_tct(
     model,
     tct_module,
     num_samples: int,
-    first_token_distribution: Dict[int, float],
     max_tokens: int = 512,
     temperature: float = 0.7,
     top_k: int = 50,
@@ -1014,8 +985,6 @@ def generate_samples_tct(
         model: The GPT model
         tct_module: TCT tokenizer module (encode/decode/decode_prefix/vocab_size)
         num_samples: Number of samples to generate
-        first_token_distribution: Dict mapping token_id -> probability for first token
-            (used for UTF8 generation, kept for API compatibility but ignored here)
         max_tokens: Maximum tokens per sample (should match typical training lengths)
         temperature: Sampling temperature
         top_k: Top-k sampling parameter
@@ -1214,11 +1183,6 @@ def run_generation_quality_utf8(
     schema_dict = load_schema(schema)
     compiled_grammar = compile_json_schema_grammar(tokenizer_info, schema_dict)
 
-    # Compute first token distribution for fair comparison with TCT
-    print("  Computing first token distribution for generation...")
-    first_token_dist = compute_first_token_distribution(data_dir)
-    print(f"  First tokens: {len(first_token_dist)} unique, top: {list(first_token_dist.keys())[:5]}")
-
     # Load and decode validation samples for ground truth distribution
     print(f"\n  Extracting ground truth distribution from validation data...")
     validation_tokens = load_validation_tokens(data_dir, num_samples)
@@ -1237,14 +1201,13 @@ def run_generation_quality_utf8(
         if dist.total > 0:
             print(f"    {name}: n={dist.total}, mode={dist.mode()}")
 
-    # Generate samples from model
+    # Generate samples from model (starts from BOS token, same as training)
     print(f"\n  Generating {num_samples} samples with XGrammar constraints...")
     generated_texts, gen_stats = generate_samples_xgrammar(
         model=model,
         tokenizer_info=tokenizer_info,
         compiled_grammar=compiled_grammar,
         utf8_decoder=utf8_decoder,
-        first_token_distribution=first_token_dist,
         num_samples=num_samples,
         max_tokens=max_tokens,
         temperature=temperature,
@@ -1301,7 +1264,6 @@ def run_generation_quality_tct(
     schema: str,
     tct_module,
     validation_json_strings: List[str],
-    first_token_distribution: Dict[int, float],
     num_samples: int,
     temperature: float = 0.7,
     max_tokens: int = 512,
@@ -1314,7 +1276,6 @@ def run_generation_quality_tct(
         schema: Schema name ("tsconfig", "eslintrc", "kubernetes")
         tct_module: TCT tokenizer module
         validation_json_strings: Ground truth JSON strings from validation set
-        first_token_distribution: Dict mapping token_id -> probability for first token
         num_samples: Number of samples to generate
         temperature: Sampling temperature
         max_tokens: Maximum tokens per sample
@@ -1352,13 +1313,12 @@ def run_generation_quality_tct(
         if dist.total > 0:
             print(f"    {name}: n={dist.total}, mode={dist.mode()}")
 
-    # Generate samples from TCT model
+    # Generate samples from TCT model (starts from BOS token, same as training)
     print(f"\n  Generating {num_samples} samples with TCT model...")
     generated_texts, gen_stats = generate_samples_tct(
         model=model,
         tct_module=tct_module,
         num_samples=num_samples,
-        first_token_distribution=first_token_distribution,
         max_tokens=max_tokens,
         temperature=temperature,
         show_progress=True,
@@ -1440,11 +1400,6 @@ def run_generation_quality_utf8_raw(
     # Build decoder
     utf8_decoder = UTF8BPEDecoder(merge_table)
 
-    # Compute first token distribution for fair comparison
-    print("  Computing first token distribution for generation...")
-    first_token_dist = compute_first_token_distribution(data_dir)
-    print(f"  First tokens: {len(first_token_dist)} unique")
-
     # Load and decode validation samples for ground truth distribution
     print(f"\n  Extracting ground truth distribution from validation data...")
     validation_tokens = load_validation_tokens(data_dir, num_samples)
@@ -1456,12 +1411,11 @@ def run_generation_quality_utf8_raw(
     real_result = extractor.extract_from_samples(val_texts)
     print(f"  Validation samples: {real_result.num_valid}/{real_result.num_samples} valid")
 
-    # Generate samples from model (no grammar constraints!)
+    # Generate samples from model (no grammar constraints, starts from BOS token)
     print(f"\n  Generating {num_samples} samples WITHOUT grammar constraints...")
     generated_texts, gen_stats = generate_samples_utf8_raw(
         model=model,
         utf8_decoder=utf8_decoder,
-        first_token_distribution=first_token_dist,
         num_samples=num_samples,
         max_tokens=max_tokens,
         temperature=temperature,
@@ -1987,17 +1941,11 @@ def main():
 
         # Run generation quality for TCT (unless --bpb_only)
         if not args.bpb_only:
-            # Compute first token distribution for generation
-            print("  Computing first token distribution for generation...")
-            first_token_dist = compute_first_token_distribution(tct_data_dir)
-            print(f"  First tokens: {len(first_token_dist)} unique, top: {list(first_token_dist.keys())[:5]}")
-
             tct_gen_results = run_generation_quality_tct(
                 model=model,
                 schema=args.schema,
                 tct_module=tct_module,
                 validation_json_strings=val_json_strings,
-                first_token_distribution=first_token_dist,
                 num_samples=actual_gen_samples,
                 temperature=args.temperature,
                 max_tokens=args.max_gen_tokens,
