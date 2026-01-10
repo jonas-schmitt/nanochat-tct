@@ -58,6 +58,130 @@ def _load_sequence_lengths(data_dir: Path) -> List[int]:
     return lengths
 
 
+def _load_all_sequences(data_dir: Path) -> List[List[int]]:
+    """Load all sequences from all.jsonl (or train+validate fallback).
+
+    Returns list of token lists (not tensors) for memory efficiency during filtering.
+    """
+    all_jsonl = data_dir / "all.jsonl"
+    sequences = []
+
+    if all_jsonl.exists():
+        with open(all_jsonl, 'r') as f:
+            for line in f:
+                sequences.append(json.loads(line))
+    else:
+        # Fallback: combine train + validate
+        for jsonl_name in ["train.jsonl", "validate.jsonl"]:
+            jsonl_file = data_dir / jsonl_name
+            if jsonl_file.exists():
+                with open(jsonl_file, 'r') as f:
+                    for line in f:
+                        sequences.append(json.loads(line))
+
+    return sequences
+
+
+def get_validation_sequences(
+    data_dir: Path,
+    max_len: Optional[int] = None,
+    partner_data_dir: Optional[Path] = None,
+    train_ratio: float = 0.95,
+    seed: int = 42,
+    max_samples: Optional[int] = None,
+    verbose: bool = False,
+) -> List[List[int]]:
+    """Get validation sequences using the same logic as training.
+
+    This ensures training and evaluation use identical validation splits.
+    The process is:
+    1. Load all sequences from all.jsonl
+    2. Apply filtering (max_len, coordinated filtering with partner)
+    3. Shuffle with fixed seed
+    4. Return the validation portion (last 1-train_ratio)
+
+    Args:
+        data_dir: Directory containing all.jsonl
+        max_len: Filter sequences longer than this (None = no filtering)
+        partner_data_dir: Partner data directory for coordinated filtering.
+            When provided, sequences are excluded if they exceed max_len in
+            EITHER this directory or partner_data_dir.
+        train_ratio: Fraction for training (default 0.95), validation is 1-train_ratio
+        seed: Random seed for reproducibility (default 42, same as training)
+        max_samples: Limit number of validation samples returned (None = all)
+        verbose: Print statistics
+
+    Returns:
+        List of token sequences (as lists, not tensors)
+    """
+    import random
+
+    data_dir = Path(data_dir)
+
+    # Load all sequences
+    all_sequences = _load_all_sequences(data_dir)
+    original_count = len(all_sequences)
+
+    if verbose:
+        print(f"  Loaded {original_count:,} sequences from {data_dir.name}")
+
+    # Apply filtering
+    if max_len is not None:
+        if partner_data_dir is not None:
+            partner_data_dir = Path(partner_data_dir)
+            if partner_data_dir.exists():
+                partner_lengths = _load_sequence_lengths(partner_data_dir)
+
+                if len(partner_lengths) == len(all_sequences):
+                    # Filter to indices valid in BOTH tokenizations
+                    valid_indices = [
+                        i for i in range(len(all_sequences))
+                        if len(all_sequences[i]) <= max_len and partner_lengths[i] <= max_len
+                    ]
+                    all_sequences = [all_sequences[i] for i in valid_indices]
+
+                    if verbose:
+                        excluded = original_count - len(all_sequences)
+                        print(f"  Coordinated filtering: kept {len(all_sequences):,}, excluded {excluded:,}")
+                else:
+                    # Length mismatch, fall back to standard filtering
+                    all_sequences = [s for s in all_sequences if len(s) <= max_len]
+                    if verbose:
+                        print(f"  WARNING: Partner length mismatch, using standard filtering")
+            else:
+                all_sequences = [s for s in all_sequences if len(s) <= max_len]
+        else:
+            all_sequences = [s for s in all_sequences if len(s) <= max_len]
+
+        if verbose and partner_data_dir is None:
+            excluded = original_count - len(all_sequences)
+            print(f"  Standard filtering: kept {len(all_sequences):,}, excluded {excluded:,}")
+
+    # Shuffle with fixed seed (same as training)
+    n = len(all_sequences)
+    indices = list(range(n))
+    random.seed(seed)
+    random.shuffle(indices)
+
+    # Get validation indices (last portion after split)
+    split_idx = int(n * train_ratio)
+    val_indices = indices[split_idx:]
+
+    # Extract validation sequences
+    val_sequences = [all_sequences[i] for i in val_indices]
+
+    if verbose:
+        print(f"  Validation split: {len(val_sequences):,} sequences (seed={seed}, ratio={1-train_ratio:.0%})")
+
+    # Limit samples if requested
+    if max_samples is not None and len(val_sequences) > max_samples:
+        val_sequences = val_sequences[:max_samples]
+        if verbose:
+            print(f"  Limited to {max_samples:,} samples")
+
+    return val_sequences
+
+
 def get_pad_token_id(data_dir: Path) -> int:
     """Get pad token ID from metadata (vocab_size - 1).
 

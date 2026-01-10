@@ -9,7 +9,9 @@ eval_bundle/
 # TCT wheel files and build artifacts
 *.whl
 *wheel*.zip
-tct-wheels/
+# Exception: pre-built TCT wheels ARE committed
+!tct-wheels/
+!tct-wheels/*.whl
 tct-github-workflow/
 tct-github-workflow-py/
 tct-github-workflow-wheel.zip

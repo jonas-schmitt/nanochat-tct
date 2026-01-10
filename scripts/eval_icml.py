@@ -276,36 +276,37 @@ def compute_valid_indices(
     return valid_indices
 
 
-def load_validation_tokens(data_dir: Path, max_samples: int = 1000) -> List[List[int]]:
-    """Load validation tokens from JSONL file."""
-    val_path = data_dir / "validate.jsonl"
+def load_validation_tokens(
+    data_dir: Path,
+    max_samples: int = 1000,
+    max_len: Optional[int] = None,
+    partner_data_dir: Optional[Path] = None,
+) -> List[List[int]]:
+    """Load validation tokens using the same split logic as training.
 
-    if not val_path.exists():
-        # Try all.jsonl and use last 10% as validation
-        all_path = data_dir / "all.jsonl"
-        if all_path.exists():
-            with open(all_path) as f:
-                total_lines = sum(1 for _ in f)
+    Uses get_validation_sequences from jsonl_dataloader to ensure training
+    and evaluation use identical validation splits.
 
-            val_start = int(total_lines * 0.9)
-            tokens = []
-            with open(all_path) as f:
-                for i, line in enumerate(f):
-                    if i >= val_start:
-                        tokens.append(json.loads(line))
-                        if len(tokens) >= max_samples:
-                            break
-            return tokens
-        else:
-            raise FileNotFoundError(f"No validation file found in {data_dir}")
+    Args:
+        data_dir: Path to data directory containing all.jsonl
+        max_samples: Maximum number of samples to return
+        max_len: Filter sequences longer than this (same as training context_size)
+        partner_data_dir: Partner data directory for coordinated filtering
 
-    tokens = []
-    with open(val_path) as f:
-        for i, line in enumerate(f):
-            if i >= max_samples:
-                break
-            tokens.append(json.loads(line))
-    return tokens
+    Returns:
+        List of token sequences
+    """
+    from configs.jsonl_dataloader import get_validation_sequences
+
+    return get_validation_sequences(
+        data_dir=data_dir,
+        max_len=max_len,
+        partner_data_dir=partner_data_dir,
+        train_ratio=0.95,  # Same as training
+        seed=42,  # Same as training
+        max_samples=max_samples,
+        verbose=False,
+    )
 
 
 def load_validation_tokens_with_target(
@@ -315,73 +316,64 @@ def load_validation_tokens_with_target(
     max_seq_len: int,
     max_iterations: int = 10,
 ) -> tuple:
-    """Load validation tokens, auto-increasing until target valid samples is reached.
+    """Load validation tokens using training-consistent split with coordinated filtering.
 
-    Iteratively loads more samples until we have at least target_valid samples
-    that pass the sequence length filter for both tokenizers.
+    Uses get_validation_sequences from jsonl_dataloader which applies:
+    1. Coordinated filtering (exclude if exceeds max_seq_len in EITHER tokenization)
+    2. Shuffle with seed=42 (same as training)
+    3. 95/5 train/val split (same as training)
 
     Args:
         utf8_data_dir: Path to UTF8 data directory
         tct_data_dir: Path to TCT data directory (or None for UTF8-only)
         target_valid: Target number of valid samples
         max_seq_len: Maximum sequence length filter
-        max_iterations: Maximum attempts to reach target
+        max_iterations: Unused (kept for API compatibility)
 
     Returns:
         Tuple of (utf8_tokens, tct_tokens, valid_indices) where tokens are filtered lists
     """
-    # Start with 20% overshoot to account for filtering
-    current_request = int(target_valid * 1.2)
+    from configs.jsonl_dataloader import get_validation_sequences
 
-    for iteration in range(max_iterations):
-        # Load samples
-        utf8_tokens = load_validation_tokens(utf8_data_dir, current_request)
+    # Load UTF8 validation with coordinated filtering
+    utf8_tokens = get_validation_sequences(
+        data_dir=utf8_data_dir,
+        max_len=max_seq_len,
+        partner_data_dir=tct_data_dir,
+        train_ratio=0.95,
+        seed=42,
+        max_samples=None,  # Get all, then limit
+        verbose=True,
+    )
 
-        if tct_data_dir:
-            tct_tokens = load_validation_tokens(tct_data_dir, current_request)
-            valid_indices = compute_valid_indices(utf8_tokens, tct_tokens, max_seq_len)
-        else:
-            tct_tokens = None
-            # For UTF8-only, compute valid indices based on length
-            valid_indices = [i for i, t in enumerate(utf8_tokens) if len(t) <= max_seq_len]
+    # Load TCT validation with coordinated filtering (same indices due to same filtering)
+    if tct_data_dir:
+        tct_tokens = get_validation_sequences(
+            data_dir=tct_data_dir,
+            max_len=max_seq_len,
+            partner_data_dir=utf8_data_dir,
+            train_ratio=0.95,
+            seed=42,
+            max_samples=None,
+            verbose=False,  # Already printed for UTF8
+        )
+    else:
+        tct_tokens = None
 
-        num_valid = len(valid_indices)
+    # Limit to target_valid samples
+    num_available = len(utf8_tokens)
+    if num_available < target_valid:
+        print(f"  WARNING: Only {num_available} valid samples available (requested {target_valid})")
+        target_valid = num_available
 
-        # Check if we've reached target
-        if num_valid >= target_valid:
-            # Trim to exactly target_valid
-            valid_indices = valid_indices[:target_valid]
-            utf8_tokens = [utf8_tokens[i] for i in valid_indices]
-            if tct_tokens:
-                tct_tokens = [tct_tokens[i] for i in valid_indices]
-            print(f"  Loaded {current_request} samples, {num_valid} valid, using {target_valid}")
-            return utf8_tokens, tct_tokens, valid_indices
-
-        # Check if we've exhausted available samples
-        if len(utf8_tokens) < current_request:
-            # Can't load more, use what we have
-            utf8_tokens = [utf8_tokens[i] for i in valid_indices]
-            if tct_tokens:
-                tct_tokens = [tct_tokens[i] for i in valid_indices]
-            print(f"  WARNING: Only {num_valid} valid samples available (requested {target_valid})")
-            return utf8_tokens, tct_tokens, valid_indices
-
-        # Estimate how many more we need
-        valid_ratio = num_valid / len(utf8_tokens) if utf8_tokens else 0.5
-        if valid_ratio > 0:
-            # Estimate total needed to get target_valid valid samples
-            estimated_needed = int(target_valid / valid_ratio * 1.1)  # 10% safety margin
-            current_request = max(current_request + target_valid, estimated_needed)
-        else:
-            current_request *= 2
-
-        print(f"  Iteration {iteration + 1}: {num_valid} valid from {len(utf8_tokens)}, trying {current_request}...")
-
-    # Fallback: return what we have
-    utf8_tokens = [utf8_tokens[i] for i in valid_indices]
+    utf8_tokens = utf8_tokens[:target_valid]
     if tct_tokens:
-        tct_tokens = [tct_tokens[i] for i in valid_indices]
-    print(f"  WARNING: After {max_iterations} iterations, only {len(valid_indices)} valid samples")
+        tct_tokens = tct_tokens[:target_valid]
+
+    # Valid indices are just 0..N-1 since filtering is already done
+    valid_indices = list(range(len(utf8_tokens)))
+
+    print(f"  Using {len(utf8_tokens)} validation samples (coordinated filtering, seed=42)")
     return utf8_tokens, tct_tokens, valid_indices
 
 
@@ -1146,7 +1138,7 @@ def run_generation_quality_utf8(
     model,
     schema: str,
     merge_table: Path,
-    data_dir: Path,
+    validation_tokens: List[List[int]],
     num_samples: int,
     device: str,
     temperature: float = 0.7,
@@ -1156,6 +1148,8 @@ def run_generation_quality_utf8(
     """Run generation quality evaluation for UTF8-BPE model with XGrammar.
 
     Args:
+        validation_tokens: Pre-filtered validation token sequences (same as used for BPB)
+        num_samples: Number of samples to generate
         normalize_json_output: If True, normalize ground truth and generated JSON
                               to minified form for consistent field extraction
     """
@@ -1183,10 +1177,9 @@ def run_generation_quality_utf8(
     schema_dict = load_schema(schema)
     compiled_grammar = compile_json_schema_grammar(tokenizer_info, schema_dict)
 
-    # Load and decode validation samples for ground truth distribution
-    print(f"\n  Extracting ground truth distribution from validation data...")
-    validation_tokens = load_validation_tokens(data_dir, num_samples)
-    val_texts = [utf8_decoder.decode(tokens) for tokens in validation_tokens]
+    # Decode pre-filtered validation samples for ground truth distribution
+    print(f"\n  Extracting ground truth distribution from {len(validation_tokens)} validation samples...")
+    val_texts = [utf8_decoder.decode(tokens) for tokens in validation_tokens[:num_samples]]
 
     # Optionally normalize to canonical JSON for consistent comparison
     if normalize_json_output:
@@ -1373,7 +1366,7 @@ def run_generation_quality_utf8_raw(
     model,
     schema: str,
     merge_table: Path,
-    data_dir: Path,
+    validation_tokens: List[List[int]],
     num_samples: int,
     device: str,
     temperature: float = 0.7,
@@ -1383,6 +1376,10 @@ def run_generation_quality_utf8_raw(
     """Run generation quality evaluation for UTF8-BPE model WITHOUT XGrammar.
 
     This shows raw model output without any grammar constraints.
+
+    Args:
+        validation_tokens: Pre-filtered validation token sequences (same as used for BPB)
+        num_samples: Number of samples to generate
     """
     from nanochat.field_extractors import get_extractor
     from nanochat.distribution_metrics import compare_extraction_results
@@ -1400,10 +1397,9 @@ def run_generation_quality_utf8_raw(
     # Build decoder
     utf8_decoder = UTF8BPEDecoder(merge_table)
 
-    # Load and decode validation samples for ground truth distribution
-    print(f"\n  Extracting ground truth distribution from validation data...")
-    validation_tokens = load_validation_tokens(data_dir, num_samples)
-    val_texts = [utf8_decoder.decode(tokens) for tokens in validation_tokens]
+    # Decode pre-filtered validation samples for ground truth distribution
+    print(f"\n  Extracting ground truth distribution from {len(validation_tokens)} validation samples...")
+    val_texts = [utf8_decoder.decode(tokens) for tokens in validation_tokens[:num_samples]]
 
     if normalize_json_output:
         val_texts = [normalize_json(t) for t in val_texts]
@@ -1810,7 +1806,7 @@ def main():
                 model=model,
                 schema=args.schema,
                 merge_table=merge_table,
-                data_dir=utf8_data_dir,
+                validation_tokens=utf8_validation_tokens,
                 num_samples=actual_gen_samples,
                 device=args.device,
                 temperature=args.temperature,
@@ -1824,7 +1820,7 @@ def main():
                 model=model,
                 schema=args.schema,
                 merge_table=merge_table,
-                data_dir=utf8_data_dir,
+                validation_tokens=utf8_validation_tokens,
                 num_samples=actual_gen_samples,
                 device=args.device,
                 temperature=args.temperature,
