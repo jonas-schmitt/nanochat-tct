@@ -23,7 +23,7 @@ Single-epoch token/param ratio determines overfitting risk:
 - 1-2x: Severely overparameterized (will likely overfit)
 - <1x: More parameters than tokens (extreme overfitting)
 
-Note: Multi-epoch training (100 epochs) does NOT change these ratios.
+Note: Multi-epoch training (150 epochs) does NOT change these ratios.
 Repeated data provides optimization benefit but no new unique information.
 
 Single-epoch ratios by schema:
@@ -388,7 +388,7 @@ def get_model_config(
     model_size: str,
     vocab_size: int,
     context_size: int,
-    epochs: int = 100,
+    epochs: int = 150,
 ) -> Dict[str, Any]:
     """
     Get full model configuration for training.
@@ -409,7 +409,7 @@ def get_model_config(
         ...     model_size="small",
         ...     vocab_size=schema["tct_vocab_size"],
         ...     context_size=schema["context_size"],
-        ...     epochs=100,
+        ...     epochs=150,
         ... )
     """
     if model_size not in MODEL_CONFIGS:
