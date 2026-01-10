@@ -266,13 +266,9 @@ def compile_json_schema_grammar(
 
 # Schema directory (relative to this file's location)
 def _get_schema_dir() -> Path:
-    """Get the schemas directory, checking multiple locations."""
-    # First check relative to this file (nanochat-tct/nanochat/ -> nanochat-tct/schemas/)
-    repo_schemas = Path(__file__).parent.parent / "schemas"
-    if repo_schemas.exists():
-        return repo_schemas
-    # Fallback to original location
-    return Path("/home/josch/git/tct/schemas/popular")
+    """Get the schemas directory relative to this file."""
+    # Relative to this file: nanochat-tct/nanochat/ -> nanochat-tct/schemas/
+    return Path(__file__).parent.parent / "schemas"
 
 
 def load_schema(schema_name: str) -> dict:
