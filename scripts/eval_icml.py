@@ -1160,16 +1160,26 @@ def generate_samples_tct(
     # Decode all samples (this is sequential, but decoding is fast)
     if show_progress:
         log(f"  Decoding {len(all_generated_tokens)} samples...")
+        # Debug: show first few token sequences
+        for i in range(min(3, len(all_generated_tokens))):
+            seq = all_generated_tokens[i]
+            log(f"    Sample {i}: {len(seq)} tokens, first 10: {seq[:10]}")
 
     for idx, generated_tokens in enumerate(all_generated_tokens):
         # Periodic memory check during decoding
-        if show_progress and idx > 0 and idx % 1000 == 0:
+        if show_progress and idx % 1000 == 0:
             process = psutil.Process()
             cpu_mem_gb = process.memory_info().rss / 1e9
-            log(f"    Decoded {idx}/{len(all_generated_tokens)}, CPU mem: {cpu_mem_gb:.2f}GB")
+            log(f"    Decoding sample {idx}/{len(all_generated_tokens)}, CPU mem: {cpu_mem_gb:.2f}GB")
+            sys.stdout.flush()
+            sys.stderr.flush()
 
         try:
             tokens_to_decode = generated_tokens[1:]  # Skip BOS
+            # Debug first decode
+            if idx == 0 and show_progress:
+                log(f"    First decode: {len(tokens_to_decode)} tokens: {tokens_to_decode[:20]}...")
+                sys.stdout.flush()
             json_out, consumed, is_complete = tct_module.decode_prefix(tokens_to_decode)
 
             if is_complete and json_out and json_out != "{}":
