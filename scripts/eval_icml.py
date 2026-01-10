@@ -41,14 +41,50 @@ Usage:
 
 import argparse
 import json
+import logging
+import psutil
 import sys
 import time
 from dataclasses import asdict
+from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 # Add project root to path
 sys.path.insert(0, str(Path(__file__).parent.parent))
+
+
+def setup_logging(output_path: Optional[Path] = None) -> Path:
+    """Set up logging to both console and file.
+
+    Returns the log file path.
+    """
+    # Create log filename based on output path or timestamp
+    if output_path:
+        log_path = output_path.with_suffix('.log')
+    else:
+        log_dir = Path("results")
+        log_dir.mkdir(exist_ok=True)
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        log_path = log_dir / f"eval_{timestamp}.log"
+
+    # Configure logging
+    logging.basicConfig(
+        level=logging.INFO,
+        format='%(asctime)s | %(message)s',
+        datefmt='%Y-%m-%d %H:%M:%S',
+        handlers=[
+            logging.FileHandler(log_path),
+            logging.StreamHandler(sys.stdout)
+        ]
+    )
+
+    return log_path
+
+
+def log(msg: str):
+    """Log message to both console and file."""
+    logging.info(msg)
 
 
 def compute_generation_batch_size(model, max_tokens: int, verbose: bool = False) -> int:
@@ -1050,6 +1086,14 @@ def generate_samples_tct(
     gen_start_time = time.time()
 
     for batch_idx in iterator:
+        # Periodic memory check during generation
+        if show_progress and batch_idx > 0 and batch_idx % 10 == 0:
+            process = psutil.Process()
+            cpu_mem_gb = process.memory_info().rss / 1e9
+            gpu_mem_gb = torch.cuda.memory_allocated() / 1e9 if torch.cuda.is_available() else 0
+            samples_done = batch_idx * batch_size
+            log(f"    Batch {batch_idx}/{num_batches}, samples: {samples_done}, CPU: {cpu_mem_gb:.2f}GB, GPU: {gpu_mem_gb:.2f}GB")
+
         # Calculate actual batch size for this batch (last batch may be smaller)
         start_idx = batch_idx * batch_size
         end_idx = min(start_idx + batch_size, num_samples)
@@ -1104,11 +1148,26 @@ def generate_samples_tct(
 
     gen_elapsed_time = time.time() - gen_start_time
 
+    # Memory stats after generation
+    if show_progress:
+        process = psutil.Process()
+        cpu_mem_gb = process.memory_info().rss / 1e9
+        gpu_mem_gb = torch.cuda.memory_allocated() / 1e9 if torch.cuda.is_available() else 0
+        total_tokens_in_list = sum(len(t) for t in all_generated_tokens)
+        log(f"  Generation complete. CPU mem: {cpu_mem_gb:.2f}GB, GPU mem: {gpu_mem_gb:.2f}GB")
+        log(f"  Token sequences: {len(all_generated_tokens)}, total tokens: {total_tokens_in_list}")
+
     # Decode all samples (this is sequential, but decoding is fast)
     if show_progress:
-        print(f"  Decoding {len(all_generated_tokens)} samples...")
+        log(f"  Decoding {len(all_generated_tokens)} samples...")
 
-    for generated_tokens in all_generated_tokens:
+    for idx, generated_tokens in enumerate(all_generated_tokens):
+        # Periodic memory check during decoding
+        if show_progress and idx > 0 and idx % 1000 == 0:
+            process = psutil.Process()
+            cpu_mem_gb = process.memory_info().rss / 1e9
+            log(f"    Decoded {idx}/{len(all_generated_tokens)}, CPU mem: {cpu_mem_gb:.2f}GB")
+
         try:
             tokens_to_decode = generated_tokens[1:]  # Skip BOS
             json_out, consumed, is_complete = tct_module.decode_prefix(tokens_to_decode)
@@ -1719,23 +1778,28 @@ def main():
 
     args = parser.parse_args()
 
+    # Set up logging (to file and console)
+    output_path = Path(args.output) if args.output else None
+    log_path = setup_logging(output_path)
+
     # Validate conflicting options
     if args.bpb_only and args.generation_only:
-        print("ERROR: Cannot use both --bpb_only and --generation_only")
+        log("ERROR: Cannot use both --bpb_only and --generation_only")
         sys.exit(1)
 
     # Validate arguments
     if not args.random_model and not args.tct_checkpoint and not args.utf8_checkpoint:
-        print("ERROR: Must specify at least one of --tct_checkpoint, --utf8_checkpoint, or --random_model")
+        log("ERROR: Must specify at least one of --tct_checkpoint, --utf8_checkpoint, or --random_model")
         sys.exit(1)
 
     # Find merge table and data directories
     merge_table = Path(args.merge_table) if args.merge_table else find_merge_table(args.schema)
     utf8_data_dir = Path(args.data_dir) if args.data_dir else find_data_dir(args.schema, "utf8")
 
-    print("=" * 60)
-    print("ICML 2026 EVALUATION: TCT vs BPE+XGrammar")
-    print("=" * 60)
+    log("=" * 60)
+    log("ICML 2026 EVALUATION: TCT vs BPE+XGrammar")
+    log("=" * 60)
+    log(f"Log file: {log_path}")
     print(f"Schema:      {args.schema}")
     print(f"Merge table: {merge_table}")
     print(f"UTF8 data:   {utf8_data_dir}")
