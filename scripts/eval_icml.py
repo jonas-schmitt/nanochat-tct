@@ -743,6 +743,11 @@ def generate_samples_xgrammar(
         except Exception as e:
             failed_count += current_batch_size
             continue
+        finally:
+            # Explicitly free KV cache memory
+            if 'kv_cache' in locals():
+                del kv_cache
+            torch.cuda.empty_cache()
 
         # Count tokens generated in this batch
         total_tokens_generated += sum(len(tokens) for tokens in batch_tokens)
@@ -920,6 +925,11 @@ def generate_samples_utf8_raw(
         except Exception as e:
             invalid_count += current_batch_size
             continue
+        finally:
+            # Explicitly free KV cache memory
+            if 'kv_cache' in locals():
+                del kv_cache
+            torch.cuda.empty_cache()
 
         # Count tokens generated in this batch
         total_tokens_generated += sum(len(tokens) for tokens in batch_tokens)
@@ -1087,6 +1097,10 @@ def generate_samples_tct(
         # Store all generated token sequences from this batch
         all_generated_tokens.extend(batch_tokens)
         total_tokens_generated += sum(len(tokens) for tokens in batch_tokens)
+
+        # Explicitly free KV cache memory
+        del kv_cache
+        torch.cuda.empty_cache()
 
     gen_elapsed_time = time.time() - gen_start_time
 
