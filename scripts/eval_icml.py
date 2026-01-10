@@ -1076,7 +1076,7 @@ def generate_samples_tct(
 
         # Store all generated token sequences from this batch
         all_generated_tokens.extend(batch_tokens)
-        total_tokens_generated += current_batch_size * max_tokens
+        total_tokens_generated += sum(len(tokens) for tokens in batch_tokens)
 
     gen_elapsed_time = time.time() - gen_start_time
 
