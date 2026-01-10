@@ -2,7 +2,8 @@
 # Evaluate all finished schema/size combinations
 #
 # Usage:
-#   bash scripts/eval_all.sh                    # Evaluate all found checkpoints
+#   bash scripts/eval_all.sh                    # Evaluate all, skip existing results
+#   bash scripts/eval_all.sh --force            # Re-run even if results exist
 #   bash scripts/eval_all.sh --samples=1000     # Custom sample count
 #   bash scripts/eval_all.sh --dry-run          # Show what would be evaluated
 
@@ -15,11 +16,13 @@ set -e
 NUM_SAMPLES=""
 NUM_GEN_SAMPLES=""
 DRY_RUN=false
+FORCE=false
 EXTRA_ARGS=""
 
 for arg in "$@"; do
     case $arg in
         --dry-run) DRY_RUN=true ;;
+        --force) FORCE=true ;;
         --samples=*) NUM_SAMPLES="$arg" ;;
         --gen_samples=*) NUM_GEN_SAMPLES="$arg" ;;
         *) EXTRA_ARGS="$EXTRA_ARGS $arg" ;;
@@ -96,9 +99,9 @@ for schema in $SCHEMAS; do
 
                     found_any=true
 
-                    # Check if already evaluated
-                    if [ -f "$output_file" ]; then
-                        echo "[SKIP] $schema $size ${baseline_arg:-default} - already evaluated"
+                    # Check if already evaluated (skip unless --force)
+                    if [ -f "$output_file" ] && [ "$FORCE" = false ]; then
+                        echo "[SKIP] $schema $size ${baseline_arg:-default} - already evaluated (use --force to re-run)"
                         continue
                     fi
 
