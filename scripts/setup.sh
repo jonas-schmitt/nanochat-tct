@@ -340,21 +340,24 @@ echo "Done."
 # =============================================================================
 
 echo "[5/6] Installing TCT wheels..."
-TCT_WHEELS=""
-# Check CODE_DIR first (wheels committed to repo), then external locations
-if [ -d "$CODE_DIR/tct-wheels" ]; then
-    TCT_WHEELS="$CODE_DIR/tct-wheels"
-elif [ -d "/workspace/tct-wheels" ]; then
-    TCT_WHEELS="/workspace/tct-wheels"
-elif [ -d "$DATA_DIR/../tct-wheels" ]; then
-    TCT_WHEELS="$DATA_DIR/../tct-wheels"
-fi
+TCT_WHEELS="$CODE_DIR/tct-wheels"
 
-if [ -n "$TCT_WHEELS" ] && [ -d "$TCT_WHEELS" ]; then
+if [ -d "$TCT_WHEELS" ]; then
     echo "Installing from $TCT_WHEELS..."
-    pip_install "$TCT_WHEELS"/*.whl
+    # Install specific wheels (avoid conflicts with old versions)
+    # Use --force-reinstall to ensure correct version is installed
+    for wheel in \
+        "$TCT_WHEELS/tct_kubernetes_bpe_1k-1.0.0"*.whl \
+        "$TCT_WHEELS/tct_eslintrc_bpe_500-1.0.0"*.whl \
+        "$TCT_WHEELS/tct_tsconfig_base-1.0.0"*.whl; do
+        if [ -f "$wheel" ]; then
+            echo "  Installing $(basename "$wheel")..."
+            pip_install --force-reinstall "$wheel"
+        fi
+    done
 else
-    echo "WARNING: TCT wheels not found. You may need to install them manually."
+    echo "WARNING: TCT wheels not found at $TCT_WHEELS"
+    echo "You may need to install them manually."
 fi
 echo "Done."
 
