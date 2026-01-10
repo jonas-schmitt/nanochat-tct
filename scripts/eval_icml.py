@@ -454,6 +454,7 @@ def find_data_dir(schema: str, tokenizer: str = "utf8") -> Path:
     Raises:
         FileNotFoundError: If the expected data directory doesn't exist
     """
+    import os
     from configs.schema_configs import get_schema_config
 
     config = get_schema_config(schema)
@@ -465,14 +466,31 @@ def find_data_dir(schema: str, tokenizer: str = "utf8") -> Path:
         data_path = config.get("data_path_utf8")
         dir_name = config.get("data_dir_utf8")
 
-    if data_path and data_path.exists():
-        return data_path
+    # Check configured path first
+    if data_path and Path(data_path).exists():
+        return Path(data_path)
+
+    # Check alternative data roots (RunPod, HPC, etc.)
+    code_dir = Path(__file__).parent.parent
+    alternative_roots = [
+        Path(os.environ.get("DATA_DIR", "")) if os.environ.get("DATA_DIR") else None,
+        code_dir.parent / "data",              # Sibling of code dir
+        Path("/workspace/data"),                # RunPod
+        Path.home() / "Desktop" / "data",       # Local development
+    ]
+
+    for root in alternative_roots:
+        if root and root.exists():
+            candidate = root / dir_name
+            if candidate.exists():
+                return candidate
 
     # Fail fast with clear error
+    checked_paths = [str(data_path)] + [str(r / dir_name) for r in alternative_roots if r]
     raise FileNotFoundError(
         f"Data directory not found for {schema} ({tokenizer}). "
-        f"Expected: {data_path} (dir: {dir_name}). "
-        f"Check schema_configs.py and ~/Desktop/data/"
+        f"Checked: {', '.join(checked_paths)}. "
+        f"Set DATA_DIR environment variable or ensure data exists."
     )
 
 
