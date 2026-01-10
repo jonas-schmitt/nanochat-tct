@@ -264,12 +264,15 @@ def compile_json_schema_grammar(
     return compiled
 
 
-# Schema paths for common schemas
-SCHEMA_PATHS = {
-    "kubernetes": "/home/josch/git/tct/schemas/popular/kubernetes.json",
-    "eslintrc": "/home/josch/git/tct/schemas/popular/eslintrc.json",
-    "tsconfig": "/home/josch/git/tct/schemas/popular/tsconfig.json",
-}
+# Schema directory (relative to this file's location)
+def _get_schema_dir() -> Path:
+    """Get the schemas directory, checking multiple locations."""
+    # First check relative to this file (nanochat-tct/nanochat/ -> nanochat-tct/schemas/)
+    repo_schemas = Path(__file__).parent.parent / "schemas"
+    if repo_schemas.exists():
+        return repo_schemas
+    # Fallback to original location
+    return Path("/home/josch/git/tct/schemas/popular")
 
 
 def load_schema(schema_name: str) -> dict:
@@ -281,10 +284,13 @@ def load_schema(schema_name: str) -> dict:
     Returns:
         Loaded JSON schema as dict
     """
-    if schema_name not in SCHEMA_PATHS:
-        raise ValueError(f"Unknown schema: {schema_name}. Available: {list(SCHEMA_PATHS.keys())}")
+    schema_dir = _get_schema_dir()
+    schema_path = schema_dir / f"{schema_name}.json"
 
-    schema_path = SCHEMA_PATHS[schema_name]
+    if not schema_path.exists():
+        available = [p.stem for p in schema_dir.glob("*.json")]
+        raise ValueError(f"Schema not found: {schema_path}. Available: {available}")
+
     with open(schema_path) as f:
         return json.load(f)
 
