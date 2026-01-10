@@ -303,6 +303,73 @@ class ConstrainedBPBResult:
     num_sequences: int          # Number of sequences evaluated
     raw_loss: float             # Total raw cross-entropy loss (nats)
     constrained_loss: float     # Total constrained cross-entropy loss (nats)
+    # Syntax vs content analysis (optional)
+    syntax_content: Optional["SyntaxContentResult"] = None
+
+
+# JSON syntax characters (braces, brackets, colon, comma, quotes, whitespace)
+SYNTAX_CHARS = set('{}[],:"\t\n\r ')
+
+
+@dataclass
+class SyntaxContentResult:
+    """Results from syntax vs content loss analysis."""
+    # Per-category token counts
+    syntax_tokens: int
+    content_tokens: int
+    mixed_tokens: int
+
+    # Per-category loss (nats)
+    syntax_loss: float
+    content_loss: float
+    mixed_loss: float
+
+    # Per-category bits per token
+    syntax_bpt: float
+    content_bpt: float
+    mixed_bpt: float
+
+    # Loss percentages
+    syntax_loss_pct: float
+    content_loss_pct: float
+    mixed_loss_pct: float
+
+    # Content-only BPB for comparison with TCT
+    content_bytes: int  # All content bytes in decoded text
+    pure_content_token_bytes: int  # Bytes from pure content tokens only
+    content_only_bpb: float  # Rigorous: content_loss / pure_content_token_bytes
+
+
+def classify_token(utf8_decoder: UTF8BPEDecoder, token_id: int) -> str:
+    """Classify a token as 'syntax', 'content', or 'mixed'.
+
+    Args:
+        utf8_decoder: UTF8BPEDecoder instance
+        token_id: Token ID to classify
+
+    Returns:
+        'syntax': All bytes are JSON syntax/whitespace
+        'content': No bytes are JSON syntax
+        'mixed': Contains both syntax and content bytes
+    """
+    token_bytes = utf8_decoder._token_to_bytes(token_id)
+    if not token_bytes:
+        return 'syntax'  # EOS/empty tokens count as syntax
+
+    try:
+        text = token_bytes.decode('utf-8')
+    except UnicodeDecodeError:
+        return 'content'  # Non-UTF8 bytes are content
+
+    has_syntax = any(c in SYNTAX_CHARS for c in text)
+    has_content = any(c not in SYNTAX_CHARS for c in text)
+
+    if has_syntax and has_content:
+        return 'mixed'
+    elif has_syntax:
+        return 'syntax'
+    else:
+        return 'content'
 
 
 def compute_constrained_bpb(
@@ -360,6 +427,16 @@ def compute_constrained_bpb(
     total_tokens = 0
     num_sequences = 0
 
+    # Syntax vs content tracking
+    syntax_loss = 0.0
+    content_loss = 0.0
+    mixed_loss = 0.0
+    syntax_tokens = 0
+    content_tokens = 0
+    mixed_tokens = 0
+    total_content_bytes = 0  # All content bytes in decoded text
+    pure_content_token_bytes = 0  # Bytes from pure content tokens only (for rigorous content-only BPB)
+
     iterator = tqdm(validation_tokens, desc="Computing constrained BPB") if show_progress else validation_tokens
 
     skipped_too_long = 0
@@ -401,6 +478,10 @@ def compute_constrained_bpb(
         total_bytes += n_bytes
         num_sequences += 1
 
+        # Count content bytes (non-syntax characters) for content-only BPB
+        content_bytes_in_seq = sum(1 for c in text if c not in SYNTAX_CHARS)
+        total_content_bytes += content_bytes_in_seq
+
         # Initialize grammar matcher for this sequence
         matcher = xgrammar.GrammarMatcher(compiled_grammar)
         bitmask = xgrammar.allocate_token_bitmask(1, tokenizer_info.vocab_size)
@@ -427,6 +508,22 @@ def compute_constrained_bpb(
             raw_log_probs = F.log_softmax(pos_logits, dim=-1)
             raw_loss = -raw_log_probs[target_token].item()
             total_raw_loss += raw_loss
+
+            # Classify token and track per-category loss
+            category = classify_token(utf8_decoder, target_token)
+            if category == 'syntax':
+                syntax_loss += raw_loss
+                syntax_tokens += 1
+            elif category == 'content':
+                content_loss += raw_loss
+                content_tokens += 1
+                # Track bytes from pure content tokens for rigorous content-only BPB
+                token_bytes = utf8_decoder._token_to_bytes(target_token)
+                if token_bytes:
+                    pure_content_token_bytes += len(token_bytes)
+            else:  # mixed
+                mixed_loss += raw_loss
+                mixed_tokens += 1
 
             # Get valid token mask from grammar (after accepting tokens[0:t+1])
             xgrammar.reset_token_bitmask(bitmask)
@@ -469,8 +566,46 @@ def compute_constrained_bpb(
             constrained_loss=0.0,
         )
 
-    raw_bpb = total_raw_loss / (math.log(2) * total_bytes)
-    constrained_bpb = total_constrained_loss / (math.log(2) * total_bytes)
+    log2 = math.log(2)
+    raw_bpb = total_raw_loss / (log2 * total_bytes)
+    constrained_bpb = total_constrained_loss / (log2 * total_bytes)
+
+    # Compute syntax/content analysis
+    total_categorized_loss = syntax_loss + content_loss + mixed_loss
+    if total_categorized_loss > 0:
+        syntax_loss_pct = 100 * syntax_loss / total_categorized_loss
+        content_loss_pct = 100 * content_loss / total_categorized_loss
+        mixed_loss_pct = 100 * mixed_loss / total_categorized_loss
+    else:
+        syntax_loss_pct = content_loss_pct = mixed_loss_pct = 0.0
+
+    # Bits per token for each category
+    syntax_bpt = (syntax_loss / (log2 * syntax_tokens)) if syntax_tokens > 0 else 0.0
+    content_bpt = (content_loss / (log2 * content_tokens)) if content_tokens > 0 else 0.0
+    mixed_bpt = (mixed_loss / (log2 * mixed_tokens)) if mixed_tokens > 0 else 0.0
+
+    # Content-only BPB (for fair comparison with TCT which has no syntax overhead)
+    # Use pure_content_token_bytes for rigorous comparison: loss from pure content tokens / bytes of those tokens
+    # This ensures numerator and denominator are consistent (both from same tokens)
+    content_only_bpb = (content_loss / (log2 * pure_content_token_bytes)) if pure_content_token_bytes > 0 else 0.0
+
+    syntax_content = SyntaxContentResult(
+        syntax_tokens=syntax_tokens,
+        content_tokens=content_tokens,
+        mixed_tokens=mixed_tokens,
+        syntax_loss=syntax_loss,
+        content_loss=content_loss,
+        mixed_loss=mixed_loss,
+        syntax_bpt=syntax_bpt,
+        content_bpt=content_bpt,
+        mixed_bpt=mixed_bpt,
+        syntax_loss_pct=syntax_loss_pct,
+        content_loss_pct=content_loss_pct,
+        mixed_loss_pct=mixed_loss_pct,
+        content_bytes=total_content_bytes,
+        pure_content_token_bytes=pure_content_token_bytes,
+        content_only_bpb=content_only_bpb,
+    )
 
     # Report skipped sequences
     if skipped_too_long > 0 or skipped_invalid_json > 0:
@@ -484,6 +619,7 @@ def compute_constrained_bpb(
         num_sequences=num_sequences,
         raw_loss=total_raw_loss,
         constrained_loss=total_constrained_loss,
+        syntax_content=syntax_content,
     )
 
 

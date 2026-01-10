@@ -545,7 +545,8 @@ def run_constrained_bpb(
     bpb_reduction = (result.raw_bpb - result.constrained_bpb) / result.raw_bpb * 100
     print(f"    BPB reduction:   {bpb_reduction:.1f}%")
 
-    return {
+    # Print syntax vs content analysis
+    results_dict = {
         "raw_bpb": result.raw_bpb,
         "constrained_bpb": result.constrained_bpb,
         "bpb_reduction_percent": bpb_reduction,
@@ -555,6 +556,35 @@ def run_constrained_bpb(
         "raw_loss_nats": result.raw_loss,
         "constrained_loss_nats": result.constrained_loss,
     }
+
+    if result.syntax_content:
+        sc = result.syntax_content
+        print(f"\n  Syntax vs Content Analysis:")
+        print(f"    {'Category':<12} {'Tokens':>8} {'Loss %':>8} {'Bits/tok':>10}")
+        print(f"    {'-'*40}")
+        print(f"    {'Syntax':<12} {sc.syntax_tokens:>8} {sc.syntax_loss_pct:>7.1f}% {sc.syntax_bpt:>10.2f}")
+        print(f"    {'Content':<12} {sc.content_tokens:>8} {sc.content_loss_pct:>7.1f}% {sc.content_bpt:>10.2f}")
+        print(f"    {'Mixed':<12} {sc.mixed_tokens:>8} {sc.mixed_loss_pct:>7.1f}% {sc.mixed_bpt:>10.2f}")
+        print(f"\n    Content-only BPB: {sc.content_only_bpb:.4f} (pure content tokens only)")
+        print(f"    Pure content bytes: {sc.pure_content_token_bytes} (used for content-only BPB)")
+        print(f"    All content bytes:  {sc.content_bytes} / {result.total_bytes} ({100*sc.content_bytes/result.total_bytes:.1f}%)")
+
+        results_dict["syntax_content_analysis"] = {
+            "syntax_tokens": sc.syntax_tokens,
+            "content_tokens": sc.content_tokens,
+            "mixed_tokens": sc.mixed_tokens,
+            "syntax_loss_pct": sc.syntax_loss_pct,
+            "content_loss_pct": sc.content_loss_pct,
+            "mixed_loss_pct": sc.mixed_loss_pct,
+            "syntax_bits_per_token": sc.syntax_bpt,
+            "content_bits_per_token": sc.content_bpt,
+            "mixed_bits_per_token": sc.mixed_bpt,
+            "content_only_bpb": sc.content_only_bpb,
+            "pure_content_token_bytes": sc.pure_content_token_bytes,
+            "content_bytes": sc.content_bytes,
+        }
+
+    return results_dict
 
 
 def generate_samples_xgrammar(
@@ -928,7 +958,7 @@ def generate_samples_utf8_raw(
         "samples_per_second": samples_per_second,
     }
 
-    if show_progress:
+    if show_progress and num_samples > 0:
         print(f"  Valid JSON: {valid_json_count}/{num_samples} ({valid_json_count/num_samples:.1%})")
         print(f"  Valid non-empty: {valid_nonempty_count}/{num_samples} ({stats['validity_rate']:.1%})")
         print(f"  Invalid: {invalid_count}, Empty: {empty_count}")
@@ -2000,6 +2030,27 @@ def main():
             else:
                 print(f"    ✗ DIFFERENT byte counts: UTF8={utf8_bpb['total_bytes']}, TCT={tct_bpb['total_bytes']}")
                 print(f"      (This is UNFAIR - bytes should match for normalized JSON)")
+
+            # Content-only comparison (TCT has 0% syntax overhead)
+            if "syntax_content_analysis" in utf8_bpb:
+                sc = utf8_bpb["syntax_content_analysis"]
+                content_only_bpb = sc["content_only_bpb"]
+                tct_bpb_val = tct_bpb["bpb"]
+                print(f"\n  Content-Only Comparison:")
+                print(f"    UTF8 Content-Only BPB: {content_only_bpb:.4f} (pure content tokens)")
+                print(f"    TCT BPB:               {tct_bpb_val:.4f} (all tokens are content)")
+                print(f"    UTF8 syntax bits/tok:  {sc['syntax_bits_per_token']:.2f} (easy predictions)")
+                print(f"    UTF8 content bits/tok: {sc['content_bits_per_token']:.2f} (hard predictions)")
+                if tct_bpb_val > 0:
+                    ratio = content_only_bpb / tct_bpb_val
+                    print(f"\n    Ratio:                 {ratio:.2f}x")
+                print(f"\n    Scientific interpretation:")
+                print(f"    - UTF8-BPE syntax tokens require ~{sc['syntax_bits_per_token']:.1f} bits/token (predictable from grammar)")
+                print(f"    - UTF8-BPE content tokens require ~{sc['content_bits_per_token']:.1f} bits/token (semantic prediction)")
+                print(f"    - TCT predicts ONLY content (no easy syntax wins)")
+                if tct_bpb_val > 0 and ratio > 1:
+                    print(f"    - UTF8 content-only BPB ({content_only_bpb:.2f}) > TCT BPB ({tct_bpb_val:.2f})")
+                    print(f"    - This means TCT is better at semantic content modeling, not just syntax elimination")
 
     if "utf8_generation" in results and "tct_generation" in results:
         utf8 = results["utf8_generation"].get("comparison", {})
