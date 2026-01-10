@@ -84,13 +84,13 @@ for schema in $SCHEMAS; do
             if [ -d "$tct_dir" ] && [ -d "$utf8_dir" ]; then
                 # Check if best.pt exists in both (training finished)
                 if [ -f "$tct_dir/best.pt" ] && [ -f "$utf8_dir/best.pt" ]; then
-                    # Check if training completed 150 epochs (0-indexed, so epoch >= 149)
+                    # Check if training completed 150 epochs
                     tct_epoch=$(python3 -c "import json; print(json.load(open('$tct_dir/config.json')).get('epoch', 0))" 2>/dev/null || echo 0)
                     utf8_epoch=$(python3 -c "import json; print(json.load(open('$utf8_dir/config.json')).get('epoch', 0))" 2>/dev/null || echo 0)
 
-                    # Require 150 epochs (0-indexed: epoch 149 = 150th epoch)
-                    if [ "$tct_epoch" -lt 149 ] || [ "$utf8_epoch" -lt 149 ]; then
-                        echo "[WAIT] $schema $size ${baseline_arg:-default} - incomplete (TCT: epoch $tct_epoch, UTF8: epoch $utf8_epoch, need 149)"
+                    # Require 150 epochs completed
+                    if [ "$tct_epoch" -lt 150 ] || [ "$utf8_epoch" -lt 150 ]; then
+                        echo "[WAIT] $schema $size ${baseline_arg:-default} - incomplete (TCT: $tct_epoch/150, UTF8: $utf8_epoch/150)"
                         continue
                     fi
 
