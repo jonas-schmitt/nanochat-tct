@@ -40,6 +40,7 @@ Usage:
 """
 
 import argparse
+import gc
 import json
 import logging
 import psutil
@@ -1165,14 +1166,19 @@ def generate_samples_tct(
             seq = all_generated_tokens[i]
             log(f"    Sample {i}: {len(seq)} tokens, first 10: {seq[:10]}")
 
+    # Process decoding in chunks to avoid memory issues
+    decode_chunk_size = 1000
+
     for idx, generated_tokens in enumerate(all_generated_tokens):
-        # Periodic memory check during decoding
-        if show_progress and idx % 1000 == 0:
-            process = psutil.Process()
-            cpu_mem_gb = process.memory_info().rss / 1e9
-            log(f"    Decoding sample {idx}/{len(all_generated_tokens)}, CPU mem: {cpu_mem_gb:.2f}GB")
-            sys.stdout.flush()
-            sys.stderr.flush()
+        # Periodic memory check and garbage collection
+        if idx % decode_chunk_size == 0:
+            gc.collect()
+            if show_progress:
+                process = psutil.Process()
+                cpu_mem_gb = process.memory_info().rss / 1e9
+                log(f"    Decoding sample {idx}/{len(all_generated_tokens)}, CPU mem: {cpu_mem_gb:.2f}GB")
+                sys.stdout.flush()
+                sys.stderr.flush()
 
         try:
             tokens_to_decode = generated_tokens[1:]  # Skip BOS
