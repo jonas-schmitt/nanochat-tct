@@ -341,12 +341,13 @@ echo "Done."
 
 echo "[5/6] Installing TCT wheels..."
 TCT_WHEELS=""
-if [ -d "$WORKSPACE/tct-wheels" ]; then
-    TCT_WHEELS="$WORKSPACE/tct-wheels"
+# Check CODE_DIR first (wheels committed to repo), then external locations
+if [ -d "$CODE_DIR/tct-wheels" ]; then
+    TCT_WHEELS="$CODE_DIR/tct-wheels"
+elif [ -d "/workspace/tct-wheels" ]; then
+    TCT_WHEELS="/workspace/tct-wheels"
 elif [ -d "$DATA_DIR/../tct-wheels" ]; then
     TCT_WHEELS="$DATA_DIR/../tct-wheels"
-elif [ -d "$CODE_DIR/tct-wheels" ]; then
-    TCT_WHEELS="$CODE_DIR/tct-wheels"
 fi
 
 if [ -n "$TCT_WHEELS" ] && [ -d "$TCT_WHEELS" ]; then
@@ -436,7 +437,6 @@ cat > "$CODE_DIR/.env" << EOF
 # Platform: $PLATFORM
 
 export TCT_PLATFORM="$PLATFORM"
-export TCT_WORKSPACE="$WORKSPACE"
 export TCT_DATA_DIR="$DATA_DIR"
 export TCT_CODE_DIR="$CODE_DIR"
 export TCT_VENV_DIR="$VENV_DIR"
