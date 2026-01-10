@@ -312,7 +312,7 @@ def load_validation_tokens(
 def load_validation_tokens_with_target(
     utf8_data_dir: Path,
     tct_data_dir: Optional[Path],
-    target_valid: int,
+    target_valid: Optional[int],
     max_seq_len: int,
     max_iterations: int = 10,
 ) -> tuple:
@@ -326,7 +326,7 @@ def load_validation_tokens_with_target(
     Args:
         utf8_data_dir: Path to UTF8 data directory
         tct_data_dir: Path to TCT data directory (or None for UTF8-only)
-        target_valid: Target number of valid samples
+        target_valid: Target number of valid samples (None = all available)
         max_seq_len: Maximum sequence length filter
         max_iterations: Unused (kept for API compatibility)
 
@@ -360,15 +360,16 @@ def load_validation_tokens_with_target(
     else:
         tct_tokens = None
 
-    # Limit to target_valid samples
+    # Limit to target_valid samples if specified
     num_available = len(utf8_tokens)
-    if num_available < target_valid:
-        print(f"  WARNING: Only {num_available} valid samples available (requested {target_valid})")
-        target_valid = num_available
+    if target_valid is not None:
+        if num_available < target_valid:
+            print(f"  WARNING: Only {num_available} valid samples available (requested {target_valid})")
+            target_valid = num_available
 
-    utf8_tokens = utf8_tokens[:target_valid]
-    if tct_tokens:
-        tct_tokens = tct_tokens[:target_valid]
+        utf8_tokens = utf8_tokens[:target_valid]
+        if tct_tokens:
+            tct_tokens = tct_tokens[:target_valid]
 
     # Valid indices are just 0..N-1 since filtering is already done
     valid_indices = list(range(len(utf8_tokens)))
@@ -1680,10 +1681,10 @@ def main():
                         help="Only run BPB evaluation (skip generation quality)")
     parser.add_argument("--generation_only", action="store_true",
                         help="Only run generation quality evaluation (skip BPB)")
-    parser.add_argument("--num_samples", type=int, default=1000,
-                        help="Number of samples for BPB evaluation")
-    parser.add_argument("--num_gen_samples", type=int, default=100,
-                        help="Number of samples to generate for distribution comparison")
+    parser.add_argument("--num_samples", type=int, default=None,
+                        help="Number of samples for BPB evaluation (default: all validation samples)")
+    parser.add_argument("--num_gen_samples", type=int, default=10000,
+                        help="Number of samples to generate for distribution comparison (default: 10000)")
     parser.add_argument("--max_seq_len", type=int, default=2048,
                         help="Maximum sequence length for BPB evaluation (default: 2048, training length)")
     parser.add_argument("--max_gen_tokens", type=int, default=2048,
@@ -1750,8 +1751,11 @@ def main():
         except FileNotFoundError:
             pass
 
-    # Pre-load validation tokens with auto-increase to reach target valid samples
-    print(f"\n  Loading validation data (target: {args.num_samples} valid samples)...")
+    # Pre-load validation tokens
+    if args.num_samples is None:
+        print(f"\n  Loading validation data (all available samples)...")
+    else:
+        print(f"\n  Loading validation data (target: {args.num_samples} samples)...")
     utf8_validation_tokens, tct_validation_tokens, valid_indices = load_validation_tokens_with_target(
         utf8_data_dir=utf8_data_dir,
         tct_data_dir=tct_data_dir,

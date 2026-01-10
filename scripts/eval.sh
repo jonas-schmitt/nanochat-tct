@@ -16,8 +16,8 @@ set -e
 
 SCHEMA=""
 SIZE=""
-NUM_SAMPLES=10000
-NUM_GEN_SAMPLES=10000
+NUM_SAMPLES=""
+NUM_GEN_SAMPLES=""
 BASELINE=""
 
 for arg in "$@"; do
@@ -37,12 +37,12 @@ if [ -z "$SCHEMA" ]; then
     echo "Schemas: kubernetes, tsconfig, eslintrc"
     echo "Sizes: tiny, mini, base, small, small-wide, medium, large (auto-detect if omitted)"
     echo "Options:"
-    echo "  --samples=N       BPB samples (default: 10000)"
+    echo "  --samples=N       BPB samples (default: full validation set)"
     echo "  --gen_samples=N   Generation samples (default: 10000)"
     echo "  o200k             Use o200k-matched baseline"
     echo ""
     echo "Examples:"
-    echo "  bash scripts/eval.sh kubernetes              # Auto-detect size"
+    echo "  bash scripts/eval.sh kubernetes              # Auto-detect size, full validation"
     echo "  bash scripts/eval.sh kubernetes mini         # Specific size"
     echo "  bash scripts/eval.sh kubernetes --samples=100 --gen_samples=100  # Quick test"
     echo "  bash scripts/eval.sh kubernetes mini o200k   # o200k baseline"
@@ -149,21 +149,21 @@ echo "Baseline:   ${BASELINE:-bpe-matched}"
 echo "TCT:        $TCT_CHECKPOINT"
 echo "UTF8:       $UTF8_CHECKPOINT"
 echo "Data:       $DATA_DIR"
-echo "Samples:    $NUM_SAMPLES (BPB), $NUM_GEN_SAMPLES (generation)"
+echo "BPB:        ${NUM_SAMPLES:-all} samples"
+echo "Generation: ${NUM_GEN_SAMPLES:-10000} samples"
 echo "Output:     $OUTPUT_FILE"
 echo "============================================================"
 echo
 
 cd "$CODE_DIR"
 
-python -m scripts.eval_icml \
-    --schema "$SCHEMA" \
-    --tct_checkpoint "$TCT_CHECKPOINT" \
-    --utf8_checkpoint "$UTF8_CHECKPOINT" \
-    --num_samples "$NUM_SAMPLES" \
-    --num_gen_samples "$NUM_GEN_SAMPLES" \
-    --output "$OUTPUT_FILE" \
-    --latex
+# Build command with optional arguments
+CMD="python -m scripts.eval_icml --schema $SCHEMA --tct_checkpoint $TCT_CHECKPOINT --utf8_checkpoint $UTF8_CHECKPOINT"
+[ -n "$NUM_SAMPLES" ] && CMD="$CMD --num_samples $NUM_SAMPLES"
+[ -n "$NUM_GEN_SAMPLES" ] && CMD="$CMD --num_gen_samples $NUM_GEN_SAMPLES"
+CMD="$CMD --output $OUTPUT_FILE --latex"
+
+eval $CMD
 
 echo ""
 echo "============================================================"
