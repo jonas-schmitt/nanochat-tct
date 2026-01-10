@@ -1767,6 +1767,12 @@ def main():
 
     results["num_valid_samples"] = len(utf8_validation_tokens)
 
+    # Cap num_gen_samples to available samples
+    actual_gen_samples = min(args.num_gen_samples, len(utf8_validation_tokens))
+    if actual_gen_samples < args.num_gen_samples:
+        print(f"  NOTE: Capping generation samples from {args.num_gen_samples} to {actual_gen_samples} (available)")
+    results["num_gen_samples"] = actual_gen_samples
+
     # Evaluate UTF8-BPE model (with constrained BPB)
     if args.utf8_checkpoint or args.random_model:
         print("\n" + "-" * 60)
@@ -1803,7 +1809,7 @@ def main():
                 schema=args.schema,
                 merge_table=merge_table,
                 data_dir=utf8_data_dir,
-                num_samples=args.num_gen_samples,
+                num_samples=actual_gen_samples,
                 device=args.device,
                 temperature=args.temperature,
                 max_tokens=args.max_gen_tokens,
@@ -1817,7 +1823,7 @@ def main():
                 schema=args.schema,
                 merge_table=merge_table,
                 data_dir=utf8_data_dir,
-                num_samples=args.num_gen_samples,
+                num_samples=actual_gen_samples,
                 device=args.device,
                 temperature=args.temperature,
                 max_tokens=args.max_gen_tokens,
@@ -1920,7 +1926,7 @@ def main():
 
             # Decode TCT tokens to get validation JSON strings (for generation quality)
             val_json_strings = []
-            for tokens in tct_validation_tokens[:args.num_gen_samples]:
+            for tokens in tct_validation_tokens[:actual_gen_samples]:
                 try:
                     json_out, consumed, surplus = tct_module.decode(tokens)
                     val_json_strings.append(json_out)
@@ -1929,7 +1935,7 @@ def main():
         else:
             print(f"  WARNING: No TCT validation tokens available. Using UTF8 validation data for generation comparison.")
             # Fallback: use UTF8 validation data decoded for comparison
-            val_json_strings = [utf8_decoder.decode(tokens) for tokens in utf8_validation_tokens[:args.num_gen_samples]]
+            val_json_strings = [utf8_decoder.decode(tokens) for tokens in utf8_validation_tokens[:actual_gen_samples]]
 
         # Run generation quality for TCT (unless --bpb_only)
         if not args.bpb_only:
@@ -1944,7 +1950,7 @@ def main():
                 tct_module=tct_module,
                 validation_json_strings=val_json_strings,
                 first_token_distribution=first_token_dist,
-                num_samples=args.num_gen_samples,
+                num_samples=actual_gen_samples,
                 temperature=args.temperature,
                 max_tokens=args.max_gen_tokens,
                 normalize_json_output=args.normalize_bytes,
