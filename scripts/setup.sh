@@ -349,7 +349,7 @@ if [ -d "$TCT_WHEELS" ]; then
     for wheel in \
         "$TCT_WHEELS/tct_kubernetes_bpe_1k-1.0.0"*.whl \
         "$TCT_WHEELS/tct_eslintrc_bpe_500-1.0.0"*.whl \
-        "$TCT_WHEELS/tct_tsconfig_base-1.0.0"*.whl; do
+        "$TCT_WHEELS/tct_tsconfig-1.0.0"*.whl; do
         if [ -f "$wheel" ]; then
             echo "  Installing $(basename "$wheel")..."
             pip_install --force-reinstall "$wheel"
