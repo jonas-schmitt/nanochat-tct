@@ -580,18 +580,9 @@ def run_constrained_bpb(
 
     if result.syntax_content:
         sc = result.syntax_content
-        print(f"\n  Syntax vs Content Analysis (character-based):")
-        print(f"    {'Category':<12} {'Tokens':>8} {'Loss %':>8} {'Bits/tok':>10}")
-        print(f"    {'-'*40}")
-        print(f"    {'Syntax':<12} {sc.syntax_tokens:>8} {sc.syntax_loss_pct:>7.1f}% {sc.syntax_bpt:>10.2f}")
-        print(f"    {'Content':<12} {sc.content_tokens:>8} {sc.content_loss_pct:>7.1f}% {sc.content_bpt:>10.2f}")
-        print(f"    {'Mixed':<12} {sc.mixed_tokens:>8} {sc.mixed_loss_pct:>7.1f}% {sc.mixed_bpt:>10.2f}")
-        print(f"\n    Content-only BPB: {sc.content_only_bpb:.4f} (pure content tokens only)")
-        print(f"    Pure content bytes: {sc.pure_content_token_bytes} (used for content-only BPB)")
-        print(f"    All content bytes:  {sc.content_bytes} / {result.total_bytes} ({100*sc.content_bytes/result.total_bytes:.1f}%)")
 
-        # NEW: Semantic loss breakdown (position-based key vs value)
-        print(f"\n  Semantic Loss Breakdown (position-based):")
+        # Semantic loss breakdown (position-based key vs value)
+        print(f"\n  Semantic Loss Breakdown:")
         print(f"    {'Category':<12} {'Tokens':>8} {'Loss %':>8} {'Loss (nats)':>12}")
         print(f"    {'-'*44}")
         syntax_pct = 100 - sc.key_loss_pct - sc.value_loss_pct
@@ -601,31 +592,27 @@ def run_constrained_bpb(
         print(f"    {'Values':<12} {sc.value_tokens:>8} {sc.value_loss_pct:>7.1f}% {sc.value_loss:>12.1f}")
         print(f"    {'-'*44}")
         print(f"    {'Total':<12} {'-':>8} {'100.0':>7}% {result.raw_loss:>12.1f}")
-        print(f"\n    Value-only BPB: {sc.value_only_bpb:.4f} (value_loss / total_bytes, same denominator as TCT)")
+        print(f"\n    Loss per token (nats):")
+        print(f"      Syntax: {sc.syntax_loss_per_token:.4f}  Key: {sc.key_loss_per_token:.4f}  Value: {sc.value_loss_per_token:.4f}")
         print(f"    Value bytes: {sc.value_bytes} / {result.total_bytes} ({100*sc.value_bytes/result.total_bytes:.1f}%)")
 
-        results_dict["syntax_content_analysis"] = {
-            "syntax_tokens": sc.syntax_tokens,
-            "content_tokens": sc.content_tokens,
-            "mixed_tokens": sc.mixed_tokens,
-            "syntax_loss_pct": sc.syntax_loss_pct,
-            "content_loss_pct": sc.content_loss_pct,
-            "mixed_loss_pct": sc.mixed_loss_pct,
-            "syntax_bits_per_token": sc.syntax_bpt,
-            "content_bits_per_token": sc.content_bpt,
-            "mixed_bits_per_token": sc.mixed_bpt,
-            "content_only_bpb": sc.content_only_bpb,
-            "pure_content_token_bytes": sc.pure_content_token_bytes,
-            "content_bytes": sc.content_bytes,
-            # NEW: Position-based semantic breakdown
+        # Position-based semantic analysis (syntax/key/value)
+        syntax_tokens = result.total_tokens - sc.key_tokens - sc.value_tokens
+        syntax_loss = result.raw_loss - sc.key_loss - sc.value_loss
+        results_dict["semantic_analysis"] = {
+            "syntax_tokens": syntax_tokens,
             "key_tokens": sc.key_tokens,
             "value_tokens": sc.value_tokens,
+            "syntax_loss": syntax_loss,
             "key_loss": sc.key_loss,
             "value_loss": sc.value_loss,
+            "syntax_loss_pct": 100 - sc.key_loss_pct - sc.value_loss_pct,
             "key_loss_pct": sc.key_loss_pct,
             "value_loss_pct": sc.value_loss_pct,
+            "syntax_loss_per_token": sc.syntax_loss_per_token,
+            "key_loss_per_token": sc.key_loss_per_token,
+            "value_loss_per_token": sc.value_loss_per_token,
             "value_bytes": sc.value_bytes,
-            "value_only_bpb": sc.value_only_bpb,
         }
 
     return results_dict
@@ -2033,14 +2020,18 @@ def main():
                     show_progress=True,
                     normalize_bytes=args.normalize_bytes,
                 )
+                tct_loss_per_token = tct_bpb_result.total_loss / tct_bpb_result.total_tokens if tct_bpb_result.total_tokens > 0 else 0
+
                 print(f"\n  TCT BPB Results:")
-                print(f"    BPB:         {tct_bpb_result.bpb:.4f}")
-                print(f"    Sequences:   {tct_bpb_result.num_sequences}")
-                print(f"    Tokens:      {tct_bpb_result.total_tokens}")
-                print(f"    Bytes:       {tct_bpb_result.total_bytes}")
+                print(f"    BPB:            {tct_bpb_result.bpb:.4f}")
+                print(f"    Loss/token:     {tct_loss_per_token:.4f} nats")
+                print(f"    Sequences:      {tct_bpb_result.num_sequences}")
+                print(f"    Tokens:         {tct_bpb_result.total_tokens}")
+                print(f"    Bytes:          {tct_bpb_result.total_bytes}")
 
                 results["tct_bpb"] = {
                     "bpb": tct_bpb_result.bpb,
+                    "loss_per_token": tct_loss_per_token,
                     "num_sequences": tct_bpb_result.num_sequences,
                     "total_tokens": tct_bpb_result.total_tokens,
                     "total_bytes": tct_bpb_result.total_bytes,
@@ -2092,23 +2083,26 @@ def main():
     print("SUMMARY")
     print("=" * 60)
 
-    # BPB Comparison Table (all three metrics)
+    # Loss Comparison Table
     if "utf8_constrained_bpb" in results or "tct_bpb" in results:
-        print("\n  BPB Comparison (lower is better):")
-        print(f"  {'Method':<25} {'BPB':>10} {'Sequences':>12} {'Bytes':>12}")
-        print(f"  {'-'*59}")
+        print("\n  Total Loss Comparison (lower is better):")
+        print(f"  {'Method':<25} {'Loss (nats)':>12} {'Loss/tok':>10} {'Tokens':>10} {'Sequences':>10}")
+        print(f"  {'-'*67}")
 
         if "utf8_constrained_bpb" in results:
-            bpb = results["utf8_constrained_bpb"]
-            # Raw BPE (no grammar constraints)
-            print(f"  {'UTF8-BPE (raw)':<25} {bpb['raw_bpb']:>10.4f} {bpb['num_sequences']:>12} {bpb['total_bytes']:>12}")
-            # BPE + XGrammar
-            print(f"  {'UTF8-BPE + XGrammar':<25} {bpb['constrained_bpb']:>10.4f} {bpb['num_sequences']:>12} {bpb['total_bytes']:>12}")
+            utf8 = results["utf8_constrained_bpb"]
+            raw_loss = utf8['raw_loss_nats']
+            raw_loss_per_tok = raw_loss / utf8['total_tokens'] if utf8['total_tokens'] > 0 else 0
+            print(f"  {'UTF8-BPE (raw)':<25} {raw_loss:>12.1f} {raw_loss_per_tok:>10.4f} {utf8['total_tokens']:>10} {utf8['num_sequences']:>10}")
+            constrained_loss = utf8['constrained_loss_nats']
+            constrained_loss_per_tok = constrained_loss / utf8['total_tokens'] if utf8['total_tokens'] > 0 else 0
+            print(f"  {'UTF8-BPE + XGrammar':<25} {constrained_loss:>12.1f} {constrained_loss_per_tok:>10.4f} {utf8['total_tokens']:>10} {utf8['num_sequences']:>10}")
 
         if "tct_bpb" in results:
-            bpb = results["tct_bpb"]
-            # TCT (inherently constrained)
-            print(f"  {'TCT':<25} {bpb['bpb']:>10.4f} {bpb['num_sequences']:>12} {bpb['total_bytes']:>12}")
+            tct = results["tct_bpb"]
+            tct_loss = tct['total_loss_nats']
+            tct_loss_per_tok = tct['loss_per_token']
+            print(f"  {'TCT':<25} {tct_loss:>12.1f} {tct_loss_per_tok:>10.4f} {tct['total_tokens']:>10} {tct['num_sequences']:>10}")
 
         # Fairness verification
         if "utf8_constrained_bpb" in results and "tct_bpb" in results:
@@ -2116,74 +2110,50 @@ def main():
             tct_bpb = results["tct_bpb"]
             print(f"\n  Fairness Verification:")
             if utf8_bpb['num_sequences'] == tct_bpb['num_sequences']:
-                print(f"    ✓ Same number of sequences: {utf8_bpb['num_sequences']}")
+                print(f"    Same number of sequences: {utf8_bpb['num_sequences']}")
             else:
-                print(f"    ✗ DIFFERENT sequence counts: UTF8={utf8_bpb['num_sequences']}, TCT={tct_bpb['num_sequences']}")
+                print(f"    WARNING: Different sequence counts: UTF8={utf8_bpb['num_sequences']}, TCT={tct_bpb['num_sequences']}")
             if utf8_bpb['total_bytes'] == tct_bpb['total_bytes']:
-                print(f"    ✓ Same total bytes: {utf8_bpb['total_bytes']}")
+                print(f"    Same total bytes: {utf8_bpb['total_bytes']}")
             else:
-                print(f"    ✗ DIFFERENT byte counts: UTF8={utf8_bpb['total_bytes']}, TCT={tct_bpb['total_bytes']}")
-                print(f"      (This is UNFAIR - bytes should match for normalized JSON)")
+                print(f"    WARNING: Different byte counts: UTF8={utf8_bpb['total_bytes']}, TCT={tct_bpb['total_bytes']}")
 
-            # Content-only comparison (TCT has 0% syntax overhead)
-            if "syntax_content_analysis" in utf8_bpb:
-                sc = utf8_bpb["syntax_content_analysis"]
-                content_only_bpb = sc["content_only_bpb"]
-                tct_bpb_val = tct_bpb["bpb"]
-                print(f"\n  Content-Only Comparison (character-based):")
-                print(f"    UTF8 Content-Only BPB: {content_only_bpb:.4f} (pure content tokens)")
-                print(f"    TCT BPB:               {tct_bpb_val:.4f} (all tokens are content)")
-                print(f"    UTF8 syntax bits/tok:  {sc['syntax_bits_per_token']:.2f} (easy predictions)")
-                print(f"    UTF8 content bits/tok: {sc['content_bits_per_token']:.2f} (hard predictions)")
-                if tct_bpb_val > 0:
-                    ratio = content_only_bpb / tct_bpb_val
-                    print(f"\n    Ratio:                 {ratio:.2f}x")
+            # Semantic Value-Only Comparison (position-based, token-normalized)
+            if "semantic_analysis" in utf8_bpb:
+                sc = utf8_bpb["semantic_analysis"]
+                tct_total_loss = tct_bpb.get("total_loss_nats", 0)
+                tct_total_tokens = tct_bpb.get("total_tokens", 0)
 
-                # NEW: Semantic Value-Only Comparison (position-based)
-                if "value_only_bpb" in sc:
-                    value_only_bpb = sc["value_only_bpb"]
-                    value_loss = sc.get("value_loss", 0)
-                    key_loss = sc.get("key_loss", 0)
+                if "value_loss_per_token" in sc:
                     key_loss_pct = sc.get("key_loss_pct", 0)
                     value_loss_pct = sc.get("value_loss_pct", 0)
                     tct_total_loss = tct_bpb.get("total_loss_nats", 0)
+                    tct_total_tokens = tct_bpb.get("total_tokens", 0)
 
                     print(f"\n  === SEMANTIC VALUE-ONLY COMPARISON ===")
-                    print(f"  (This is the fairest comparison: excludes syntax AND field names)")
+                    print(f"  (Fairest comparison: avg loss per semantic token)")
                     print(f"\n    UTF8 Loss Breakdown:")
                     print(f"      Syntax loss:     {100 - key_loss_pct - value_loss_pct:.1f}% (deterministic)")
                     print(f"      Key loss:        {key_loss_pct:.1f}% (schema-determined)")
                     print(f"      Value loss:      {value_loss_pct:.1f}% (semantic content)")
-                    print(f"\n    Core Comparison:")
-                    print(f"      UTF8 Value-Only BPB: {value_only_bpb:.4f}")
-                    print(f"      TCT BPB:             {tct_bpb_val:.4f}")
-                    if tct_bpb_val > 0:
-                        value_ratio = value_only_bpb / tct_bpb_val
-                        print(f"      Ratio:               {value_ratio:.2f}x")
-                        if value_ratio > 1:
-                            improvement = (value_ratio - 1) * 100
-                            print(f"\n    Result: TCT needs {improvement:.0f}% fewer bits to predict values")
-                        elif value_ratio < 1:
-                            improvement = (1 - value_ratio) * 100
-                            print(f"\n    Result: UTF8 needs {improvement:.0f}% fewer bits to predict values")
-                        else:
-                            print(f"\n    Result: Both equally efficient at value prediction")
 
-                    # Direct loss comparison
-                    if tct_total_loss > 0 and value_loss > 0:
-                        loss_ratio = value_loss / tct_total_loss
-                        print(f"\n    Direct Loss Comparison:")
-                        print(f"      UTF8 value loss: {value_loss:.1f} nats")
-                        print(f"      TCT total loss:  {tct_total_loss:.1f} nats")
-                        print(f"      Ratio:           {loss_ratio:.2f}x")
+                    # Loss per token comparison (fairest: avg loss per semantic token)
+                    utf8_value_loss_per_token = sc.get("value_loss_per_token", 0)
+                    tct_loss_per_token = (tct_total_loss / tct_total_tokens) if tct_total_tokens > 0 else 0
+                    value_tokens = sc.get("value_tokens", 0)
 
-                print(f"\n    Scientific interpretation:")
-                print(f"    - UTF8-BPE syntax tokens require ~{sc['syntax_bits_per_token']:.1f} bits/token (predictable from grammar)")
-                print(f"    - UTF8-BPE content tokens require ~{sc['content_bits_per_token']:.1f} bits/token (semantic prediction)")
-                print(f"    - TCT predicts ONLY content (no easy syntax wins)")
-                if tct_bpb_val > 0 and ratio > 1:
-                    print(f"    - UTF8 content-only BPB ({content_only_bpb:.2f}) > TCT BPB ({tct_bpb_val:.2f})")
-                    print(f"    - This means TCT is better at semantic content modeling, not just syntax elimination")
+                    if utf8_value_loss_per_token > 0 and tct_loss_per_token > 0:
+                        lpt_ratio = utf8_value_loss_per_token / tct_loss_per_token
+                        print(f"\n    Loss Per Token:")
+                        print(f"      UTF8 value loss/token: {utf8_value_loss_per_token:.4f} nats ({value_tokens} value tokens)")
+                        print(f"      TCT loss/token:        {tct_loss_per_token:.4f} nats ({tct_total_tokens} tokens)")
+                        print(f"      Ratio:                 {lpt_ratio:.2f}x")
+                        if lpt_ratio > 1:
+                            improvement = (lpt_ratio - 1) * 100
+                            print(f"\n    Result: TCT needs {improvement:.0f}% less loss per semantic token")
+                        elif lpt_ratio < 1:
+                            improvement = (1 - lpt_ratio) * 100
+                            print(f"\n    Result: UTF8 needs {improvement:.0f}% less loss per semantic token")
 
     if "utf8_generation" in results and "tct_generation" in results:
         utf8 = results["utf8_generation"].get("comparison", {})
