@@ -649,7 +649,7 @@ def get_tct_module(schema: str):
         TCT module with encode/decode/decode_prefix/vocab_size functions
     """
     if schema == "tsconfig":
-        import tct_tsconfig_base as tct
+        import tct_tsconfig as tct
     elif schema == "eslintrc":
         import tct_eslintrc_bpe_500 as tct
     elif schema == "kubernetes":
