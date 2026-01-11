@@ -19,6 +19,7 @@ SIZE=""
 NUM_SAMPLES=""
 NUM_GEN_SAMPLES=""
 BASELINE=""
+EXTRA_ARGS=""
 
 for arg in "$@"; do
     case $arg in
@@ -28,6 +29,7 @@ for arg in "$@"; do
         --gen_samples=*) NUM_GEN_SAMPLES="${arg#--gen_samples=}" ;;
         o200k|o200k-matched) BASELINE="o200k-matched" ;;
         --baseline=*) BASELINE="${arg#--baseline=}" ;;
+        --bpb_only|--generation_only) EXTRA_ARGS="$EXTRA_ARGS $arg" ;;
     esac
 done
 
@@ -161,6 +163,7 @@ cd "$CODE_DIR"
 CMD="python -m scripts.eval_icml --schema $SCHEMA --tct_checkpoint $TCT_CHECKPOINT --utf8_checkpoint $UTF8_CHECKPOINT"
 [ -n "$NUM_SAMPLES" ] && CMD="$CMD --num_samples $NUM_SAMPLES"
 [ -n "$NUM_GEN_SAMPLES" ] && CMD="$CMD --num_gen_samples $NUM_GEN_SAMPLES"
+[ -n "$EXTRA_ARGS" ] && CMD="$CMD $EXTRA_ARGS"
 CMD="$CMD --output $OUTPUT_FILE --latex"
 
 eval $CMD
