@@ -501,7 +501,7 @@ def get_muon_momentum(step):
 
 # Checkpoint saving - includes optimizer state for proper resume
 # REDUNDANT SAVING: saves to ALL available locations to prevent data loss from silent filesystem failures
-def save_checkpoint(step, epoch, val_loss, min_val_loss_current, smooth_train_loss_current, is_best=False):
+def save_checkpoint(step, epoch, val_loss, min_val_loss_current, smooth_train_loss_current):
     if not master_process:
         return
 
@@ -552,12 +552,8 @@ def save_checkpoint(step, epoch, val_loss, min_val_loss_current, smooth_train_lo
             if not checkpoint_path.exists() or checkpoint_path.stat().st_size == 0:
                 raise IOError(f"File not written or empty: {checkpoint_path}")
 
-            # Save best model
-            if is_best:
-                best_path = checkpoint_dir / "best.pt"
-                torch.save(orig_model.state_dict(), best_path)
-                with open(best_path, 'rb') as f:
-                    os.fsync(f.fileno())
+            # Note: best.pt is now saved immediately when new best is found (in main training loop)
+            # This ensures best.pt is always up-to-date, not just when checkpoint interval coincides
 
             # Save config
             config_path = checkpoint_dir / "config.json"
@@ -576,8 +572,6 @@ def save_checkpoint(step, epoch, val_loss, min_val_loss_current, smooth_train_lo
         print0(f"Checkpoint saved to {len(saved_locations)} location(s): {saved_locations[0]}")
         for loc in saved_locations[1:]:
             print0(f"  + backup: {loc}")
-        if is_best:
-            print0(f"  New best model saved!")
     else:
         print0(f"ERROR: Failed to save checkpoint to ANY location!")
         for fail in failed_locations:
@@ -648,7 +642,22 @@ for step in range(start_step, total_steps + 1):
         print0(f"Epoch {current_epoch:3d} | Step {step:6d} | Val loss: {val_loss:.4f} | Val ppl: {val_ppl:.2f}" +
                (" (best)" if is_best else ""))
 
-    # Checkpointing - reuse is_best from eval block above (don't recalculate!)
+        # Save best.pt immediately when new best is found (independent of checkpoint interval)
+        # This fixes the bug where best.pt was only updated when checkpoint save coincided with new best
+        if is_best and master_process:
+            output_dirname = model_tag if model_tag else f"{schema}_{tokenizer}_{model_size}"
+            for ckpt_base in all_checkpoint_bases:
+                try:
+                    best_path = ckpt_base / output_dirname / "best.pt"
+                    best_path.parent.mkdir(parents=True, exist_ok=True)
+                    torch.save(orig_model.state_dict(), best_path)
+                    with open(best_path, 'rb') as f:
+                        os.fsync(f.fileno())
+                except Exception:
+                    pass  # Will be saved properly at next checkpoint interval
+            print0(f"  New best model saved!")
+
+    # Checkpointing at intervals (best.pt is saved immediately above when is_best=True)
     if master_process and (last_step or (step > 0 and step % save_interval == 0)):
         save_checkpoint(
             step=step,
@@ -656,7 +665,6 @@ for step in range(start_step, total_steps + 1):
             val_loss=val_loss if 'val_loss' in locals() else 0.0,
             min_val_loss_current=min_val_loss,
             smooth_train_loss_current=smooth_train_loss,
-            is_best=is_best,
         )
 
     if last_step:
