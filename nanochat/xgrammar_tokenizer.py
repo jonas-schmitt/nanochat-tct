@@ -464,7 +464,7 @@ def compute_constrained_bpb(
     value_tokens = 0
     total_value_bytes = 0  # Bytes from value tokens only
 
-    iterator = tqdm(validation_tokens, desc="Computing constrained BPB") if show_progress else validation_tokens
+    iterator = tqdm(validation_tokens, desc="Computing UTF8 loss") if show_progress else validation_tokens
 
     skipped_too_long = 0
     skipped_invalid_json = 0
@@ -796,7 +796,7 @@ def compute_tct_bpb(
     total_tokens = 0
     num_sequences = 0
 
-    iterator = tqdm(validation_tokens, desc="Computing TCT BPB") if show_progress else validation_tokens
+    iterator = tqdm(validation_tokens, desc="Computing TCT loss") if show_progress else validation_tokens
 
     skipped_too_long = 0
     skipped_decode_failed = 0

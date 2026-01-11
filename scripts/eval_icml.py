@@ -524,7 +524,7 @@ def run_constrained_bpb(
     )
 
     print("\n" + "=" * 60)
-    print("CONSTRAINED BPB EVALUATION")
+    print("UTF8 LOSS EVALUATION")
     print("=" * 60)
 
     # Build tokenizer and grammar
@@ -544,7 +544,7 @@ def run_constrained_bpb(
     print(f"  Validation sequences: {len(validation_tokens)} (pre-filtered)")
 
     # Compute constrained BPB
-    print("\n  Computing constrained BPB...")
+    print("\n  Computing loss...")
     result = compute_constrained_bpb(
         model=model,
         tokenizer_info=tokenizer_info,
@@ -561,21 +561,23 @@ def run_constrained_bpb(
     print(f"    Sequences:       {result.num_sequences}")
     print(f"    Tokens:          {result.total_tokens}")
     print(f"    Bytes:           {result.total_bytes}")
-    print(f"    Raw BPB:         {result.raw_bpb:.4f}")
-    print(f"    Constrained BPB: {result.constrained_bpb:.4f}")
-    bpb_reduction = (result.raw_bpb - result.constrained_bpb) / result.raw_bpb * 100
-    print(f"    BPB reduction:   {bpb_reduction:.1f}%")
+    raw_loss_per_tok = result.raw_loss / result.total_tokens if result.total_tokens > 0 else 0
+    constrained_loss_per_tok = result.constrained_loss / result.total_tokens if result.total_tokens > 0 else 0
+    print(f"    Raw loss:        {result.raw_loss:.1f} nats ({raw_loss_per_tok:.4f}/tok)")
+    print(f"    Constrained:     {result.constrained_loss:.1f} nats ({constrained_loss_per_tok:.4f}/tok)")
+    loss_reduction = (result.raw_loss - result.constrained_loss) / result.raw_loss * 100 if result.raw_loss > 0 else 0
+    print(f"    Reduction:       {loss_reduction:.1f}%")
 
-    # Print syntax vs content analysis
+    # Build results dict
     results_dict = {
-        "raw_bpb": result.raw_bpb,
-        "constrained_bpb": result.constrained_bpb,
-        "bpb_reduction_percent": bpb_reduction,
         "num_sequences": result.num_sequences,
         "total_tokens": result.total_tokens,
         "total_bytes": result.total_bytes,
         "raw_loss_nats": result.raw_loss,
         "constrained_loss_nats": result.constrained_loss,
+        "raw_loss_per_token": raw_loss_per_tok,
+        "constrained_loss_per_token": constrained_loss_per_tok,
+        "loss_reduction_percent": loss_reduction,
     }
 
     if result.syntax_content:
@@ -2010,7 +2012,7 @@ def main():
 
             # Compute TCT BPB (unless --generation_only)
             if not args.generation_only:
-                print("\n  Computing TCT BPB...")
+                print("\n  Computing TCT loss...")
                 tct_bpb_result = compute_tct_bpb(
                     model=model,
                     tct_module=tct_module,
@@ -2022,8 +2024,8 @@ def main():
                 )
                 tct_loss_per_token = tct_bpb_result.total_loss / tct_bpb_result.total_tokens if tct_bpb_result.total_tokens > 0 else 0
 
-                print(f"\n  TCT BPB Results:")
-                print(f"    BPB:            {tct_bpb_result.bpb:.4f}")
+                print(f"\n  TCT Results:")
+                print(f"    Total loss:     {tct_bpb_result.total_loss:.1f} nats")
                 print(f"    Loss/token:     {tct_loss_per_token:.4f} nats")
                 print(f"    Sequences:      {tct_bpb_result.num_sequences}")
                 print(f"    Tokens:         {tct_bpb_result.total_tokens}")
