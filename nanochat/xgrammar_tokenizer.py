@@ -453,8 +453,13 @@ def compute_constrained_bpb(
             skipped_too_long += 1
             continue
 
-        # Decode to text for byte count
-        text = utf8_decoder.decode(tokens)
+        # Check if first token is BOS (PAD token, which equals EOS in our vocab)
+        # BOS is prepended during training but is NOT part of JSON content
+        bos_token_id = utf8_decoder.eos_token_id()
+        decode_tokens = tokens[1:] if tokens[0] == bos_token_id else tokens
+
+        # Decode to text for byte count (without BOS token)
+        text = utf8_decoder.decode(decode_tokens)
 
         # Normalize to minified JSON for fair comparison with TCT
         if normalize_bytes:
@@ -477,12 +482,9 @@ def compute_constrained_bpb(
         if n_bytes == 0:
             continue
 
-        total_bytes += n_bytes
-        num_sequences += 1
-
-        # Count content bytes (non-syntax characters) for content-only BPB
+        # Count content bytes (non-syntax characters) - computed before grammar check
+        # but only added to totals after grammar check succeeds
         content_bytes_in_seq = sum(1 for c in text if c not in SYNTAX_CHARS)
-        total_content_bytes += content_bytes_in_seq
 
         # Initialize grammar matcher for this sequence
         matcher = xgrammar.GrammarMatcher(compiled_grammar)
@@ -496,10 +498,19 @@ def compute_constrained_bpb(
 
         # Accept the first token to initialize grammar state
         # (the model predicts tokens[t+1] given tokens[0:t+1])
-        try:
-            matcher.accept_token(tokens[0])
-        except Exception:
-            continue  # Skip sequences that grammar can't parse
+        # IMPORTANT: Skip accepting BOS - it's not part of JSON grammar
+        # Grammar should start fresh, ready for first JSON token
+        if tokens[0] != bos_token_id:
+            try:
+                matcher.accept_token(tokens[0])
+            except Exception:
+                continue  # Skip sequences that grammar can't parse
+
+        # Only count bytes/sequences AFTER grammar check succeeds
+        # This fixes the bug where bytes were counted for sequences that fail grammar parsing
+        total_bytes += n_bytes
+        num_sequences += 1
+        total_content_bytes += content_bytes_in_seq
 
         # Process each position
         for t in range(len(tokens) - 1):
@@ -715,9 +726,14 @@ def compute_tct_bpb(
             skipped_too_long += 1
             continue
 
-        # Decode to text for byte count
+        # Check if first token is BOS (PAD token = vocab_size - 1)
+        # BOS is prepended during training but is NOT part of JSON content
+        pad_token_id = tct_module.vocab_size() - 1
+        decode_tokens = tokens[1:] if tokens[0] == pad_token_id else tokens
+
+        # Decode to text for byte count (without BOS token)
         try:
-            json_out, consumed, surplus = tct_module.decode(tokens)
+            json_out, consumed, surplus = tct_module.decode(decode_tokens)
 
             # Normalize to minified JSON with sorted keys for fair comparison
             if normalize_bytes:

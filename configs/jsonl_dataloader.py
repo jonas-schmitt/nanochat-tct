@@ -90,6 +90,7 @@ def get_validation_sequences(
     seed: int = 42,
     max_samples: Optional[int] = None,
     verbose: bool = False,
+    use_bos: bool = True,
 ) -> List[List[int]]:
     """Get validation sequences using the same logic as training.
 
@@ -99,6 +100,7 @@ def get_validation_sequences(
     2. Apply filtering (max_len, coordinated filtering with partner)
     3. Shuffle with fixed seed
     4. Return the validation portion (last 1-train_ratio)
+    5. Optionally prepend BOS token (to match training behavior)
 
     Args:
         data_dir: Directory containing all.jsonl
@@ -110,6 +112,8 @@ def get_validation_sequences(
         seed: Random seed for reproducibility (default 42, same as training)
         max_samples: Limit number of validation samples returned (None = all)
         verbose: Print statistics
+        use_bos: If True (default), prepend pad_token_id as BOS to match training.
+            IMPORTANT: Training uses use_bos=True by default, so evaluation should too.
 
     Returns:
         List of token sequences (as lists, not tensors)
@@ -178,6 +182,14 @@ def get_validation_sequences(
         val_sequences = val_sequences[:max_samples]
         if verbose:
             print(f"  Limited to {max_samples:,} samples")
+
+    # Prepend BOS token if requested (to match training behavior)
+    # Training uses use_bos=True by default, so evaluation should too
+    if use_bos:
+        pad_token_id = get_pad_token_id(data_dir)
+        val_sequences = [[pad_token_id] + seq for seq in val_sequences]
+        if verbose:
+            print(f"  BOS token {pad_token_id} prepended to all sequences")
 
     return val_sequences
 
