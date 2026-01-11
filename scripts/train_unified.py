@@ -114,10 +114,40 @@ config_keys = [k for k,v in globals().items() if not k.startswith('_') and isins
 exec(open(os.path.join('nanochat', 'configurator.py')).read())
 user_config = {k: globals()[k] for k in config_keys}
 
-# Resolve checkpoint base directory (NHR uses $HPCVAULT to avoid quota issues)
+# Resolve checkpoint base directories - save to ALL available locations for redundancy
+# This prevents data loss if one filesystem silently fails (NFS issues, quota, etc.)
+def get_all_checkpoint_bases():
+    """Get all available checkpoint base directories for redundant saving."""
+    bases = []
+    code_dir = Path(__file__).parent.parent  # nanochat-tct root
+
+    # Priority order: HPCVAULT, WORK, CODE_DIR/checkpoints
+    hpcvault = os.environ.get("HPCVAULT")
+    work = os.environ.get("WORK")
+
+    if hpcvault and Path(hpcvault).is_dir():
+        bases.append(Path(hpcvault) / "checkpoints")
+    if work and Path(work).is_dir():
+        bases.append(Path(work) / "checkpoints")
+    bases.append(code_dir / "checkpoints")  # Always include local as fallback
+
+    # Remove duplicates while preserving order
+    seen = set()
+    unique_bases = []
+    for b in bases:
+        resolved = b.resolve()
+        if resolved not in seen:
+            seen.add(resolved)
+            unique_bases.append(b)
+
+    return unique_bases
+
 if checkpoint_base is None:
     checkpoint_base = os.environ.get("CHECKPOINT_DIR", "checkpoints")
 checkpoint_base = Path(checkpoint_base)
+
+# Get all checkpoint locations for redundant saving
+all_checkpoint_bases = get_all_checkpoint_bases()
 # -----------------------------------------------------------------------------
 
 # Load schema config
@@ -223,6 +253,11 @@ print0(f"Total steps: {total_steps}")
 print0(f"Warmup steps: {warmup_steps}")
 runpod_note = " (RunPod detected)" if is_runpod else ""
 print0(f"Save interval: every {save_interval} steps ({save_every_pct}%){runpod_note}")
+print0()
+print0(f"Checkpoint locations ({len(all_checkpoint_bases)} redundant):")
+for i, ckpt_base in enumerate(all_checkpoint_bases):
+    prefix = "  PRIMARY:" if i == 0 else "  BACKUP: "
+    print0(f"{prefix} {ckpt_base}")
 print0()
 
 # Initialize model
@@ -465,50 +500,91 @@ def get_muon_momentum(step):
     return (1 - frac) * 0.85 + frac * 0.95
 
 # Checkpoint saving - includes optimizer state for proper resume
+# REDUNDANT SAVING: saves to ALL available locations to prevent data loss from silent filesystem failures
 def save_checkpoint(step, epoch, val_loss, min_val_loss_current, smooth_train_loss_current, is_best=False):
     if not master_process:
         return
 
     output_dirname = model_tag if model_tag else f"{schema}_{tokenizer}_{model_size}"
-    checkpoint_dir = checkpoint_base / output_dirname
-    checkpoint_dir.mkdir(parents=True, exist_ok=True)
 
-    # Save full training state (model + optimizer + training state)
-    checkpoint_path = checkpoint_dir / f"epoch_{epoch:03d}.pt"
+    # Prepare checkpoint data once
     checkpoint_data = {
         "model_state_dict": orig_model.state_dict(),
-        "optimizer_state_dict": [opt.state_dict() for opt in optimizers],  # List of optimizer states
+        "optimizer_state_dict": [opt.state_dict() for opt in optimizers],
         "step": step,
         "epoch": epoch,
         "val_loss": val_loss,
         "min_val_loss": min_val_loss_current,
         "smooth_train_loss": smooth_train_loss_current,
-        "use_muon": use_muon,  # Track which optimizer setup was used
+        "use_muon": use_muon,
     }
-    torch.save(checkpoint_data, checkpoint_path)
 
-    # Save best model (weights only for inference)
-    if is_best:
-        best_path = checkpoint_dir / "best.pt"
-        torch.save(orig_model.state_dict(), best_path)
-        print0(f"  New best model saved!")
+    config_data = {
+        "schema": schema,
+        "tokenizer": tokenizer,
+        "model_size": model_size,
+        "epoch": epoch,
+        "step": step,
+        "val_loss": val_loss,
+        "model_config": model_config_kwargs,
+        "schema_config": {k: str(v) if isinstance(v, Path) else v for k, v in schema_cfg.items()},
+        "user_config": user_config,
+    }
 
-    # Save config
-    config_path = checkpoint_dir / "config.json"
-    with open(config_path, 'w') as f:
-        json.dump({
-            "schema": schema,
-            "tokenizer": tokenizer,
-            "model_size": model_size,
-            "epoch": epoch,
-            "step": step,
-            "val_loss": val_loss,
-            "model_config": model_config_kwargs,
-            "schema_config": {k: str(v) if isinstance(v, Path) else v for k, v in schema_cfg.items()},
-            "user_config": user_config,
-        }, f, indent=2)
+    # Save to ALL available checkpoint locations for redundancy
+    saved_locations = []
+    failed_locations = []
 
-    print0(f"Checkpoint saved: {checkpoint_path}")
+    for ckpt_base in all_checkpoint_bases:
+        try:
+            checkpoint_dir = ckpt_base / output_dirname
+            checkpoint_dir.mkdir(parents=True, exist_ok=True)
+
+            # Save checkpoint with explicit flush
+            checkpoint_path = checkpoint_dir / f"epoch_{epoch:03d}.pt"
+            torch.save(checkpoint_data, checkpoint_path)
+
+            # Force sync to disk (prevents NFS caching issues)
+            with open(checkpoint_path, 'rb') as f:
+                os.fsync(f.fileno())
+
+            # Verify file was actually written
+            if not checkpoint_path.exists() or checkpoint_path.stat().st_size == 0:
+                raise IOError(f"File not written or empty: {checkpoint_path}")
+
+            # Save best model
+            if is_best:
+                best_path = checkpoint_dir / "best.pt"
+                torch.save(orig_model.state_dict(), best_path)
+                with open(best_path, 'rb') as f:
+                    os.fsync(f.fileno())
+
+            # Save config
+            config_path = checkpoint_dir / "config.json"
+            with open(config_path, 'w') as f:
+                json.dump(config_data, f, indent=2)
+                f.flush()
+                os.fsync(f.fileno())
+
+            saved_locations.append(str(checkpoint_dir))
+
+        except Exception as e:
+            failed_locations.append(f"{ckpt_base}: {e}")
+
+    # Report results
+    if saved_locations:
+        print0(f"Checkpoint saved to {len(saved_locations)} location(s): {saved_locations[0]}")
+        for loc in saved_locations[1:]:
+            print0(f"  + backup: {loc}")
+        if is_best:
+            print0(f"  New best model saved!")
+    else:
+        print0(f"ERROR: Failed to save checkpoint to ANY location!")
+        for fail in failed_locations:
+            print0(f"  - {fail}")
+
+    if failed_locations and saved_locations:
+        print0(f"  WARNING: Failed to save to {len(failed_locations)} backup location(s)")
 
 # Validation
 @torch.no_grad()
@@ -660,12 +736,20 @@ print0(f"Total time: {total_training_time/60:.1f}m ({total_training_time/3600:.2
 print0(f"Min val loss: {min_val_loss:.4f}")
 print0()
 
-# Write completion marker (used by run.sh to detect finished experiments)
+# Write completion marker to ALL checkpoint locations (used by run.sh to detect finished experiments)
 if master_process:
     output_dirname = model_tag if model_tag else f"{schema}_{tokenizer}_{model_size}"
-    complete_marker = checkpoint_base / output_dirname / "COMPLETE"
-    complete_marker.write_text(f"Training completed at step {total_steps}, min_val_loss={min_val_loss:.4f}\n")
-    print0(f"Completion marker: {complete_marker}")
+    marker_text = f"Training completed at step {total_steps}, min_val_loss={min_val_loss:.4f}\n"
+    for ckpt_base in all_checkpoint_bases:
+        try:
+            complete_marker = ckpt_base / output_dirname / "COMPLETE"
+            complete_marker.write_text(marker_text)
+            # Force sync
+            with open(complete_marker, 'r') as f:
+                os.fsync(f.fileno())
+            print0(f"Completion marker: {complete_marker}")
+        except Exception as e:
+            print0(f"  WARNING: Failed to write completion marker to {ckpt_base}: {e}")
 
 # Cleanup
 del model, orig_model, optimizers, train_loader
