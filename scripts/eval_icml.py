@@ -580,7 +580,7 @@ def run_constrained_bpb(
 
     if result.syntax_content:
         sc = result.syntax_content
-        print(f"\n  Syntax vs Content Analysis:")
+        print(f"\n  Syntax vs Content Analysis (character-based):")
         print(f"    {'Category':<12} {'Tokens':>8} {'Loss %':>8} {'Bits/tok':>10}")
         print(f"    {'-'*40}")
         print(f"    {'Syntax':<12} {sc.syntax_tokens:>8} {sc.syntax_loss_pct:>7.1f}% {sc.syntax_bpt:>10.2f}")
@@ -589,6 +589,20 @@ def run_constrained_bpb(
         print(f"\n    Content-only BPB: {sc.content_only_bpb:.4f} (pure content tokens only)")
         print(f"    Pure content bytes: {sc.pure_content_token_bytes} (used for content-only BPB)")
         print(f"    All content bytes:  {sc.content_bytes} / {result.total_bytes} ({100*sc.content_bytes/result.total_bytes:.1f}%)")
+
+        # NEW: Semantic loss breakdown (position-based key vs value)
+        print(f"\n  Semantic Loss Breakdown (position-based):")
+        print(f"    {'Category':<12} {'Tokens':>8} {'Loss %':>8} {'Loss (nats)':>12}")
+        print(f"    {'-'*44}")
+        syntax_pct = 100 - sc.key_loss_pct - sc.value_loss_pct
+        syntax_loss_for_display = result.raw_loss - sc.key_loss - sc.value_loss
+        print(f"    {'Syntax':<12} {'-':>8} {syntax_pct:>7.1f}% {syntax_loss_for_display:>12.1f}")
+        print(f"    {'Keys':<12} {sc.key_tokens:>8} {sc.key_loss_pct:>7.1f}% {sc.key_loss:>12.1f}")
+        print(f"    {'Values':<12} {sc.value_tokens:>8} {sc.value_loss_pct:>7.1f}% {sc.value_loss:>12.1f}")
+        print(f"    {'-'*44}")
+        print(f"    {'Total':<12} {'-':>8} {'100.0':>7}% {result.raw_loss:>12.1f}")
+        print(f"\n    Value-only BPB: {sc.value_only_bpb:.4f} (value_loss / total_bytes, same denominator as TCT)")
+        print(f"    Value bytes: {sc.value_bytes} / {result.total_bytes} ({100*sc.value_bytes/result.total_bytes:.1f}%)")
 
         results_dict["syntax_content_analysis"] = {
             "syntax_tokens": sc.syntax_tokens,
@@ -603,6 +617,15 @@ def run_constrained_bpb(
             "content_only_bpb": sc.content_only_bpb,
             "pure_content_token_bytes": sc.pure_content_token_bytes,
             "content_bytes": sc.content_bytes,
+            # NEW: Position-based semantic breakdown
+            "key_tokens": sc.key_tokens,
+            "value_tokens": sc.value_tokens,
+            "key_loss": sc.key_loss,
+            "value_loss": sc.value_loss,
+            "key_loss_pct": sc.key_loss_pct,
+            "value_loss_pct": sc.value_loss_pct,
+            "value_bytes": sc.value_bytes,
+            "value_only_bpb": sc.value_only_bpb,
         }
 
     return results_dict
@@ -2107,7 +2130,7 @@ def main():
                 sc = utf8_bpb["syntax_content_analysis"]
                 content_only_bpb = sc["content_only_bpb"]
                 tct_bpb_val = tct_bpb["bpb"]
-                print(f"\n  Content-Only Comparison:")
+                print(f"\n  Content-Only Comparison (character-based):")
                 print(f"    UTF8 Content-Only BPB: {content_only_bpb:.4f} (pure content tokens)")
                 print(f"    TCT BPB:               {tct_bpb_val:.4f} (all tokens are content)")
                 print(f"    UTF8 syntax bits/tok:  {sc['syntax_bits_per_token']:.2f} (easy predictions)")
@@ -2115,6 +2138,45 @@ def main():
                 if tct_bpb_val > 0:
                     ratio = content_only_bpb / tct_bpb_val
                     print(f"\n    Ratio:                 {ratio:.2f}x")
+
+                # NEW: Semantic Value-Only Comparison (position-based)
+                if "value_only_bpb" in sc:
+                    value_only_bpb = sc["value_only_bpb"]
+                    value_loss = sc.get("value_loss", 0)
+                    key_loss = sc.get("key_loss", 0)
+                    key_loss_pct = sc.get("key_loss_pct", 0)
+                    value_loss_pct = sc.get("value_loss_pct", 0)
+                    tct_total_loss = tct_bpb.get("total_loss_nats", 0)
+
+                    print(f"\n  === SEMANTIC VALUE-ONLY COMPARISON ===")
+                    print(f"  (This is the fairest comparison: excludes syntax AND field names)")
+                    print(f"\n    UTF8 Loss Breakdown:")
+                    print(f"      Syntax loss:     {100 - key_loss_pct - value_loss_pct:.1f}% (deterministic)")
+                    print(f"      Key loss:        {key_loss_pct:.1f}% (schema-determined)")
+                    print(f"      Value loss:      {value_loss_pct:.1f}% (semantic content)")
+                    print(f"\n    Core Comparison:")
+                    print(f"      UTF8 Value-Only BPB: {value_only_bpb:.4f}")
+                    print(f"      TCT BPB:             {tct_bpb_val:.4f}")
+                    if tct_bpb_val > 0:
+                        value_ratio = value_only_bpb / tct_bpb_val
+                        print(f"      Ratio:               {value_ratio:.2f}x")
+                        if value_ratio > 1:
+                            improvement = (value_ratio - 1) * 100
+                            print(f"\n    Result: TCT needs {improvement:.0f}% fewer bits to predict values")
+                        elif value_ratio < 1:
+                            improvement = (1 - value_ratio) * 100
+                            print(f"\n    Result: UTF8 needs {improvement:.0f}% fewer bits to predict values")
+                        else:
+                            print(f"\n    Result: Both equally efficient at value prediction")
+
+                    # Direct loss comparison
+                    if tct_total_loss > 0 and value_loss > 0:
+                        loss_ratio = value_loss / tct_total_loss
+                        print(f"\n    Direct Loss Comparison:")
+                        print(f"      UTF8 value loss: {value_loss:.1f} nats")
+                        print(f"      TCT total loss:  {tct_total_loss:.1f} nats")
+                        print(f"      Ratio:           {loss_ratio:.2f}x")
+
                 print(f"\n    Scientific interpretation:")
                 print(f"    - UTF8-BPE syntax tokens require ~{sc['syntax_bits_per_token']:.1f} bits/token (predictable from grammar)")
                 print(f"    - UTF8-BPE content tokens require ~{sc['content_bits_per_token']:.1f} bits/token (semantic prediction)")

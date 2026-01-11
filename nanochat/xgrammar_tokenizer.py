@@ -46,6 +46,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, List, Optional, Union
 
+from nanochat.json_position_classifier import JsonPositionClassifier, classify_token_bytes
+
 try:
     import xgrammar
 except ImportError:
@@ -316,12 +318,12 @@ SYNTAX_CHARS = set('{}[],:"\t\n\r ')
 @dataclass
 class SyntaxContentResult:
     """Results from syntax vs content loss analysis."""
-    # Per-category token counts
+    # Per-category token counts (character-based classification)
     syntax_tokens: int
     content_tokens: int
     mixed_tokens: int
 
-    # Per-category loss (nats)
+    # Per-category loss (nats) - character-based
     syntax_loss: float
     content_loss: float
     mixed_loss: float
@@ -340,6 +342,17 @@ class SyntaxContentResult:
     content_bytes: int  # All content bytes in decoded text
     pure_content_token_bytes: int  # Bytes from pure content tokens only
     content_only_bpb: float  # Rigorous: content_loss / pure_content_token_bytes
+
+    # NEW: Position-based semantic classification (key vs value)
+    # Keys are field names (schema-determined), values are actual content (semantic)
+    key_tokens: int = 0           # Tokens that are field names
+    value_tokens: int = 0         # Tokens that are actual values
+    key_loss: float = 0.0         # Loss on field name predictions
+    value_loss: float = 0.0       # Loss on value predictions
+    key_loss_pct: float = 0.0     # Percentage of loss on keys
+    value_loss_pct: float = 0.0   # Percentage of loss on values
+    value_bytes: int = 0          # Bytes from value tokens only
+    value_only_bpb: float = 0.0   # value_loss / (ln2 * total_bytes) - same denominator as TCT
 
 
 def classify_token(utf8_decoder: UTF8BPEDecoder, token_id: int) -> str:
@@ -429,7 +442,7 @@ def compute_constrained_bpb(
     total_tokens = 0
     num_sequences = 0
 
-    # Syntax vs content tracking
+    # Syntax vs content tracking (character-based)
     syntax_loss = 0.0
     content_loss = 0.0
     mixed_loss = 0.0
@@ -438,6 +451,13 @@ def compute_constrained_bpb(
     mixed_tokens = 0
     total_content_bytes = 0  # All content bytes in decoded text
     pure_content_token_bytes = 0  # Bytes from pure content tokens only (for rigorous content-only BPB)
+
+    # NEW: Position-based semantic tracking (key vs value)
+    key_loss = 0.0
+    value_loss = 0.0
+    key_tokens = 0
+    value_tokens = 0
+    total_value_bytes = 0  # Bytes from value tokens only
 
     iterator = tqdm(validation_tokens, desc="Computing constrained BPB") if show_progress else validation_tokens
 
@@ -512,6 +532,21 @@ def compute_constrained_bpb(
         num_sequences += 1
         total_content_bytes += content_bytes_in_seq
 
+        # NEW: Create position classifier for semantic analysis (key vs value)
+        position_classifier = JsonPositionClassifier(text)
+        value_bytes_in_seq = position_classifier.get_stats()['value_bytes']
+
+        # Precompute byte offsets for each token in decode_tokens
+        # decode_tokens[i] starts at byte_offsets[i] in the decoded text
+        # But we need to map from tokens[] to decode_tokens[]
+        # tokens = [BOS, tok0, tok1, ...] and decode_tokens = [tok0, tok1, ...]
+        # So tokens[t+1] corresponds to decode_tokens[t] when BOS is present
+        has_bos = tokens[0] == bos_token_id
+        byte_offsets = [0]
+        for tok in decode_tokens:
+            tok_bytes = utf8_decoder._token_to_bytes(tok)
+            byte_offsets.append(byte_offsets[-1] + (len(tok_bytes) if tok_bytes else 0))
+
         # Process each position
         for t in range(len(tokens) - 1):
             target_token = tokens[t + 1]
@@ -522,7 +557,7 @@ def compute_constrained_bpb(
             raw_loss = -raw_log_probs[target_token].item()
             total_raw_loss += raw_loss
 
-            # Classify token and track per-category loss
+            # Classify token and track per-category loss (character-based)
             category = classify_token(utf8_decoder, target_token)
             if category == 'syntax':
                 syntax_loss += raw_loss
@@ -537,6 +572,23 @@ def compute_constrained_bpb(
             else:  # mixed
                 mixed_loss += raw_loss
                 mixed_tokens += 1
+
+            # NEW: Position-based semantic classification (key vs value)
+            # target_token = tokens[t+1] corresponds to decode_tokens[t] when BOS present
+            decode_idx = t if has_bos else t + 1
+            if decode_idx < len(byte_offsets) - 1:
+                byte_offset = byte_offsets[decode_idx]
+                token_bytes = utf8_decoder._token_to_bytes(target_token)
+                if token_bytes:
+                    classification = classify_token_bytes(token_bytes, byte_offset, position_classifier)
+                    primary_category = classification['primary']
+                    if primary_category == 'key':
+                        key_loss += raw_loss
+                        key_tokens += 1
+                    elif primary_category == 'value':
+                        value_loss += raw_loss
+                        value_tokens += 1
+                        total_value_bytes += len(token_bytes)
 
             # Get valid token mask from grammar (after accepting tokens[0:t+1])
             xgrammar.reset_token_bitmask(bitmask)
@@ -602,6 +654,18 @@ def compute_constrained_bpb(
     # This ensures numerator and denominator are consistent (both from same tokens)
     content_only_bpb = (content_loss / (log2 * pure_content_token_bytes)) if pure_content_token_bytes > 0 else 0.0
 
+    # NEW: Compute key/value loss percentages and value_only_bpb
+    # Key loss percentage (of total loss)
+    if total_raw_loss > 0:
+        key_loss_pct = 100 * key_loss / total_raw_loss
+        value_loss_pct = 100 * value_loss / total_raw_loss
+    else:
+        key_loss_pct = value_loss_pct = 0.0
+
+    # Value-only BPB: value_loss / total_bytes (same denominator as TCT for fair comparison)
+    # This measures "bits spent on value predictions per byte of total output"
+    value_only_bpb = (value_loss / (log2 * total_bytes)) if total_bytes > 0 else 0.0
+
     syntax_content = SyntaxContentResult(
         syntax_tokens=syntax_tokens,
         content_tokens=content_tokens,
@@ -618,6 +682,15 @@ def compute_constrained_bpb(
         content_bytes=total_content_bytes,
         pure_content_token_bytes=pure_content_token_bytes,
         content_only_bpb=content_only_bpb,
+        # NEW: Position-based key/value metrics
+        key_tokens=key_tokens,
+        value_tokens=value_tokens,
+        key_loss=key_loss,
+        value_loss=value_loss,
+        key_loss_pct=key_loss_pct,
+        value_loss_pct=value_loss_pct,
+        value_bytes=total_value_bytes,
+        value_only_bpb=value_only_bpb,
     )
 
     # Report skipped sequences
