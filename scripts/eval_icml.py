@@ -2019,10 +2019,14 @@ def main():
                 }
 
             # Decode TCT tokens to get validation JSON strings (for generation quality)
+            # Strip BOS token before decoding (get_validation_sequences prepends it)
+            pad_token_id = tct_module.vocab_size() - 1
             val_json_strings = []
             for tokens in tct_validation_tokens[:actual_gen_samples]:
                 try:
-                    json_out, consumed, surplus = tct_module.decode(tokens)
+                    # Strip BOS if present
+                    decode_tokens = tokens[1:] if tokens and tokens[0] == pad_token_id else tokens
+                    json_out, consumed, surplus = tct_module.decode(decode_tokens)
                     val_json_strings.append(json_out)
                 except Exception:
                     continue
