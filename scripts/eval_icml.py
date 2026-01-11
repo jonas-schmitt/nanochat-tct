@@ -1266,8 +1266,11 @@ def run_generation_quality_utf8(
     compiled_grammar = compile_json_schema_grammar(tokenizer_info, schema_dict)
 
     # Decode pre-filtered validation samples for ground truth distribution
+    # Strip BOS token before decoding (get_validation_sequences prepends it)
+    bos_token_id = utf8_decoder.eos_token_id()
     print(f"\n  Extracting ground truth distribution from {len(validation_tokens)} validation samples...")
-    val_texts = [utf8_decoder.decode(tokens) for tokens in validation_tokens[:num_samples]]
+    val_texts = [utf8_decoder.decode(tokens[1:] if tokens and tokens[0] == bos_token_id else tokens)
+                 for tokens in validation_tokens[:num_samples]]
 
     # Optionally normalize to canonical JSON for consistent comparison
     if normalize_json_output:
@@ -1486,8 +1489,11 @@ def run_generation_quality_utf8_raw(
     utf8_decoder = UTF8BPEDecoder(merge_table)
 
     # Decode pre-filtered validation samples for ground truth distribution
+    # Strip BOS token before decoding (get_validation_sequences prepends it)
+    bos_token_id = utf8_decoder.eos_token_id()
     print(f"\n  Extracting ground truth distribution from {len(validation_tokens)} validation samples...")
-    val_texts = [utf8_decoder.decode(tokens) for tokens in validation_tokens[:num_samples]]
+    val_texts = [utf8_decoder.decode(tokens[1:] if tokens and tokens[0] == bos_token_id else tokens)
+                 for tokens in validation_tokens[:num_samples]]
 
     if normalize_json_output:
         val_texts = [normalize_json(t) for t in val_texts]
@@ -2033,7 +2039,10 @@ def main():
         else:
             print(f"  WARNING: No TCT validation tokens available. Using UTF8 validation data for generation comparison.")
             # Fallback: use UTF8 validation data decoded for comparison
-            val_json_strings = [utf8_decoder.decode(tokens) for tokens in utf8_validation_tokens[:actual_gen_samples]]
+            # Strip BOS token before decoding (get_validation_sequences prepends it)
+            bos_token_id = utf8_decoder.eos_token_id()
+            val_json_strings = [utf8_decoder.decode(tokens[1:] if tokens and tokens[0] == bos_token_id else tokens)
+                                for tokens in utf8_validation_tokens[:actual_gen_samples]]
 
         # Run generation quality for TCT (unless --bpb_only)
         if not args.bpb_only:
