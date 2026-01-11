@@ -116,7 +116,11 @@ if [ -z "$CHECKPOINT_DIR" ]; then
     fi
 fi
 export CHECKPOINT_DIR
-mkdir -p "$CHECKPOINT_DIR"
+mkdir -p "$CHECKPOINT_DIR" || { echo "ERROR: Failed to create checkpoint directory: $CHECKPOINT_DIR"; exit 1; }
+if [ ! -w "$CHECKPOINT_DIR" ]; then
+    echo "ERROR: Checkpoint directory not writable: $CHECKPOINT_DIR"
+    exit 1
+fi
 echo "Checkpoint dir: $CHECKPOINT_DIR"
 
 # GPU info (batch sizes are computed dynamically in Python based on detected VRAM)

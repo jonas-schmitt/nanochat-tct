@@ -132,6 +132,32 @@ if [ "$PLATFORM" != "local" ]; then
 fi
 
 # =============================================================================
+# Step 0.5: Validate checkpoint directory (fail early if not writable)
+# =============================================================================
+
+echo ">>> Validating checkpoint directory"
+
+# Same logic as run.sh: HPCVAULT -> WORK -> CODE_DIR/checkpoints
+if [ -z "$CHECKPOINT_DIR" ]; then
+    if [ -n "$HPCVAULT" ] && [ -d "$HPCVAULT" ]; then
+        CHECKPOINT_DIR="$HPCVAULT/checkpoints"
+    elif [ -n "$WORK" ] && [ -d "$WORK" ]; then
+        CHECKPOINT_DIR="$WORK/checkpoints"
+    else
+        CHECKPOINT_DIR="$CODE_DIR/checkpoints"
+    fi
+fi
+
+mkdir -p "$CHECKPOINT_DIR" || { echo "ERROR: Failed to create checkpoint directory: $CHECKPOINT_DIR"; exit 1; }
+if [ ! -w "$CHECKPOINT_DIR" ]; then
+    echo "ERROR: Checkpoint directory not writable: $CHECKPOINT_DIR"
+    exit 1
+fi
+echo "  [OK] Checkpoint dir: $CHECKPOINT_DIR"
+export CHECKPOINT_DIR
+echo
+
+# =============================================================================
 # Step 1: Run setup (always, ensures clean environment)
 # =============================================================================
 
