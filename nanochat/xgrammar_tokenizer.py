@@ -349,15 +349,22 @@ class SyntaxContentResult:
     # Value tokens: actual content (semantic - what TCT predicts)
     key_tokens: int = 0           # Tokens containing key content
     value_tokens: int = 0         # Tokens containing value content
-    key_loss: float = 0.0         # Loss on key predictions
-    value_loss: float = 0.0       # Loss on value predictions
-    key_loss_pct: float = 0.0     # Percentage of loss on keys
-    value_loss_pct: float = 0.0   # Percentage of loss on values
+    key_loss: float = 0.0         # Raw loss on key predictions
+    value_loss: float = 0.0       # Raw loss on value predictions
+    key_loss_pct: float = 0.0     # Percentage of raw loss on keys
+    value_loss_pct: float = 0.0   # Percentage of raw loss on values
     value_bytes: int = 0          # Bytes from value tokens only
+    # Constrained (XGrammar) losses by category
+    constrained_key_loss: float = 0.0    # Constrained loss on key predictions
+    constrained_value_loss: float = 0.0  # Constrained loss on value predictions
     # Loss per token metrics (for interpretability)
-    syntax_loss_per_token: float = 0.0  # syntax_loss / syntax_tokens
-    key_loss_per_token: float = 0.0     # key_loss / key_tokens
-    value_loss_per_token: float = 0.0   # value_loss / value_tokens (for TCT comparison)
+    syntax_loss_per_token: float = 0.0  # raw syntax_loss / syntax_tokens
+    key_loss_per_token: float = 0.0     # raw key_loss / key_tokens
+    value_loss_per_token: float = 0.0   # raw value_loss / value_tokens
+    # Constrained loss per token metrics (for fair XGrammar comparison)
+    constrained_syntax_loss_per_token: float = 0.0
+    constrained_key_loss_per_token: float = 0.0
+    constrained_value_loss_per_token: float = 0.0  # For fair comparison with TCT
 
 
 def classify_token(utf8_decoder: UTF8BPEDecoder, token_id: int) -> str:
@@ -457,9 +464,14 @@ def compute_constrained_bpb(
     total_content_bytes = 0  # All content bytes in decoded text
     pure_content_token_bytes = 0  # Bytes from pure content tokens only (for rigorous content-only BPB)
 
-    # NEW: Position-based semantic tracking (key vs value)
+    # Position-based semantic tracking (key vs value)
+    # Raw losses
     key_loss = 0.0
     value_loss = 0.0
+    # Constrained losses (with XGrammar masking)
+    constrained_key_loss = 0.0
+    constrained_value_loss = 0.0
+    # Token counts
     key_tokens = 0
     value_tokens = 0
     total_value_bytes = 0  # Bytes from value tokens only
@@ -578,19 +590,21 @@ def compute_constrained_bpb(
                 mixed_loss += raw_loss
                 mixed_tokens += 1
 
-            # NEW: Position-based semantic classification (key vs value)
+            # Position-based semantic classification (key vs value)
             # target_token = tokens[t+1] corresponds to decode_tokens[t] when BOS present
+            # We track both raw_loss and constrained_loss by category
+            token_semantic_category = None  # Will be set if classification succeeds
             decode_idx = t if has_bos else t + 1
             if decode_idx < len(byte_offsets) - 1:
                 byte_offset = byte_offsets[decode_idx]
                 token_bytes = utf8_decoder._token_to_bytes(target_token)
                 if token_bytes:
                     classification = classify_token_bytes(token_bytes, byte_offset, position_classifier)
-                    primary_category = classification['primary']
-                    if primary_category == 'key':
+                    token_semantic_category = classification['primary']
+                    if token_semantic_category == 'key':
                         key_loss += raw_loss
                         key_tokens += 1
-                    elif primary_category == 'value':
+                    elif token_semantic_category == 'value':
                         value_loss += raw_loss
                         value_tokens += 1
                         total_value_bytes += len(token_bytes)
@@ -616,6 +630,12 @@ def compute_constrained_bpb(
 
             total_constrained_loss += constrained_loss
             total_tokens += 1
+
+            # Attribute constrained loss to semantic category (same as raw loss)
+            if token_semantic_category == 'key':
+                constrained_key_loss += constrained_loss
+            elif token_semantic_category == 'value':
+                constrained_value_loss += constrained_loss
 
             # Advance grammar state to include current target
             try:
@@ -675,6 +695,12 @@ def compute_constrained_bpb(
     key_loss_per_token = (key_loss / key_tokens) if key_tokens > 0 else 0.0
     value_loss_per_token = (value_loss / value_tokens) if value_tokens > 0 else 0.0
 
+    # Constrained loss per token metrics (for fair XGrammar vs TCT comparison)
+    constrained_syntax_loss = total_constrained_loss - constrained_key_loss - constrained_value_loss
+    constrained_syntax_loss_per_token = (constrained_syntax_loss / pos_syntax_tokens) if pos_syntax_tokens > 0 else 0.0
+    constrained_key_loss_per_token = (constrained_key_loss / key_tokens) if key_tokens > 0 else 0.0
+    constrained_value_loss_per_token = (constrained_value_loss / value_tokens) if value_tokens > 0 else 0.0
+
     syntax_content = SyntaxContentResult(
         syntax_tokens=syntax_tokens,
         content_tokens=content_tokens,
@@ -691,7 +717,7 @@ def compute_constrained_bpb(
         content_bytes=total_content_bytes,
         pure_content_token_bytes=pure_content_token_bytes,
         content_only_bpb=content_only_bpb,
-        # NEW: Position-based key/value metrics
+        # Position-based key/value metrics (raw)
         key_tokens=key_tokens,
         value_tokens=value_tokens,
         key_loss=key_loss,
@@ -699,9 +725,17 @@ def compute_constrained_bpb(
         key_loss_pct=key_loss_pct,
         value_loss_pct=value_loss_pct,
         value_bytes=total_value_bytes,
+        # Constrained losses by category
+        constrained_key_loss=constrained_key_loss,
+        constrained_value_loss=constrained_value_loss,
+        # Raw loss per token
         syntax_loss_per_token=syntax_loss_per_token,
         key_loss_per_token=key_loss_per_token,
         value_loss_per_token=value_loss_per_token,
+        # Constrained loss per token
+        constrained_syntax_loss_per_token=constrained_syntax_loss_per_token,
+        constrained_key_loss_per_token=constrained_key_loss_per_token,
+        constrained_value_loss_per_token=constrained_value_loss_per_token,
     )
 
     # Report skipped sequences

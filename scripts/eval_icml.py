@@ -595,25 +595,37 @@ def run_constrained_bpb(
         print(f"    {'-'*44}")
         print(f"    {'Total':<12} {'-':>8} {'100.0':>7}% {result.raw_loss:>12.1f}")
         print(f"\n    Loss per token (nats):")
-        print(f"      Syntax: {sc.syntax_loss_per_token:.4f}  Key: {sc.key_loss_per_token:.4f}  Value: {sc.value_loss_per_token:.4f}")
+        print(f"      Raw:         Syntax: {sc.syntax_loss_per_token:.4f}  Key: {sc.key_loss_per_token:.4f}  Value: {sc.value_loss_per_token:.4f}")
+        print(f"      Constrained: Syntax: {sc.constrained_syntax_loss_per_token:.4f}  Key: {sc.constrained_key_loss_per_token:.4f}  Value: {sc.constrained_value_loss_per_token:.4f}")
         print(f"    Value bytes: {sc.value_bytes} / {result.total_bytes} ({100*sc.value_bytes/result.total_bytes:.1f}%)")
 
         # Position-based semantic analysis (syntax/key/value)
         syntax_tokens = result.total_tokens - sc.key_tokens - sc.value_tokens
         syntax_loss = result.raw_loss - sc.key_loss - sc.value_loss
+        constrained_syntax_loss = result.constrained_loss - sc.constrained_key_loss - sc.constrained_value_loss
         results_dict["semantic_analysis"] = {
             "syntax_tokens": syntax_tokens,
             "key_tokens": sc.key_tokens,
             "value_tokens": sc.value_tokens,
+            # Raw losses
             "syntax_loss": syntax_loss,
             "key_loss": sc.key_loss,
             "value_loss": sc.value_loss,
             "syntax_loss_pct": 100 - sc.key_loss_pct - sc.value_loss_pct,
             "key_loss_pct": sc.key_loss_pct,
             "value_loss_pct": sc.value_loss_pct,
+            # Raw loss per token
             "syntax_loss_per_token": sc.syntax_loss_per_token,
             "key_loss_per_token": sc.key_loss_per_token,
             "value_loss_per_token": sc.value_loss_per_token,
+            # Constrained losses
+            "constrained_syntax_loss": constrained_syntax_loss,
+            "constrained_key_loss": sc.constrained_key_loss,
+            "constrained_value_loss": sc.constrained_value_loss,
+            # Constrained loss per token
+            "constrained_syntax_loss_per_token": sc.constrained_syntax_loss_per_token,
+            "constrained_key_loss_per_token": sc.constrained_key_loss_per_token,
+            "constrained_value_loss_per_token": sc.constrained_value_loss_per_token,
             "value_bytes": sc.value_bytes,
         }
 
@@ -2139,23 +2151,28 @@ def main():
                     print(f"      Key loss:        {key_loss_pct:.1f}% (schema-determined)")
                     print(f"      Value loss:      {value_loss_pct:.1f}% (semantic content)")
 
-                    # Loss per token comparison (fairest: avg loss per semantic token)
-                    utf8_value_loss_per_token = sc.get("value_loss_per_token", 0)
+                    # Get metrics
+                    utf8_raw_value_lpt = sc.get("value_loss_per_token", 0)
+                    utf8_constrained_value_lpt = sc.get("constrained_value_loss_per_token", 0)
                     tct_loss_per_token = (tct_total_loss / tct_total_tokens) if tct_total_tokens > 0 else 0
                     value_tokens = sc.get("value_tokens", 0)
 
-                    if utf8_value_loss_per_token > 0 and tct_loss_per_token > 0:
-                        lpt_ratio = utf8_value_loss_per_token / tct_loss_per_token
-                        print(f"\n    Loss Per Token:")
-                        print(f"      UTF8 value loss/token: {utf8_value_loss_per_token:.4f} nats ({value_tokens} value tokens)")
-                        print(f"      TCT loss/token:        {tct_loss_per_token:.4f} nats ({tct_total_tokens} tokens)")
-                        print(f"      Ratio:                 {lpt_ratio:.2f}x")
-                        if lpt_ratio > 1:
-                            improvement = (lpt_ratio - 1) * 100
-                            print(f"\n    Result: TCT needs {improvement:.0f}% less loss per semantic token")
-                        elif lpt_ratio < 1:
-                            improvement = (1 - lpt_ratio) * 100
-                            print(f"\n    Result: UTF8 needs {improvement:.0f}% less loss per semantic token")
+                    if tct_loss_per_token > 0:
+                        print(f"\n    Value Loss Per Token (semantic content only):")
+                        print(f"      {'Method':<25} {'Loss/tok':>12} {'Ratio':>10}")
+                        print(f"      {'-'*47}")
+                        print(f"      {'UTF8-BPE (raw)':<25} {utf8_raw_value_lpt:>12.4f} {utf8_raw_value_lpt/tct_loss_per_token:>9.2f}x")
+                        print(f"      {'UTF8-BPE + XGrammar':<25} {utf8_constrained_value_lpt:>12.4f} {utf8_constrained_value_lpt/tct_loss_per_token:>9.2f}x")
+                        print(f"      {'TCT':<25} {tct_loss_per_token:>12.4f} {'1.00':>9}x")
+                        print(f"\n      (UTF8: {value_tokens} value tokens, TCT: {tct_total_tokens} tokens)")
+
+                        # Summary
+                        if utf8_constrained_value_lpt > tct_loss_per_token:
+                            improvement = (utf8_constrained_value_lpt / tct_loss_per_token - 1) * 100
+                            print(f"\n    Result: TCT needs {improvement:.0f}% less loss per semantic token than UTF8+XGrammar")
+                        elif utf8_constrained_value_lpt < tct_loss_per_token:
+                            improvement = (1 - utf8_constrained_value_lpt / tct_loss_per_token) * 100
+                            print(f"\n    Result: UTF8+XGrammar needs {improvement:.0f}% less loss per semantic token than TCT")
 
     if "utf8_generation" in results and "tct_generation" in results:
         utf8 = results["utf8_generation"].get("comparison", {})
