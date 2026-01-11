@@ -584,25 +584,28 @@ def run_constrained_bpb(
         sc = result.syntax_content
 
         # Semantic loss breakdown (position-based key vs value)
+        # Compute derived values first
+        syntax_tokens = result.total_tokens - sc.key_tokens - sc.value_tokens
+        syntax_loss = result.raw_loss - sc.key_loss - sc.value_loss
+        syntax_pct = 100 - sc.key_loss_pct - sc.value_loss_pct
+
         print(f"\n  Semantic Loss Breakdown:")
         print(f"    {'Category':<12} {'Tokens':>8} {'Loss %':>8} {'Loss (nats)':>12}")
         print(f"    {'-'*44}")
-        syntax_pct = 100 - sc.key_loss_pct - sc.value_loss_pct
-        syntax_loss_for_display = result.raw_loss - sc.key_loss - sc.value_loss
-        print(f"    {'Syntax':<12} {'-':>8} {syntax_pct:>7.1f}% {syntax_loss_for_display:>12.1f}")
+        print(f"    {'Syntax':<12} {syntax_tokens:>8} {syntax_pct:>7.1f}% {syntax_loss:>12.1f}")
         print(f"    {'Keys':<12} {sc.key_tokens:>8} {sc.key_loss_pct:>7.1f}% {sc.key_loss:>12.1f}")
         print(f"    {'Values':<12} {sc.value_tokens:>8} {sc.value_loss_pct:>7.1f}% {sc.value_loss:>12.1f}")
         print(f"    {'-'*44}")
-        print(f"    {'Total':<12} {'-':>8} {'100.0':>7}% {result.raw_loss:>12.1f}")
+        print(f"    {'Total':<12} {result.total_tokens:>8} {'100.0':>7}% {result.raw_loss:>12.1f}")
         print(f"\n    Loss per token (nats):")
         print(f"      Raw:         Syntax: {sc.syntax_loss_per_token:.4f}  Key: {sc.key_loss_per_token:.4f}  Value: {sc.value_loss_per_token:.4f}")
         print(f"      Constrained: Syntax: {sc.constrained_syntax_loss_per_token:.4f}  Key: {sc.constrained_key_loss_per_token:.4f}  Value: {sc.constrained_value_loss_per_token:.4f}")
         print(f"    Value bytes: {sc.value_bytes} / {result.total_bytes} ({100*sc.value_bytes/result.total_bytes:.1f}%)")
 
-        # Position-based semantic analysis (syntax/key/value)
-        syntax_tokens = result.total_tokens - sc.key_tokens - sc.value_tokens
-        syntax_loss = result.raw_loss - sc.key_loss - sc.value_loss
+        # Constrained syntax loss (derived)
         constrained_syntax_loss = result.constrained_loss - sc.constrained_key_loss - sc.constrained_value_loss
+
+        # Build results dict (syntax_tokens, syntax_loss, syntax_pct already computed above)
         results_dict["semantic_analysis"] = {
             "syntax_tokens": syntax_tokens,
             "key_tokens": sc.key_tokens,
@@ -611,7 +614,7 @@ def run_constrained_bpb(
             "syntax_loss": syntax_loss,
             "key_loss": sc.key_loss,
             "value_loss": sc.value_loss,
-            "syntax_loss_pct": 100 - sc.key_loss_pct - sc.value_loss_pct,
+            "syntax_loss_pct": syntax_pct,
             "key_loss_pct": sc.key_loss_pct,
             "value_loss_pct": sc.value_loss_pct,
             # Raw loss per token
@@ -638,9 +641,10 @@ def generate_samples_xgrammar(
     compiled_grammar,
     utf8_decoder,
     num_samples: int,
-    max_tokens: int = 512,
-    temperature: float = 0.7,
-    top_k: int = 50,
+    max_tokens: int = 2048,
+    temperature: float = 0.3,
+    top_k: int = None,
+    top_p: float = 0.9,
     show_progress: bool = True,
     batch_size: int = None,
     use_compile: bool = False,  # Disabled: torch.compile + KV-cache causes segfaults
@@ -760,13 +764,26 @@ def generate_samples_xgrammar(
                         logits_i = logits[i:i+1, :]
                         xgrammar.apply_token_bitmask_inplace(logits_i, bitmasks[i].to(device))
 
-                # Apply temperature and top-k (batched)
+                # Apply temperature and top-k/top-p (batched)
                 if temperature > 0:
                     logits = logits / temperature
 
                 if top_k is not None and top_k > 0:
                     v, _ = torch.topk(logits, min(top_k, logits.size(-1)), dim=-1)
                     logits[logits < v[:, -1:]] = float('-inf')
+
+                if top_p is not None and top_p < 1.0:
+                    # Nucleus sampling: keep smallest set with cumulative prob >= top_p
+                    sorted_logits, sorted_indices = torch.sort(logits, descending=True, dim=-1)
+                    cumulative_probs = torch.cumsum(F.softmax(sorted_logits, dim=-1), dim=-1)
+                    # Remove tokens with cumulative probability above threshold
+                    sorted_indices_to_remove = cumulative_probs > top_p
+                    # Shift right to keep first token above threshold
+                    sorted_indices_to_remove[:, 1:] = sorted_indices_to_remove[:, :-1].clone()
+                    sorted_indices_to_remove[:, 0] = False
+                    # Scatter back to original indices
+                    indices_to_remove = sorted_indices_to_remove.scatter(1, sorted_indices, sorted_indices_to_remove)
+                    logits[indices_to_remove] = float('-inf')
 
                 # Sample next tokens
                 probs = F.softmax(logits, dim=-1)
@@ -843,9 +860,10 @@ def generate_samples_utf8_raw(
     model,
     utf8_decoder,
     num_samples: int,
-    max_tokens: int = 512,
-    temperature: float = 0.7,
-    top_k: int = 50,
+    max_tokens: int = 2048,
+    temperature: float = 0.3,
+    top_k: int = None,
+    top_p: float = 0.9,
     show_progress: bool = True,
     batch_size: int = None,
     use_compile: bool = False,  # Disabled: torch.compile + KV-cache causes segfaults
@@ -942,13 +960,23 @@ def generate_samples_utf8_raw(
                 if not any(active):
                     break
 
-                # Apply temperature and top-k (batched) - NO grammar masking
+                # Apply temperature and top-k/top-p (batched) - NO grammar masking
                 if temperature > 0:
                     logits = logits / temperature
 
                 if top_k is not None and top_k > 0:
                     v, _ = torch.topk(logits, min(top_k, logits.size(-1)), dim=-1)
                     logits[logits < v[:, -1:]] = float('-inf')
+
+                if top_p is not None and top_p < 1.0:
+                    # Nucleus sampling
+                    sorted_logits, sorted_indices = torch.sort(logits, descending=True, dim=-1)
+                    cumulative_probs = torch.cumsum(F.softmax(sorted_logits, dim=-1), dim=-1)
+                    sorted_indices_to_remove = cumulative_probs > top_p
+                    sorted_indices_to_remove[:, 1:] = sorted_indices_to_remove[:, :-1].clone()
+                    sorted_indices_to_remove[:, 0] = False
+                    indices_to_remove = sorted_indices_to_remove.scatter(1, sorted_indices, sorted_indices_to_remove)
+                    logits[indices_to_remove] = float('-inf')
 
                 # Sample next tokens
                 probs = F.softmax(logits, dim=-1)
@@ -1025,9 +1053,10 @@ def generate_samples_tct(
     model,
     tct_module,
     num_samples: int,
-    max_tokens: int = 512,
-    temperature: float = 0.7,
-    top_k: int = 50,
+    max_tokens: int = 2048,
+    temperature: float = 0.3,
+    top_k: int = None,
+    top_p: float = 0.9,
     show_progress: bool = True,
     batch_size: int = None,
     use_compile: bool = False,  # Disabled: torch.compile + KV-cache causes segfaults
@@ -1140,14 +1169,23 @@ def generate_samples_tct(
 
         # Generate max_tokens for all samples in parallel
         for step in range(max_tokens):
-            # Apply temperature
+            # Apply temperature and top-k/top-p
             if temperature > 0:
                 logits = logits / temperature
 
-            # Apply top-k (batched)
             if top_k is not None and top_k > 0:
                 v, _ = torch.topk(logits, min(top_k, logits.size(-1)), dim=-1)
                 logits[logits < v[:, -1:]] = float('-inf')
+
+            if top_p is not None and top_p < 1.0:
+                # Nucleus sampling
+                sorted_logits, sorted_indices = torch.sort(logits, descending=True, dim=-1)
+                cumulative_probs = torch.cumsum(F.softmax(sorted_logits, dim=-1), dim=-1)
+                sorted_indices_to_remove = cumulative_probs > top_p
+                sorted_indices_to_remove[:, 1:] = sorted_indices_to_remove[:, :-1].clone()
+                sorted_indices_to_remove[:, 0] = False
+                indices_to_remove = sorted_indices_to_remove.scatter(1, sorted_indices, sorted_indices_to_remove)
+                logits[indices_to_remove] = float('-inf')
 
             # Sample next tokens for all samples
             probs = F.softmax(logits, dim=-1)
@@ -1253,8 +1291,10 @@ def run_generation_quality_utf8(
     validation_tokens: List[List[int]],
     num_samples: int,
     device: str,
-    temperature: float = 0.7,
-    max_tokens: int = 512,
+    temperature: float = 0.3,
+    top_k: int = None,
+    top_p: float = 0.9,
+    max_tokens: int = 2048,
     normalize_json_output: bool = True,
 ) -> Dict[str, Any]:
     """Run generation quality evaluation for UTF8-BPE model with XGrammar.
@@ -1319,6 +1359,8 @@ def run_generation_quality_utf8(
         num_samples=num_samples,
         max_tokens=max_tokens,
         temperature=temperature,
+        top_k=top_k,
+        top_p=top_p,
         show_progress=True,
     )
 
@@ -1373,8 +1415,10 @@ def run_generation_quality_tct(
     tct_module,
     validation_json_strings: List[str],
     num_samples: int,
-    temperature: float = 0.7,
-    max_tokens: int = 512,
+    temperature: float = 0.3,
+    top_k: int = None,
+    top_p: float = 0.9,
+    max_tokens: int = 2048,
     normalize_json_output: bool = True,
 ) -> Dict[str, Any]:
     """Run generation quality evaluation for TCT model.
@@ -1429,6 +1473,8 @@ def run_generation_quality_tct(
         num_samples=num_samples,
         max_tokens=max_tokens,
         temperature=temperature,
+        top_k=top_k,
+        top_p=top_p,
         show_progress=True,
     )
 
@@ -1484,8 +1530,10 @@ def run_generation_quality_utf8_raw(
     validation_tokens: List[List[int]],
     num_samples: int,
     device: str,
-    temperature: float = 0.7,
-    max_tokens: int = 512,
+    temperature: float = 0.3,
+    top_k: int = None,
+    top_p: float = 0.9,
+    max_tokens: int = 2048,
     normalize_json_output: bool = True,
 ) -> Dict[str, Any]:
     """Run generation quality evaluation for UTF8-BPE model WITHOUT XGrammar.
@@ -1533,6 +1581,8 @@ def run_generation_quality_utf8_raw(
         num_samples=num_samples,
         max_tokens=max_tokens,
         temperature=temperature,
+        top_k=top_k,
+        top_p=top_p,
         show_progress=True,
     )
 
@@ -1806,8 +1856,12 @@ def main():
                         help="Maximum sequence length for BPB evaluation (default: 2048, training length)")
     parser.add_argument("--max_gen_tokens", type=int, default=2048,
                         help="Maximum tokens per generated sample")
-    parser.add_argument("--temperature", type=float, default=0.7,
-                        help="Sampling temperature for generation")
+    parser.add_argument("--temperature", type=float, nargs='+', default=[0.1, 0.3, 0.5],
+                        help="Sampling temperature(s) for generation (multiple for statistical robustness)")
+    parser.add_argument("--top_k", type=int, default=None,
+                        help="Top-k sampling parameter (default: None, use top_p instead)")
+    parser.add_argument("--top_p", type=float, default=0.9,
+                        help="Top-p (nucleus) sampling parameter (0.9 recommended)")
     parser.add_argument("--normalize_bytes", action="store_true", default=True,
                         help="Normalize bytes to minified JSON for fair comparison (default: True)")
     parser.add_argument("--no_normalize_bytes", dest="normalize_bytes", action="store_false",
@@ -1927,33 +1981,50 @@ def main():
 
         # Run generation quality (unless --bpb_only)
         if not args.bpb_only:
-            # Raw UTF8 generation (no grammar constraints)
-            raw_gen_results = run_generation_quality_utf8_raw(
-                model=model,
-                schema=args.schema,
-                merge_table=merge_table,
-                validation_tokens=utf8_validation_tokens,
-                num_samples=actual_gen_samples,
-                device=args.device,
-                temperature=args.temperature,
-                max_tokens=args.max_gen_tokens,
-                normalize_json_output=args.normalize_bytes,
-            )
-            results["utf8_raw_generation"] = raw_gen_results
+            # Run generation at multiple temperatures for statistical robustness
+            temperatures = args.temperature if isinstance(args.temperature, list) else [args.temperature]
+            results["utf8_raw_generation_by_temp"] = {}
+            results["utf8_generation_by_temp"] = {}
 
-            # UTF8 + XGrammar generation (grammar constrained)
-            gen_results = run_generation_quality_utf8(
-                model=model,
-                schema=args.schema,
-                merge_table=merge_table,
-                validation_tokens=utf8_validation_tokens,
-                num_samples=actual_gen_samples,
-                device=args.device,
-                temperature=args.temperature,
-                max_tokens=args.max_gen_tokens,
-                normalize_json_output=args.normalize_bytes,
-            )
-            results["utf8_generation"] = gen_results
+            for temp in temperatures:
+                log(f"\n  === Generation at temperature={temp} ===")
+
+                # Raw UTF8 generation (no grammar constraints)
+                raw_gen_results = run_generation_quality_utf8_raw(
+                    model=model,
+                    schema=args.schema,
+                    merge_table=merge_table,
+                    validation_tokens=utf8_validation_tokens,
+                    num_samples=actual_gen_samples,
+                    device=args.device,
+                    temperature=temp,
+                    top_k=args.top_k,
+                    top_p=args.top_p,
+                    max_tokens=args.max_gen_tokens,
+                    normalize_json_output=args.normalize_bytes,
+                )
+                results["utf8_raw_generation_by_temp"][temp] = raw_gen_results
+
+                # UTF8 + XGrammar generation (grammar constrained)
+                gen_results = run_generation_quality_utf8(
+                    model=model,
+                    schema=args.schema,
+                    merge_table=merge_table,
+                    validation_tokens=utf8_validation_tokens,
+                    num_samples=actual_gen_samples,
+                    device=args.device,
+                    temperature=temp,
+                    top_k=args.top_k,
+                    top_p=args.top_p,
+                    max_tokens=args.max_gen_tokens,
+                    normalize_json_output=args.normalize_bytes,
+                )
+                results["utf8_generation_by_temp"][temp] = gen_results
+
+            # Use middle temperature as the primary result for backward compatibility
+            primary_temp = temperatures[len(temperatures) // 2]
+            results["utf8_raw_generation"] = results["utf8_raw_generation_by_temp"][primary_temp]
+            results["utf8_generation"] = results["utf8_generation_by_temp"][primary_temp]
 
         # Clean up
         del model
@@ -2074,17 +2145,29 @@ def main():
 
         # Run generation quality for TCT (unless --bpb_only)
         if not args.bpb_only:
-            tct_gen_results = run_generation_quality_tct(
-                model=model,
-                schema=args.schema,
-                tct_module=tct_module,
-                validation_json_strings=val_json_strings,
-                num_samples=actual_gen_samples,
-                temperature=args.temperature,
-                max_tokens=args.max_gen_tokens,
-                normalize_json_output=args.normalize_bytes,
-            )
-            results["tct_generation"] = tct_gen_results
+            # Run generation at multiple temperatures for statistical robustness
+            temperatures = args.temperature if isinstance(args.temperature, list) else [args.temperature]
+            results["tct_generation_by_temp"] = {}
+
+            for temp in temperatures:
+                log(f"\n  === TCT Generation at temperature={temp} ===")
+                tct_gen_results = run_generation_quality_tct(
+                    model=model,
+                    schema=args.schema,
+                    tct_module=tct_module,
+                    validation_json_strings=val_json_strings,
+                    num_samples=actual_gen_samples,
+                    temperature=temp,
+                    top_k=args.top_k,
+                    top_p=args.top_p,
+                    max_tokens=args.max_gen_tokens,
+                    normalize_json_output=args.normalize_bytes,
+                )
+                results["tct_generation_by_temp"][temp] = tct_gen_results
+
+            # Use middle temperature as primary result
+            primary_temp = temperatures[len(temperatures) // 2]
+            results["tct_generation"] = results["tct_generation_by_temp"][primary_temp]
 
         # Clean up
         del model
