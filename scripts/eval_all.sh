@@ -85,15 +85,25 @@ for schema in $SCHEMAS; do
 
             # Check if both checkpoints exist
             if [ -d "$tct_dir" ] && [ -d "$utf8_dir" ]; then
-                # Check if best.pt exists in both (training finished)
-                if [ -f "$tct_dir/best.pt" ] && [ -f "$utf8_dir/best.pt" ]; then
-                    # Check if training completed 150 epochs
+                # Check if checkpoint files exist (epoch_*.pt or best.pt)
+                tct_has_checkpoint=false
+                utf8_has_checkpoint=false
+
+                if ls "$tct_dir"/epoch_*.pt >/dev/null 2>&1 || [ -f "$tct_dir/best.pt" ]; then
+                    tct_has_checkpoint=true
+                fi
+                if ls "$utf8_dir"/epoch_*.pt >/dev/null 2>&1 || [ -f "$utf8_dir/best.pt" ]; then
+                    utf8_has_checkpoint=true
+                fi
+
+                if [ "$tct_has_checkpoint" = true ] && [ "$utf8_has_checkpoint" = true ]; then
+                    # Check if training completed (config.json exists and has epoch info)
                     tct_epoch=$(python3 -c "import json; print(json.load(open('$tct_dir/config.json')).get('epoch', 0))" 2>/dev/null || echo 0)
                     utf8_epoch=$(python3 -c "import json; print(json.load(open('$utf8_dir/config.json')).get('epoch', 0))" 2>/dev/null || echo 0)
 
-                    # Require 150 epochs completed
-                    if [ "$tct_epoch" -lt 150 ] || [ "$utf8_epoch" -lt 150 ]; then
-                        echo "[WAIT] $schema $size ${baseline_arg:-default} - incomplete (TCT: $tct_epoch/150, UTF8: $utf8_epoch/150)"
+                    # Require at least some epochs completed (allow 105+ for overfitting cases)
+                    if [ "$tct_epoch" -lt 100 ] || [ "$utf8_epoch" -lt 100 ]; then
+                        echo "[WAIT] $schema $size ${baseline_arg:-default} - incomplete (TCT: $tct_epoch, UTF8: $utf8_epoch)"
                         continue
                     fi
 
