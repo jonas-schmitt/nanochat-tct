@@ -7,7 +7,14 @@ Runs evaluation metrics:
 2. Generation Quality - Field value distribution comparison
 
 Usage:
-    # Full evaluation for kubernetes
+    # Auto-detect checkpoints (new simplified interface)
+    python -m scripts.eval_icml \
+        --schema kubernetes \
+        --model_size mini \
+        --num_samples 1000 \
+        --output results/icml/kubernetes_mini.json
+
+    # Manual checkpoint paths (old interface, still supported)
     python -m scripts.eval_icml \
         --schema kubernetes \
         --tct_checkpoint checkpoints/kubernetes_tct_small/ \
@@ -18,25 +25,16 @@ Usage:
     # BPB only (faster)
     python -m scripts.eval_icml \
         --schema kubernetes \
-        --tct_checkpoint checkpoints/kubernetes_tct_small/ \
-        --utf8_checkpoint checkpoints/kubernetes_utf8_small/ \
+        --model_size mini \
         --bpb_only \
         --output results/icml/kubernetes_bpb.json
 
     # Generation quality only
     python -m scripts.eval_icml \
         --schema kubernetes \
-        --tct_checkpoint checkpoints/kubernetes_tct_small/ \
-        --utf8_checkpoint checkpoints/kubernetes_utf8_small/ \
+        --model_size mini \
         --generation_only \
         --output results/icml/kubernetes_gen.json
-
-    # Specific epochs
-    python -m scripts.eval_icml \
-        --schema kubernetes \
-        --tct_checkpoint checkpoints/kubernetes_tct_small/ --tct_epoch 30 \
-        --utf8_checkpoint checkpoints/kubernetes_utf8_small/ --utf8_epoch 30 \
-        --bpb_only
 """
 
 import argparse
@@ -186,6 +184,48 @@ def normalize_json(json_str: str) -> str:
         return result
     except json.JSONDecodeError:
         return json_str  # Return original if not valid JSON
+
+
+def find_checkpoint_dir(schema: str, tokenizer: str, model_size: str, checkpoint_base: Path = None) -> Path:
+    """Find checkpoint directory for a given schema, tokenizer, and model size.
+
+    Args:
+        schema: Schema name (kubernetes, tsconfig, eslintrc)
+        tokenizer: Tokenizer type (tct, utf8)
+        model_size: Model size (tiny, mini, base, small, medium)
+        checkpoint_base: Base directory for checkpoints (default: checkpoints/)
+
+    Returns:
+        Path to checkpoint directory
+
+    Raises:
+        FileNotFoundError: If checkpoint directory doesn't exist
+    """
+    if checkpoint_base is None:
+        # Default to checkpoints/ directory in project root
+        script_dir = Path(__file__).parent
+        project_root = script_dir.parent
+        checkpoint_base = project_root / "checkpoints"
+
+    # Checkpoint directory naming: {schema}_{tokenizer}_{model_size}
+    checkpoint_name = f"{schema}_{tokenizer}_{model_size}"
+    checkpoint_dir = checkpoint_base / checkpoint_name
+
+    if not checkpoint_dir.exists():
+        raise FileNotFoundError(
+            f"Checkpoint directory not found: {checkpoint_dir}\n"
+            f"Expected structure: checkpoints/{checkpoint_name}/"
+        )
+
+    # Verify there's at least one checkpoint file
+    checkpoint_files = list(checkpoint_dir.glob("epoch_*.pt"))
+    if not checkpoint_files:
+        raise FileNotFoundError(
+            f"No checkpoint files found in {checkpoint_dir}\n"
+            f"Expected files like: epoch_150.pt"
+        )
+
+    return checkpoint_dir
 
 
 def load_model(checkpoint_dir: Path, device: str = "cuda", epoch: int = None):
@@ -1828,11 +1868,15 @@ def main():
     )
 
     # Model options
-    parser.add_argument("--tct_checkpoint", type=str, help="TCT model checkpoint directory")
-    parser.add_argument("--utf8_checkpoint", type=str, help="UTF8-BPE model checkpoint directory")
+    parser.add_argument("--model_size", type=str,
+                        choices=["tiny", "mini", "base", "small", "medium"],
+                        help="Model size (auto-detects checkpoint paths)")
+    parser.add_argument("--tct_checkpoint", type=str, help="TCT model checkpoint directory (overrides auto-detect)")
+    parser.add_argument("--utf8_checkpoint", type=str, help="UTF8-BPE model checkpoint directory (overrides auto-detect)")
     parser.add_argument("--tct_epoch", type=int, help="TCT checkpoint epoch (default: latest)")
     parser.add_argument("--utf8_epoch", type=int, help="UTF8 checkpoint epoch (default: latest)")
     parser.add_argument("--random_model", action="store_true", help="Use random model for testing")
+    parser.add_argument("--checkpoint_base", type=str, help="Base directory for checkpoints (default: checkpoints/)")
 
     # Schema options
     parser.add_argument("--schema", type=str, required=True,
@@ -1885,9 +1929,28 @@ def main():
         log("ERROR: Cannot use both --bpb_only and --generation_only")
         sys.exit(1)
 
+    # Auto-detect checkpoint paths from model_size if provided
+    checkpoint_base = Path(args.checkpoint_base) if args.checkpoint_base else None
+
+    if args.model_size:
+        # Auto-detect both checkpoints
+        if not args.tct_checkpoint:
+            try:
+                args.tct_checkpoint = str(find_checkpoint_dir(args.schema, "tct", args.model_size, checkpoint_base))
+                log(f"Auto-detected TCT checkpoint: {args.tct_checkpoint}")
+            except FileNotFoundError as e:
+                log(f"Warning: Could not find TCT checkpoint: {e}")
+
+        if not args.utf8_checkpoint:
+            try:
+                args.utf8_checkpoint = str(find_checkpoint_dir(args.schema, "utf8", args.model_size, checkpoint_base))
+                log(f"Auto-detected UTF8 checkpoint: {args.utf8_checkpoint}")
+            except FileNotFoundError as e:
+                log(f"Warning: Could not find UTF8 checkpoint: {e}")
+
     # Validate arguments
     if not args.random_model and not args.tct_checkpoint and not args.utf8_checkpoint:
-        log("ERROR: Must specify at least one of --tct_checkpoint, --utf8_checkpoint, or --random_model")
+        log("ERROR: Must specify --model_size, or --tct_checkpoint/--utf8_checkpoint, or --random_model")
         sys.exit(1)
 
     # Find merge table and data directories
