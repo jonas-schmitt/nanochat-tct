@@ -1374,9 +1374,9 @@ def generate_samples_tct(
         use_compile: Whether to use torch.compile for faster inference
 
     Returns:
-        Tuple of (generated_texts, all_texts, stats_dict) where:
-        - generated_texts: List of valid non-empty JSON strings
-        - all_texts: List of ALL decoded strings (including empty/partial)
+        Tuple of (completed_texts, all_texts, stats_dict) where:
+        - completed_texts: List of valid non-empty JSON strings from decode() ONLY (no decode_prefix)
+        - all_texts: List of ALL decoded strings (including decode_prefix and empty/failed)
         - stats_dict contains:
           - completed: Number of samples where decode() succeeded
           - partial: Number of samples where decode() failed but decode_prefix() succeeded
@@ -1401,7 +1401,7 @@ def generate_samples_tct(
             if show_progress:
                 print(f"  torch.compile failed: {e}, continuing without compilation")
 
-    generated_texts = []
+    completed_texts = []  # Only decode() successful samples (for primary comparison)
     all_texts = []  # ALL decoded texts, including partial/failed for fair comparison
     completed_count = 0  # TCT decode completed (is_complete=True)
     partial_count = 0    # decode() failed but decode_prefix() succeeded
@@ -1586,10 +1586,10 @@ def generate_samples_tct(
         all_texts.append(json_out if json_out else "")
 
         if json_out and json_out != "{}":
-            generated_texts.append(json_out)
             if is_partial:
                 partial_count += 1
             else:
+                completed_texts.append(json_out)  # Only decode() successful
                 completed_count += 1
         else:
             empty_count += 1
@@ -1616,7 +1616,7 @@ def generate_samples_tct(
         print(f"  Empty: {empty_count}, Failed: {failed_count}")
         print(f"  Throughput: {tokens_per_second:.0f} tokens/sec ({samples_per_second:.2f} samples/sec)")
 
-    return generated_texts, all_texts, stats
+    return completed_texts, all_texts, stats
 
 
 def run_generation_quality_utf8(
