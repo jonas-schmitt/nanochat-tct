@@ -186,6 +186,15 @@ def normalize_json(json_str: str) -> str:
         return json_str  # Return original if not valid JSON
 
 
+def _count_fields(obj) -> int:
+    """Count total fields/elements in a nested structure for repair comparison."""
+    if isinstance(obj, dict):
+        return len(obj) + sum(_count_fields(v) for v in obj.values())
+    elif isinstance(obj, list):
+        return len(obj) + sum(_count_fields(v) for v in obj)
+    return 0
+
+
 def repair_json(s: str) -> Optional[dict]:
     """Try to parse incomplete JSON by adding missing closing brackets.
 
@@ -194,6 +203,13 @@ def repair_json(s: str) -> Optional[dict]:
 
     The correct closing order is determined by tracking opening brackets
     as they appear in the prefix, then closing in reverse order.
+
+    Multiple repair strategies are attempted and the one recovering the
+    most structure (fields/elements) is returned:
+    1. Direct repair: add closing brackets if not inside a string
+    2. Comma truncation: truncate at last comma (field boundary)
+    3. Key-value removal: remove incomplete key-value pairs
+    4. Trailing key removal: handle "key": with no value
 
     Only returns dicts (JSON objects), not arrays or primitives, since
     the field extractor requires object structure.
@@ -208,6 +224,61 @@ def repair_json(s: str) -> Optional[dict]:
         return result if isinstance(result, dict) else None
     except json.JSONDecodeError:
         pass
+
+    # Try direct repair (add closing brackets if not inside a string)
+    result = _repair_json_impl(s)
+    if result is not None:
+        return result
+
+    # Collect candidates from multiple repair strategies
+    candidates: List[dict] = []
+
+    # Strategy 1: Comma truncation (handles mid-string truncation)
+    last_comma = s.rfind(',')
+    comma_attempts = 0
+    while last_comma > 0 and comma_attempts < 50:
+        comma_attempts += 1
+        truncated = s[:last_comma]
+        result = _repair_json_impl(truncated)
+        if result is not None:
+            candidates.append(result)
+            break  # First successful is usually best for this strategy
+        last_comma = s.rfind(',', 0, last_comma)
+
+    # Strategy 2: Key-value removal (handles nested truncation without commas)
+    # Find all "key": patterns and try removing incomplete key-value pairs
+    colon_pattern = r'"(?:[^"\\]|\\.)*"\s*:'
+    matches = list(re.finditer(colon_pattern, s))
+    for match in reversed(matches):
+        key_start = match.start()
+        before = s[:key_start].rstrip()
+        if before and before[-1] in ',{':
+            if before[-1] == ',':
+                before = before[:-1]
+            result = _repair_json_impl(before)
+            if result is not None:
+                candidates.append(result)
+                break  # First successful is usually best
+
+    # Strategy 3: Trailing key pattern (handles "key": with no value)
+    trailing_key_pattern = r',?\s*"(?:[^"\\]|\\.)*"\s*:\s*$'
+    cleaned = re.sub(trailing_key_pattern, '', s)
+    if cleaned != s and cleaned.strip():
+        result = _repair_json_impl(cleaned)
+        if result is not None:
+            candidates.append(result)
+
+    # Return the candidate with the most recovered structure
+    if candidates:
+        return max(candidates, key=_count_fields)
+
+    return None
+
+
+def _repair_json_impl(s: str) -> Optional[dict]:
+    """Implementation of JSON repair - add missing closing brackets."""
+    if not s or not s.strip():
+        return None
 
     # Track opening brackets in order, accounting for closers
     # We use a stack: push openers, pop on closers
@@ -242,7 +313,7 @@ def repair_json(s: str) -> Optional[dict]:
     if not stack:
         return None  # No unclosed brackets
 
-    # If we ended inside a string, we cannot repair (string is not closed)
+    # If we ended inside a string, we cannot repair this truncation point
     if in_string:
         return None
 
