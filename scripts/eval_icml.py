@@ -1646,27 +1646,6 @@ def run_generation_quality_utf8(
     assert gen_result_all.num_valid >= gen_result.num_valid, \
         f"All-samples should have >= valid samples than valid-only: {gen_result_all.num_valid} < {gen_result.num_valid}"
 
-    # Log examples of repaired incomplete samples for inspection
-    repair_examples = []
-    for text, obj in zip(all_texts, repaired_objs):
-        if obj is not None:
-            try:
-                json.loads(text)  # Was it already valid?
-            except json.JSONDecodeError:
-                # This was repaired
-                repair_examples.append({
-                    "original": text[:200] + "..." if len(text) > 200 else text,
-                    "repaired_keys": list(obj.keys()) if isinstance(obj, dict) else str(type(obj))
-                })
-                if len(repair_examples) >= 3:
-                    break
-
-    if repair_examples:
-        print("\n  === Repaired Sample Examples ===")
-        for i, ex in enumerate(repair_examples):
-            print(f"    Example {i+1}: keys={ex['repaired_keys']}")
-            print(f"      Original: {ex['original'][:100]}...")
-
     return {
         "schema": schema,
         "model_type": "utf8_xgrammar",
