@@ -186,6 +186,76 @@ def normalize_json(json_str: str) -> str:
         return json_str  # Return original if not valid JSON
 
 
+def repair_json(s: str) -> Optional[dict]:
+    """Try to parse incomplete JSON by adding missing closing brackets.
+
+    This enables extracting fields from partial/truncated JSON outputs.
+    Returns the parsed dict if successful, None otherwise.
+
+    The correct closing order is determined by tracking opening brackets
+    as they appear in the prefix, then closing in reverse order.
+
+    Only returns dicts (JSON objects), not arrays or primitives, since
+    the field extractor requires object structure.
+    """
+    if not s or not s.strip():
+        return None
+
+    # Try standard parsing first
+    try:
+        result = json.loads(s)
+        # Only return if it's a dict (JSON object)
+        return result if isinstance(result, dict) else None
+    except json.JSONDecodeError:
+        pass
+
+    # Track opening brackets in order, accounting for closers
+    # We use a stack: push openers, pop on closers
+    stack = []
+    in_string = False
+    escape_next = False
+
+    for char in s:
+        if escape_next:
+            escape_next = False
+            continue
+        if char == '\\':
+            escape_next = True
+            continue
+        if char == '"':
+            in_string = not in_string
+            continue
+        if in_string:
+            continue
+
+        if char == '{':
+            stack.append('}')
+        elif char == '[':
+            stack.append(']')
+        elif char == '}':
+            if stack and stack[-1] == '}':
+                stack.pop()
+        elif char == ']':
+            if stack and stack[-1] == ']':
+                stack.pop()
+
+    if not stack:
+        return None  # No unclosed brackets
+
+    # If we ended inside a string, we cannot repair (string is not closed)
+    if in_string:
+        return None
+
+    # Close in reverse order of opening
+    suffix = ''.join(reversed(stack))
+    try:
+        result = json.loads(s + suffix)
+        # Only return if it's a dict (JSON object)
+        return result if isinstance(result, dict) else None
+    except json.JSONDecodeError:
+        return None
+
+
 def find_checkpoint_dir(schema: str, tokenizer: str, model_size: str, checkpoint_base: Path = None) -> Path:
     """Find checkpoint directory for a given schema, tokenizer, and model size.
 
@@ -702,11 +772,14 @@ def generate_samples_xgrammar(
         use_compile: Whether to use torch.compile for faster inference
 
     Returns:
-        Tuple of (generated_texts, stats_dict) where stats_dict contains:
-        - completed: Number of samples where grammar terminated normally
-        - truncated: Number of samples that hit max_tokens before completion
-        - empty: Number of samples that were empty
-        - failed: Number of samples that failed to decode
+        Tuple of (generated_texts, all_texts, stats_dict) where:
+        - generated_texts: List of valid JSON strings only
+        - all_texts: List of ALL decoded strings (including invalid JSON)
+        - stats_dict contains:
+          - completed: Number of samples where grammar terminated normally
+          - truncated: Number of samples that hit max_tokens before completion
+          - empty: Number of samples that were empty
+          - failed: Number of samples that failed to decode
     """
     import random
     import torch
@@ -731,6 +804,7 @@ def generate_samples_xgrammar(
                 print(f"  torch.compile failed: {e}, continuing without compilation")
 
     generated_texts = []
+    all_texts = []  # ALL decoded texts, including invalid JSON
     completed_count = 0  # Grammar terminated normally
     truncated_count = 0  # Hit max_tokens before grammar termination
     empty_count = 0
@@ -845,6 +919,7 @@ def generate_samples_xgrammar(
             for i, tokens in enumerate(batch_tokens):
                 try:
                     text = utf8_decoder.decode(tokens)
+                    all_texts.append(text)  # Keep ALL decoded text for fair comparison
                     import json
                     parsed = json.loads(text)
                     if parsed and parsed != {}:
@@ -855,11 +930,18 @@ def generate_samples_xgrammar(
                             truncated_count += 1  # Valid JSON but hit max_tokens
                     else:
                         empty_count += 1
-                except (json.JSONDecodeError, Exception):
+                except json.JSONDecodeError:
+                    failed_count += 1
+                except Exception:
+                    # Decode failed - still add empty string to all_texts for accounting
+                    if len(all_texts) < start_idx + i + 1:
+                        all_texts.append("")
                     failed_count += 1
 
         except Exception as e:
             failed_count += current_batch_size
+            # Add empty strings for failed batch to maintain accounting
+            all_texts.extend([""] * current_batch_size)
             continue
         finally:
             # Explicitly free KV cache memory
@@ -893,7 +975,7 @@ def generate_samples_xgrammar(
         print(f"  Empty: {empty_count}, Failed: {failed_count}")
         print(f"  Throughput: {tokens_per_second:.0f} tokens/sec ({samples_per_second:.2f} samples/sec)")
 
-    return generated_texts, stats
+    return generated_texts, all_texts, stats
 
 
 def generate_samples_utf8_raw(
@@ -1126,10 +1208,14 @@ def generate_samples_tct(
         use_compile: Whether to use torch.compile for faster inference
 
     Returns:
-        Tuple of (generated_texts, stats_dict) where stats_dict contains:
-        - completed: Number of samples where TCT decode completed fully
-        - partial: Number of samples that decoded partially (hit max_tokens)
-        - empty: Number of samples that decoded to empty objects
+        Tuple of (generated_texts, all_texts, stats_dict) where:
+        - generated_texts: List of valid non-empty JSON strings
+        - all_texts: List of ALL decoded strings (including empty/partial)
+        - stats_dict contains:
+          - completed: Number of samples where decode() succeeded
+          - partial: Number of samples where decode() failed but decode_prefix() succeeded
+          - empty: Number of samples that decoded to empty objects
+          - failed: Number of samples where both decode methods failed
     """
     import torch
     import torch.nn.functional as F
@@ -1150,8 +1236,10 @@ def generate_samples_tct(
                 print(f"  torch.compile failed: {e}, continuing without compilation")
 
     generated_texts = []
+    all_texts = []  # ALL decoded texts, including partial/failed for fair comparison
     completed_count = 0  # TCT decode completed (is_complete=True)
-    failed_count = 0     # Decode raised exception
+    partial_count = 0    # decode() failed but decode_prefix() succeeded
+    failed_count = 0     # Both decode methods failed
     empty_count = 0
 
     # Get model config for KV cache
@@ -1282,30 +1370,47 @@ def generate_samples_tct(
                 sys.stdout.flush()
                 sys.stderr.flush()
 
-        try:
-            tokens_to_decode = generated_tokens[1:]  # Skip BOS
-            # Debug first decode
-            if idx == 0 and show_progress:
-                log(f"    First decode: {len(tokens_to_decode)} tokens: {tokens_to_decode[:20]}...")
-                sys.stdout.flush()
-            # Use decode() instead of decode_prefix() - decode_prefix has a bug where
-            # it returns is_complete=True with empty arrays before all tokens are consumed
-            json_out, _, _ = tct_module.decode(tokens_to_decode)
+        tokens_to_decode = generated_tokens[1:]  # Skip BOS
+        # Debug first decode
+        if idx == 0 and show_progress:
+            log(f"    First decode: {len(tokens_to_decode)} tokens: {tokens_to_decode[:20]}...")
+            sys.stdout.flush()
 
-            if json_out and json_out != "{}":
-                generated_texts.append(json_out)
-                completed_count += 1
-            else:
-                empty_count += 1
+        json_out = None
+        is_partial = False
+
+        # Try decode() first (complete decoding)
+        try:
+            json_out, _, _ = tct_module.decode(tokens_to_decode)
         except Exception:
-            failed_count += 1
-            continue
+            # decode() failed, try decode_prefix() as fallback for partial output
+            try:
+                json_out, _, _ = tct_module.decode_prefix(tokens_to_decode)
+                is_partial = True
+            except Exception:
+                # Both methods failed
+                all_texts.append("")  # Empty string for failed decode
+                failed_count += 1
+                continue
+
+        # Store the decoded text for all-samples metrics
+        all_texts.append(json_out if json_out else "")
+
+        if json_out and json_out != "{}":
+            generated_texts.append(json_out)
+            if is_partial:
+                partial_count += 1
+            else:
+                completed_count += 1
+        else:
+            empty_count += 1
 
     tokens_per_second = total_tokens_generated / gen_elapsed_time if gen_elapsed_time > 0 else 0
     samples_per_second = num_samples / gen_elapsed_time if gen_elapsed_time > 0 else 0
 
     stats = {
         "completed": completed_count,
+        "partial": partial_count,  # decode() failed but decode_prefix() succeeded
         "empty": empty_count,
         "failed": failed_count,
         "total": num_samples,
@@ -1318,10 +1423,11 @@ def generate_samples_tct(
 
     if show_progress:
         print(f"  Completed: {completed_count}/{num_samples} ({stats['completion_rate']:.1%})")
+        print(f"  Partial (decode_prefix fallback): {partial_count}")
         print(f"  Empty: {empty_count}, Failed: {failed_count}")
         print(f"  Throughput: {tokens_per_second:.0f} tokens/sec ({samples_per_second:.2f} samples/sec)")
 
-    return generated_texts, stats
+    return generated_texts, all_texts, stats
 
 
 def run_generation_quality_utf8(
@@ -1391,7 +1497,7 @@ def run_generation_quality_utf8(
 
     # Generate samples from model (starts from BOS token, same as training)
     print(f"\n  Generating {num_samples} samples with XGrammar constraints...")
-    generated_texts, gen_stats = generate_samples_xgrammar(
+    generated_texts, all_texts, gen_stats = generate_samples_xgrammar(
         model=model,
         tokenizer_info=tokenizer_info,
         compiled_grammar=compiled_grammar,
@@ -1435,6 +1541,60 @@ def run_generation_quality_utf8(
         match = "Y" if comp.mode_match else "N"
         print(f"    {name}: KL={comp.kl_divergence:.3f} TV={comp.total_variation:.3f} mode_match={match}")
 
+    # === ALL-SAMPLES METRICS (Fair Comparison) ===
+    # Extract fields from ALL generated outputs, including repaired incomplete JSON
+    # This provides a fairer comparison since UTF8+XGrammar discards ~51% of samples
+    print(f"\n  Extracting from ALL {len(all_texts)} samples (including incomplete)...")
+
+    # Repair incomplete JSON
+    repaired_objs = [repair_json(t) for t in all_texts]
+    repaired_count = sum(1 for obj in repaired_objs if obj is not None)
+    print(f"  Repair stats: {repaired_count}/{len(all_texts)} samples repaired ({100*repaired_count/len(all_texts):.1f}%)")
+
+    # Convert repaired dicts to JSON strings for extractor
+    repaired_json = [json.dumps(obj, separators=(',', ':'), sort_keys=True)
+                     for obj in repaired_objs if obj is not None]
+
+    # Extract fields from all repaired samples
+    gen_result_all = extractor.extract_from_samples(repaired_json)
+    print(f"  All-samples extraction: {gen_result_all.num_valid}/{gen_result_all.num_samples} valid")
+
+    # Compare using all extracted fields
+    comparison_all = compare_extraction_results(real_result, gen_result_all)
+
+    print(f"\n  ALL-SAMPLES Distribution Comparison:")
+    print(f"    Mean KL divergence:  {comparison_all.mean_kl:.4f}")
+    print(f"    Mean TV distance:    {comparison_all.mean_tv:.4f}")
+    print(f"    Mean coverage:       {comparison_all.mean_coverage:.2%}")
+    print(f"    Mode match rate:     {comparison_all.mode_match_rate:.2%}")
+
+    # Verification assertions
+    assert len(all_texts) == gen_stats["total"], \
+        f"all_texts doesn't match generation total: {len(all_texts)} vs {gen_stats['total']}"
+    assert gen_result_all.num_valid >= gen_result.num_valid, \
+        f"All-samples should have >= valid samples than valid-only: {gen_result_all.num_valid} < {gen_result.num_valid}"
+
+    # Log examples of repaired incomplete samples for inspection
+    repair_examples = []
+    for text, obj in zip(all_texts, repaired_objs):
+        if obj is not None:
+            try:
+                json.loads(text)  # Was it already valid?
+            except json.JSONDecodeError:
+                # This was repaired
+                repair_examples.append({
+                    "original": text[:200] + "..." if len(text) > 200 else text,
+                    "repaired_keys": list(obj.keys()) if isinstance(obj, dict) else str(type(obj))
+                })
+                if len(repair_examples) >= 3:
+                    break
+
+    if repair_examples:
+        print("\n  === Repaired Sample Examples ===")
+        for i, ex in enumerate(repair_examples):
+            print(f"    Example {i+1}: keys={ex['repaired_keys']}")
+            print(f"      Original: {ex['original'][:100]}...")
+
     return {
         "schema": schema,
         "model_type": "utf8_xgrammar",
@@ -1446,6 +1606,11 @@ def run_generation_quality_utf8(
         "ground_truth_distributions": real_result.to_dict()["field_distributions"],
         "generated_distributions": gen_result.to_dict()["field_distributions"],
         "comparison": comparison.to_dict(),
+        # New: all-samples metrics for fair comparison
+        "all_samples_comparison": comparison_all.to_dict(),
+        "all_samples_repaired": repaired_count,
+        "all_samples_total": len(all_texts),
+        "all_samples_valid": gen_result_all.num_valid,
     }
 
 
@@ -1507,7 +1672,7 @@ def run_generation_quality_tct(
 
     # Generate samples from TCT model (starts from BOS token, same as training)
     print(f"\n  Generating {num_samples} samples with TCT model...")
-    generated_texts, gen_stats = generate_samples_tct(
+    generated_texts, all_texts, gen_stats = generate_samples_tct(
         model=model,
         tct_module=tct_module,
         num_samples=num_samples,
@@ -1549,6 +1714,35 @@ def run_generation_quality_tct(
         match = "Y" if comp.mode_match else "N"
         print(f"    {name}: KL={comp.kl_divergence:.3f} TV={comp.total_variation:.3f} mode_match={match}")
 
+    # === ALL-SAMPLES METRICS (Fair Comparison) ===
+    # For TCT, all_texts contains valid JSON from decode/decode_prefix
+    # No repair needed since TCT decoder produces valid structure
+    print(f"\n  Extracting from ALL {len(all_texts)} samples...")
+
+    # Filter out empty strings (failed decodes)
+    all_texts_nonempty = [t for t in all_texts if t and t != "{}"]
+    if normalize_json_output:
+        all_texts_nonempty = [normalize_json(t) for t in all_texts_nonempty]
+
+    print(f"  Non-empty decoded samples: {len(all_texts_nonempty)}/{len(all_texts)}")
+
+    # Extract fields from all non-empty samples
+    gen_result_all = extractor.extract_from_samples(all_texts_nonempty)
+    print(f"  All-samples extraction: {gen_result_all.num_valid}/{gen_result_all.num_samples} valid")
+
+    # Compare using all extracted fields
+    comparison_all = compare_extraction_results(real_result, gen_result_all)
+
+    print(f"\n  ALL-SAMPLES Distribution Comparison:")
+    print(f"    Mean KL divergence:  {comparison_all.mean_kl:.4f}")
+    print(f"    Mean TV distance:    {comparison_all.mean_tv:.4f}")
+    print(f"    Mean coverage:       {comparison_all.mean_coverage:.2%}")
+    print(f"    Mode match rate:     {comparison_all.mode_match_rate:.2%}")
+
+    # Verification assertions
+    assert len(all_texts) == gen_stats["total"], \
+        f"all_texts doesn't match generation total: {len(all_texts)} vs {gen_stats['total']}"
+
     return {
         "schema": schema,
         "model_type": "tct",
@@ -1560,6 +1754,11 @@ def run_generation_quality_tct(
         "ground_truth_distributions": real_result.to_dict()["field_distributions"],
         "generated_distributions": gen_result.to_dict()["field_distributions"],
         "comparison": comparison.to_dict(),
+        # New: all-samples metrics for fair comparison
+        "all_samples_comparison": comparison_all.to_dict(),
+        "all_samples_nonempty": len(all_texts_nonempty),
+        "all_samples_total": len(all_texts),
+        "all_samples_valid": gen_result_all.num_valid,
     }
 
 
