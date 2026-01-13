@@ -42,6 +42,7 @@ import gc
 import json
 import logging
 import psutil
+import re
 import sys
 import time
 from dataclasses import asdict
