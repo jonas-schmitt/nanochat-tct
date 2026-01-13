@@ -2,7 +2,8 @@
 # Evaluate all finished schema/size combinations
 #
 # Usage:
-#   bash scripts/eval_all.sh                    # Evaluate all, skip existing results
+#   bash scripts/eval_all.sh                    # Evaluate all schemas, skip existing results
+#   bash scripts/eval_all.sh --schema=kubernetes  # Evaluate only kubernetes
 #   bash scripts/eval_all.sh --force            # Re-run even if results exist
 #   bash scripts/eval_all.sh --samples=1000     # Custom sample count
 #   bash scripts/eval_all.sh --dry-run          # Show what would be evaluated
@@ -17,12 +18,14 @@ NUM_SAMPLES=""
 NUM_GEN_SAMPLES=""
 DRY_RUN=false
 FORCE=false
+SCHEMA_FILTER=""
 EXTRA_ARGS=""
 
 for arg in "$@"; do
     case $arg in
         --dry-run) DRY_RUN=true ;;
         --force) FORCE=true ;;
+        --schema=*) SCHEMA_FILTER="${arg#--schema=}" ;;
         --samples=*) NUM_SAMPLES="$arg" ;;
         --gen_samples=*) NUM_GEN_SAMPLES="$arg" ;;
         *) EXTRA_ARGS="$EXTRA_ARGS $arg" ;;
@@ -61,7 +64,13 @@ echo
 # Find all valid schema/size combinations
 # =============================================================================
 
-SCHEMAS="kubernetes tsconfig eslintrc"
+# Use filtered schema if provided, otherwise all schemas
+if [ -n "$SCHEMA_FILTER" ]; then
+    SCHEMAS="$SCHEMA_FILTER"
+    echo "Schema filter:  $SCHEMA_FILTER"
+else
+    SCHEMAS="kubernetes tsconfig eslintrc"
+fi
 SIZES="tiny mini base small small-wide medium large"
 BASELINES="default o200k"
 
