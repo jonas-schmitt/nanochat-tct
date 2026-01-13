@@ -72,7 +72,7 @@ else
     SCHEMAS="kubernetes tsconfig eslintrc"
 fi
 SIZES="tiny mini base small small-wide medium large"
-BASELINES="default o200k"
+BASELINES="default"
 
 found_any=false
 
