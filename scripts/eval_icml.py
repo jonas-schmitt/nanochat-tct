@@ -914,7 +914,10 @@ def generate_samples_xgrammar(
 
         try:
             # Create grammar matchers and bitmasks for each sample
-            matchers = [xgrammar.GrammarMatcher(compiled_grammar) for _ in range(current_batch_size)]
+            # terminate_without_stop_token=True: Grammar terminates when JSON is complete,
+            # without needing EOS token. This matches training (no EOS markers in training data).
+            matchers = [xgrammar.GrammarMatcher(compiled_grammar, terminate_without_stop_token=True)
+                        for _ in range(current_batch_size)]
             bitmasks = [xgrammar.allocate_token_bitmask(1, tokenizer_info.vocab_size)
                        for _ in range(current_batch_size)]
             kv_cache = KVCache(batch_size=current_batch_size, seq_len=max_tokens + 1, **kv_kwargs)
