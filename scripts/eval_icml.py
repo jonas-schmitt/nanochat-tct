@@ -48,6 +48,18 @@ import time
 from dataclasses import asdict
 from datetime import datetime
 from pathlib import Path
+import torch
+
+
+def cleanup_gpu_memory():
+    """Force cleanup of GPU memory after batch processing.
+
+    This is critical to prevent OOM errors across batches. We delete common
+    tensor variables that may be holding GPU memory and force CUDA cache clear.
+    """
+    gc.collect()
+    if torch.cuda.is_available():
+        torch.cuda.empty_cache()
 from typing import Any, Dict, List, Optional
 
 # Add project root to path
@@ -899,38 +911,43 @@ def generate_samples_xgrammar(
     # BOS token is pad token = vocab_size - 1 (matches training setup, same as TCT)
     bos_token = utf8_decoder.vocab_size() - 1
 
-    # Process in batches
-    num_batches = (num_samples + batch_size - 1) // batch_size
-    iterator = tqdm(range(num_batches), desc="Generating samples") if show_progress else range(num_batches)
-
+    # Process in batches with OOM retry
     total_tokens_generated = 0
     gen_start_time = time.time()
+    samples_processed = 0
+    current_batch_size = batch_size  # Start with requested batch size
+    min_batch_size = 1  # Don't go below this
+    batch_idx = 0
 
-    for batch_idx in iterator:
-        # Calculate actual batch size for this batch
-        start_idx = batch_idx * batch_size
-        end_idx = min(start_idx + batch_size, num_samples)
-        current_batch_size = end_idx - start_idx
+    pbar = tqdm(total=num_samples, desc="Generating samples") if show_progress else None
+
+    while samples_processed < num_samples:
+        start_idx = samples_processed
+        end_idx = min(start_idx + current_batch_size, num_samples)
+        actual_batch_size = end_idx - start_idx
+
+        if show_progress and pbar:
+            pbar.set_description(f"Generating (batch_size={current_batch_size})")
 
         try:
             # Create grammar matchers and bitmasks for each sample
             # terminate_without_stop_token=True: Grammar terminates when JSON is complete,
             # without needing EOS token. This matches training (no EOS markers in training data).
             matchers = [xgrammar.GrammarMatcher(compiled_grammar, terminate_without_stop_token=True)
-                        for _ in range(current_batch_size)]
+                        for _ in range(actual_batch_size)]
             bitmasks = [xgrammar.allocate_token_bitmask(1, tokenizer_info.vocab_size)
-                       for _ in range(current_batch_size)]
-            kv_cache = KVCache(batch_size=current_batch_size, seq_len=max_tokens + 1, **kv_kwargs)
+                       for _ in range(actual_batch_size)]
+            kv_cache = KVCache(batch_size=actual_batch_size, seq_len=max_tokens + 1, **kv_kwargs)
 
             # Initialize with BOS tokens (same approach as TCT)
-            batch_tokens = [[] for _ in range(current_batch_size)]
+            batch_tokens = [[] for _ in range(actual_batch_size)]
 
             # Track which samples are still active (not terminated)
-            active = [True] * current_batch_size
-            terminated = [False] * current_batch_size  # Track if grammar terminated vs truncated
+            active = [True] * actual_batch_size
+            terminated = [False] * actual_batch_size  # Track if grammar terminated vs truncated
 
             # Prefill with BOS token (model predicts first real token)
-            input_ids = torch.full((current_batch_size, 1), bos_token, device=device)
+            input_ids = torch.full((actual_batch_size, 1), bos_token, device=device)
             with torch.no_grad():
                 logits = model(input_ids, kv_cache=kv_cache)
                 logits = logits[:, -1, :]  # [batch, vocab]
@@ -941,7 +958,7 @@ def generate_samples_xgrammar(
                     break
 
                 # Apply grammar masks per sample
-                for i in range(current_batch_size):
+                for i in range(actual_batch_size):
                     if active[i]:
                         if matchers[i].is_terminated():
                             active[i] = False
@@ -991,6 +1008,8 @@ def generate_samples_xgrammar(
                     logits = logits[:, -1, :]
 
             # Decode and validate each sample
+            batch_completed = 0
+            batch_failed = 0
             for i, tokens in enumerate(batch_tokens):
                 try:
                     text = utf8_decoder.decode(tokens)
@@ -1001,31 +1020,86 @@ def generate_samples_xgrammar(
                         generated_texts.append(text)
                         if terminated[i]:
                             completed_count += 1
+                            batch_completed += 1
                         else:
                             truncated_count += 1  # Valid JSON but hit max_tokens
+                            batch_completed += 1
                     else:
                         empty_count += 1
+                        batch_failed += 1
                 except json.JSONDecodeError:
                     failed_count += 1
+                    batch_failed += 1
                 except Exception:
                     # Decode failed - still add empty string to all_texts for accounting
                     if len(all_texts) < start_idx + i + 1:
                         all_texts.append("")
                     failed_count += 1
+                    batch_failed += 1
 
+            if show_progress:
+                print(f"  [Batch {batch_idx}] Results: {batch_completed} valid, {batch_failed} failed")
+
+            # Success - update progress
+            samples_processed = end_idx
+            batch_idx += 1
+            total_tokens_generated += sum(len(tokens) for tokens in batch_tokens)
+            if pbar:
+                pbar.update(actual_batch_size)
+
+        except torch.cuda.OutOfMemoryError as e:
+            # OOM: retry with smaller batch size
+            if current_batch_size > min_batch_size:
+                new_batch_size = max(min_batch_size, current_batch_size // 2)
+                if show_progress:
+                    print(f"\n  [Batch {batch_idx}] OOM with batch_size={current_batch_size}, retrying with {new_batch_size}")
+                current_batch_size = new_batch_size
+                # Force cleanup before retry
+                import gc
+                gc.collect()
+                torch.cuda.empty_cache()
+                continue  # Retry same samples with smaller batch
+            else:
+                if show_progress:
+                    print(f"\n  [Batch {batch_idx}] OOM even at min_batch_size={min_batch_size}, giving up on {actual_batch_size} samples")
+                failed_count += actual_batch_size
+                all_texts.extend([""] * actual_batch_size)
+                samples_processed = end_idx
+                batch_idx += 1
+                if pbar:
+                    pbar.update(actual_batch_size)
         except Exception as e:
-            failed_count += current_batch_size
-            # Add empty strings for failed batch to maintain accounting
-            all_texts.extend([""] * current_batch_size)
-            continue
+            if show_progress:
+                print(f"\n  [Batch {batch_idx}] EXCEPTION: {e}")
+            failed_count += actual_batch_size
+            all_texts.extend([""] * actual_batch_size)
+            samples_processed = end_idx
+            batch_idx += 1
+            if pbar:
+                pbar.update(actual_batch_size)
         finally:
-            # Explicitly free KV cache memory
-            if 'kv_cache' in locals():
+            # Explicitly free ALL batch-related GPU memory to prevent OOM on next batch
+            # Note: These variables are created inside the try block and may hold GPU tensors
+            try:
                 del kv_cache
+            except NameError:
+                pass
+            try:
+                del logits, probs, next_tokens, input_ids
+            except NameError:
+                pass
+            try:
+                del sorted_logits, sorted_indices, cumulative_probs, indices_to_remove
+            except NameError:
+                pass
+            # Force garbage collection and CUDA cache clear
+            import gc
+            gc.collect()
             torch.cuda.empty_cache()
 
-        # Count tokens generated in this batch
-        total_tokens_generated += sum(len(tokens) for tokens in batch_tokens)
+    # Close progress bar
+    if pbar:
+        pbar.close()
 
     gen_elapsed_time = time.time() - gen_start_time
     tokens_per_second = total_tokens_generated / gen_elapsed_time if gen_elapsed_time > 0 else 0
@@ -1208,17 +1282,34 @@ def generate_samples_utf8_raw(
                 except (json.JSONDecodeError, Exception):
                     invalid_count += 1
 
-        except Exception as e:
-            invalid_count += current_batch_size
-            continue
-        finally:
-            # Explicitly free KV cache memory
-            if 'kv_cache' in locals():
-                del kv_cache
-            torch.cuda.empty_cache()
+            # Count tokens on success
+            total_tokens_generated += sum(len(tokens) for tokens in batch_tokens)
 
-        # Count tokens generated in this batch
-        total_tokens_generated += sum(len(tokens) for tokens in batch_tokens)
+        except torch.cuda.OutOfMemoryError as e:
+            if show_progress:
+                print(f"\n  [Batch {batch_idx}] OOM: {e}")
+            invalid_count += current_batch_size
+        except Exception as e:
+            if show_progress:
+                print(f"\n  [Batch {batch_idx}] Exception: {e}")
+            invalid_count += current_batch_size
+        finally:
+            # Explicitly free ALL batch-related GPU memory
+            try:
+                del kv_cache
+            except NameError:
+                pass
+            try:
+                del logits, probs, next_tokens, input_ids
+            except NameError:
+                pass
+            try:
+                del sorted_logits, sorted_indices, cumulative_probs, indices_to_remove
+            except NameError:
+                pass
+            import gc
+            gc.collect()
+            torch.cuda.empty_cache()
 
     gen_elapsed_time = time.time() - gen_start_time
     tokens_per_second = total_tokens_generated / gen_elapsed_time if gen_elapsed_time > 0 else 0
@@ -1356,61 +1447,84 @@ def generate_samples_tct(
         end_idx = min(start_idx + batch_size, num_samples)
         current_batch_size = end_idx - start_idx
 
-        # Create KV cache for this batch
-        kv_cache = KVCache(batch_size=current_batch_size, seq_len=max_tokens + 1, **kv_kwargs)
+        try:
+            # Create KV cache for this batch
+            kv_cache = KVCache(batch_size=current_batch_size, seq_len=max_tokens + 1, **kv_kwargs)
 
-        # Initialize with BOS tokens for all samples in batch
-        input_ids = torch.full((current_batch_size, 1), bos_token, device=device)
+            # Initialize with BOS tokens for all samples in batch
+            input_ids = torch.full((current_batch_size, 1), bos_token, device=device)
 
-        # Track generated tokens for each sample in batch
-        batch_tokens = [[bos_token] for _ in range(current_batch_size)]
+            # Track generated tokens for each sample in batch
+            batch_tokens = [[bos_token] for _ in range(current_batch_size)]
 
-        # Prefill with BOS token
-        with torch.no_grad():
-            logits = model(input_ids, kv_cache=kv_cache)
-            logits = logits[:, -1, :]  # [batch, vocab]
-
-        # Generate max_tokens for all samples in parallel
-        for step in range(max_tokens):
-            # Apply temperature and top-k/top-p
-            if temperature > 0:
-                logits = logits / temperature
-
-            if top_k is not None and top_k > 0:
-                v, _ = torch.topk(logits, min(top_k, logits.size(-1)), dim=-1)
-                logits[logits < v[:, -1:]] = float('-inf')
-
-            if top_p is not None and top_p < 1.0:
-                # Nucleus sampling
-                sorted_logits, sorted_indices = torch.sort(logits, descending=True, dim=-1)
-                cumulative_probs = torch.cumsum(F.softmax(sorted_logits, dim=-1), dim=-1)
-                sorted_indices_to_remove = cumulative_probs > top_p
-                sorted_indices_to_remove[:, 1:] = sorted_indices_to_remove[:, :-1].clone()
-                sorted_indices_to_remove[:, 0] = False
-                indices_to_remove = sorted_indices_to_remove.scatter(1, sorted_indices, sorted_indices_to_remove)
-                logits[indices_to_remove] = float('-inf')
-
-            # Sample next tokens for all samples
-            probs = F.softmax(logits, dim=-1)
-            next_tokens = torch.multinomial(probs, num_samples=1)  # [batch, 1]
-
-            # Store generated tokens
-            next_tokens_list = next_tokens.squeeze(-1).tolist()
-            for i, tok in enumerate(next_tokens_list):
-                batch_tokens[i].append(tok)
-
-            # Get next logits using KV cache
+            # Prefill with BOS token
             with torch.no_grad():
-                logits = model(next_tokens, kv_cache=kv_cache)
-                logits = logits[:, -1, :]
+                logits = model(input_ids, kv_cache=kv_cache)
+                logits = logits[:, -1, :]  # [batch, vocab]
 
-        # Store all generated token sequences from this batch
-        all_generated_tokens.extend(batch_tokens)
-        total_tokens_generated += sum(len(tokens) for tokens in batch_tokens)
+            # Generate max_tokens for all samples in parallel
+            for step in range(max_tokens):
+                # Apply temperature and top-k/top-p
+                if temperature > 0:
+                    logits = logits / temperature
 
-        # Explicitly free KV cache memory
-        del kv_cache
-        torch.cuda.empty_cache()
+                if top_k is not None and top_k > 0:
+                    v, _ = torch.topk(logits, min(top_k, logits.size(-1)), dim=-1)
+                    logits[logits < v[:, -1:]] = float('-inf')
+
+                if top_p is not None and top_p < 1.0:
+                    # Nucleus sampling
+                    sorted_logits, sorted_indices = torch.sort(logits, descending=True, dim=-1)
+                    cumulative_probs = torch.cumsum(F.softmax(sorted_logits, dim=-1), dim=-1)
+                    sorted_indices_to_remove = cumulative_probs > top_p
+                    sorted_indices_to_remove[:, 1:] = sorted_indices_to_remove[:, :-1].clone()
+                    sorted_indices_to_remove[:, 0] = False
+                    indices_to_remove = sorted_indices_to_remove.scatter(1, sorted_indices, sorted_indices_to_remove)
+                    logits[indices_to_remove] = float('-inf')
+
+                # Sample next tokens for all samples
+                probs = F.softmax(logits, dim=-1)
+                next_tokens = torch.multinomial(probs, num_samples=1)  # [batch, 1]
+
+                # Store generated tokens
+                next_tokens_list = next_tokens.squeeze(-1).tolist()
+                for i, tok in enumerate(next_tokens_list):
+                    batch_tokens[i].append(tok)
+
+                # Get next logits using KV cache
+                with torch.no_grad():
+                    logits = model(next_tokens, kv_cache=kv_cache)
+                    logits = logits[:, -1, :]
+
+            # Store all generated token sequences from this batch
+            all_generated_tokens.extend(batch_tokens)
+            total_tokens_generated += sum(len(tokens) for tokens in batch_tokens)
+
+        except torch.cuda.OutOfMemoryError as e:
+            if show_progress:
+                print(f"\n  [Batch {batch_idx}] OOM: {e}")
+            failed_count += current_batch_size
+        except Exception as e:
+            if show_progress:
+                print(f"\n  [Batch {batch_idx}] Exception: {e}")
+            failed_count += current_batch_size
+        finally:
+            # Explicitly free ALL batch-related GPU memory
+            try:
+                del kv_cache
+            except NameError:
+                pass
+            try:
+                del logits, probs, next_tokens, input_ids
+            except NameError:
+                pass
+            try:
+                del sorted_logits, sorted_indices, cumulative_probs, indices_to_remove
+            except NameError:
+                pass
+            import gc
+            gc.collect()
+            torch.cuda.empty_cache()
 
     gen_elapsed_time = time.time() - gen_start_time
 
@@ -1517,6 +1631,7 @@ def run_generation_quality_utf8(
     top_p: float = 0.9,
     max_tokens: int = 2048,
     normalize_json_output: bool = True,
+    batch_size: int = None,
 ) -> Dict[str, Any]:
     """Run generation quality evaluation for UTF8-BPE model with XGrammar.
 
@@ -1583,6 +1698,7 @@ def run_generation_quality_utf8(
         top_k=top_k,
         top_p=top_p,
         show_progress=True,
+        batch_size=batch_size,
     )
 
     # Optionally normalize generated samples to canonical JSON
@@ -2113,6 +2229,255 @@ def generate_latex_tables(results: Dict[str, Any], output_dir: Optional[Path] = 
     return latex_str
 
 
+def debug_xgrammar_generation(
+    merge_table: Path,
+    schema: str,
+    utf8_checkpoint: str,
+    device: str,
+    num_samples: int,
+    random_model: bool,
+    vocab_size: int,
+):
+    """Debug XGrammar generation step by step to find the ~50% failure bug."""
+    import torch
+    import torch.nn.functional as F
+    import xgrammar
+    import json
+    from nanochat.engine import KVCache
+    from nanochat.xgrammar_tokenizer import (
+        UTF8BPEDecoder,
+        build_xgrammar_tokenizer_info,
+        compile_json_schema_grammar,
+        load_schema,
+    )
+
+    # Parameters (match eval_icml defaults)
+    max_tokens = 2048  # Match eval_icml default
+    temperature = 0.3
+    top_p = 0.9
+    batch_size = num_samples  # Test as single batch first
+
+    print(f"\n1. SETUP")
+    print(f"   batch_size={batch_size}, max_tokens={max_tokens}")
+    print(f"   temperature={temperature}, top_p={top_p}")
+
+    # Load model
+    print(f"\n2. LOADING MODEL")
+    if random_model:
+        print("   Creating random model...")
+        model, config = create_random_model(vocab_size, device)
+    else:
+        print(f"   Loading from {utf8_checkpoint}...")
+        model, config = load_model(Path(utf8_checkpoint), device)
+    print(f"   vocab_size={config.get('vocab_size')}, n_layer={config.get('n_layer')}")
+
+    # Setup XGrammar
+    print(f"\n3. XGRAMMAR SETUP")
+    utf8_decoder = UTF8BPEDecoder(merge_table)
+    tokenizer_info = build_xgrammar_tokenizer_info(merge_table)
+    schema_dict = load_schema(schema)
+    compiled_grammar = compile_json_schema_grammar(tokenizer_info, schema_dict)
+    print(f"   tokenizer vocab_size={tokenizer_info.vocab_size}")
+
+    # KV cache params
+    model_cfg = config.get("model_config", config)
+    kv_kwargs = {
+        "num_heads": model_cfg.get("n_kv_head", model_cfg.get("n_head")),
+        "head_dim": model_cfg.get("n_embd") // model_cfg.get("n_head"),
+        "num_layers": model_cfg.get("n_layer"),
+    }
+    bos_token = utf8_decoder.vocab_size() - 1
+    print(f"   bos_token={bos_token}")
+
+    # Create matchers and bitmasks
+    print(f"\n4. CREATING MATCHERS")
+    matchers = [xgrammar.GrammarMatcher(compiled_grammar, terminate_without_stop_token=True)
+                for _ in range(batch_size)]
+    bitmasks = [xgrammar.allocate_token_bitmask(1, tokenizer_info.vocab_size)
+               for _ in range(batch_size)]
+    print(f"   Created {len(matchers)} matchers")
+
+    # Create KV cache
+    kv_cache = KVCache(batch_size=batch_size, seq_len=max_tokens + 1, **kv_kwargs)
+
+    # Initialize state
+    batch_tokens = [[] for _ in range(batch_size)]
+    active = [True] * batch_size
+    terminated = [False] * batch_size
+
+    # Prefill
+    print(f"\n5. PREFILL")
+    input_ids = torch.full((batch_size, 1), bos_token, device=device)
+    with torch.no_grad():
+        logits = model(input_ids, kv_cache=kv_cache)
+        logits = logits[:, -1, :]
+    print(f"   logits shape: {logits.shape}")
+    print(f"   logits range: [{logits.min().item():.2f}, {logits.max().item():.2f}]")
+
+    # Track issues
+    accept_failures = []
+    mask_issues = []
+
+    print(f"\n6. GENERATION LOOP (showing first 10 steps)")
+    for step in range(max_tokens):
+        if not any(active):
+            print(f"   Step {step}: All samples terminated")
+            break
+
+        show_debug = step < 10  # Show first 10 steps in detail
+
+        if show_debug:
+            print(f"\n   === Step {step} ===")
+            print(f"   Active: {[i for i in range(batch_size) if active[i]]}")
+
+        # PHASE 1: Apply grammar masks
+        logits_before_mask = logits.clone()
+        for i in range(batch_size):
+            if active[i]:
+                if matchers[i].is_terminated():
+                    active[i] = False
+                    terminated[i] = True
+                    if show_debug:
+                        print(f"   Sample {i}: TERMINATED")
+                    continue
+
+                # Reset and fill bitmask
+                xgrammar.reset_token_bitmask(bitmasks[i])
+                matchers[i].fill_next_token_bitmask(bitmasks[i])
+
+                # Apply mask
+                logits_i = logits[i:i+1, :]
+                xgrammar.apply_token_bitmask_inplace(logits_i, bitmasks[i].to(device))
+
+                # Count valid tokens
+                num_masked = (logits[i] == float('-inf')).sum().item()
+                num_valid = logits.shape[1] - num_masked
+
+                if show_debug:
+                    print(f"   Sample {i}: {num_valid} valid, {num_masked} masked")
+
+                if num_valid == 0:
+                    print(f"   WARNING: Sample {i} has NO valid tokens at step {step}!")
+                    mask_issues.append((step, i, "no_valid_tokens"))
+
+        # Store logits after mask but before temperature
+        logits_after_mask = logits.clone()
+
+        # PHASE 2: Apply temperature
+        logits_id_before = id(logits)
+        if temperature > 0:
+            logits = logits / temperature
+        logits_id_after = id(logits)
+
+        if show_debug:
+            print(f"   Temperature: tensor id changed: {logits_id_before != logits_id_after}")
+            # Verify -inf preserved
+            for i in range(batch_size):
+                if active[i]:
+                    num_inf_before = (logits_after_mask[i] == float('-inf')).sum().item()
+                    num_inf_after = (logits[i] == float('-inf')).sum().item()
+                    if num_inf_before != num_inf_after:
+                        print(f"   ERROR: Sample {i} lost {num_inf_before - num_inf_after} -inf values!")
+                        mask_issues.append((step, i, "lost_inf_after_temp"))
+
+        # PHASE 3: Apply top-p
+        if top_p is not None and top_p < 1.0:
+            sorted_logits, sorted_indices = torch.sort(logits, descending=True, dim=-1)
+            cumulative_probs = torch.cumsum(F.softmax(sorted_logits, dim=-1), dim=-1)
+            sorted_indices_to_remove = cumulative_probs > top_p
+            sorted_indices_to_remove[:, 1:] = sorted_indices_to_remove[:, :-1].clone()
+            sorted_indices_to_remove[:, 0] = False
+            indices_to_remove = sorted_indices_to_remove.scatter(1, sorted_indices, sorted_indices_to_remove)
+            logits[indices_to_remove] = float('-inf')
+
+            if show_debug:
+                for i in range(batch_size):
+                    if active[i]:
+                        num_valid_after_topp = (logits[i] != float('-inf')).sum().item()
+                        print(f"   Sample {i}: {num_valid_after_topp} valid after top-p")
+
+        # PHASE 4: Sample
+        probs = F.softmax(logits, dim=-1)
+
+        # Check for NaN
+        if torch.isnan(probs).any():
+            print(f"   WARNING: NaN in probs at step {step}!")
+            for i in range(batch_size):
+                if torch.isnan(probs[i]).any():
+                    num_valid = (logits[i] != float('-inf')).sum().item()
+                    print(f"   Sample {i}: NaN probs, {num_valid} valid tokens")
+                    mask_issues.append((step, i, "nan_probs"))
+
+        next_tokens = torch.multinomial(probs, num_samples=1)
+        next_tokens_list = next_tokens.squeeze(-1).tolist()
+
+        # PHASE 5: Accept tokens and CHECK RETURN VALUE
+        for i, tok in enumerate(next_tokens_list):
+            if active[i]:
+                # Check if token was valid BEFORE accepting
+                was_valid_after_mask = logits_after_mask[i, tok] != float('-inf')
+
+                result = matchers[i].accept_token(tok)
+
+                if show_debug:
+                    print(f"   Sample {i}: token={tok}, was_valid={was_valid_after_mask.item()}, accept={result}")
+
+                if not result:
+                    print(f"   ACCEPT FAILED: step={step}, sample={i}, token={tok}, was_valid={was_valid_after_mask.item()}")
+                    accept_failures.append((step, i, tok, was_valid_after_mask.item()))
+
+                batch_tokens[i].append(tok)
+
+        # PHASE 6: Get next logits
+        with torch.no_grad():
+            logits = model(next_tokens, kv_cache=kv_cache)
+            logits = logits[:, -1, :]
+
+    # Results
+    print(f"\n7. RESULTS")
+    print(f"   {'Sample':<8} {'Status':<15} {'Terminated':<12} {'Tokens':<8}")
+    print(f"   {'-'*45}")
+
+    valid_count = 0
+    for i, tokens in enumerate(batch_tokens):
+        try:
+            text = utf8_decoder.decode(tokens)
+            parsed = json.loads(text)
+            if parsed and parsed != {}:
+                status = "VALID"
+                valid_count += 1
+            else:
+                status = "EMPTY"
+        except json.JSONDecodeError as e:
+            status = f"JSON_ERR"
+            # Show first part of invalid output
+            try:
+                text = utf8_decoder.decode(tokens)
+                print(f"\n   Sample {i} FAILED JSON - first 200 chars:")
+                print(f"   {text[:200]}")
+            except:
+                print(f"   Sample {i}: decode also failed")
+        except Exception as e:
+            status = f"ERROR"
+
+        print(f"   {i:<8} {status:<15} {str(terminated[i]):<12} {len(tokens):<8}")
+
+    print(f"\n8. SUMMARY")
+    print(f"   Valid: {valid_count}/{batch_size} ({100*valid_count/batch_size:.0f}%)")
+    print(f"   Accept failures: {len(accept_failures)}")
+    print(f"   Mask issues: {len(mask_issues)}")
+
+    if accept_failures:
+        print(f"\n   Accept failures detail:")
+        for step, sample, tok, was_valid in accept_failures[:10]:
+            print(f"   step={step}, sample={sample}, token={tok}, was_valid_after_mask={was_valid}")
+
+    if mask_issues:
+        print(f"\n   Mask issues detail:")
+        for step, sample, issue in mask_issues[:10]:
+            print(f"   step={step}, sample={sample}, issue={issue}")
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="ICML 2026 Evaluation: TCT vs BPE+XGrammar",
@@ -2170,6 +2535,14 @@ def main():
     parser.add_argument("--latex_dir", type=str, help="Directory for LaTeX output (default: same as --output)")
     parser.add_argument("--device", type=str, default="cuda",
                         help="Device to run on (cuda/cpu)")
+    parser.add_argument("--debug_xgrammar", action="store_true",
+                        help="Debug XGrammar generation step-by-step")
+    parser.add_argument("--debug_samples", type=int, default=8,
+                        help="Number of samples for debug mode (default: 8)")
+    parser.add_argument("--skip_raw_generation", action="store_true",
+                        help="Skip raw generation before XGrammar (for debugging)")
+    parser.add_argument("--batch_size", type=int, default=None,
+                        help="Force specific batch size for generation (default: auto)")
 
     args = parser.parse_args()
 
@@ -2234,6 +2607,23 @@ def main():
     from nanochat.xgrammar_tokenizer import UTF8BPEDecoder
     utf8_decoder = UTF8BPEDecoder(merge_table)
     vocab_size = utf8_decoder.vocab_size()
+
+    # Debug XGrammar mode - run detailed step-by-step debugging
+    if args.debug_xgrammar:
+        print("\n" + "=" * 60)
+        print("DEBUG XGRAMMAR MODE")
+        print("=" * 60)
+        debug_xgrammar_generation(
+            merge_table=merge_table,
+            schema=args.schema,
+            utf8_checkpoint=args.utf8_checkpoint,
+            device=args.device,
+            num_samples=args.debug_samples,
+            random_model=args.random_model,
+            vocab_size=vocab_size,
+        )
+        print("\nDebug complete. Exiting.")
+        sys.exit(0)
 
     # Try to find TCT data directory
     tct_data_dir = None
@@ -2301,19 +2691,23 @@ def main():
                 log(f"\n  === Generation at temperature={temp} ===")
 
                 # Raw UTF8 generation (no grammar constraints)
-                raw_gen_results = run_generation_quality_utf8_raw(
-                    model=model,
-                    schema=args.schema,
-                    merge_table=merge_table,
-                    validation_tokens=utf8_validation_tokens,
-                    num_samples=args.num_gen_samples,
-                    device=args.device,
-                    temperature=temp,
-                    top_k=args.top_k,
-                    top_p=args.top_p,
-                    max_tokens=args.max_gen_tokens,
-                    normalize_json_output=args.normalize_bytes,
-                )
+                if args.skip_raw_generation:
+                    log("  Skipping raw generation (--skip_raw_generation)")
+                    raw_gen_results = {}
+                else:
+                    raw_gen_results = run_generation_quality_utf8_raw(
+                        model=model,
+                        schema=args.schema,
+                        merge_table=merge_table,
+                        validation_tokens=utf8_validation_tokens,
+                        num_samples=args.num_gen_samples,
+                        device=args.device,
+                        temperature=temp,
+                        top_k=args.top_k,
+                        top_p=args.top_p,
+                        max_tokens=args.max_gen_tokens,
+                        normalize_json_output=args.normalize_bytes,
+                    )
                 results["utf8_raw_generation_by_temp"][temp] = raw_gen_results
 
                 # UTF8 + XGrammar generation (grammar constrained)
@@ -2329,6 +2723,7 @@ def main():
                     top_p=args.top_p,
                     max_tokens=args.max_gen_tokens,
                     normalize_json_output=args.normalize_bytes,
+                    batch_size=args.batch_size,
                 )
                 results["utf8_generation_by_temp"][temp] = gen_results
 
