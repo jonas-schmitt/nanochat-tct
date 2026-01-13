@@ -1547,12 +1547,12 @@ def run_generation_quality_utf8(
     schema_dict = load_schema(schema)
     compiled_grammar = compile_json_schema_grammar(tokenizer_info, schema_dict)
 
-    # Decode pre-filtered validation samples for ground truth distribution
+    # Decode ALL validation samples for ground truth distribution (best estimate of true distribution)
     # Strip BOS token before decoding (get_validation_sequences prepends it)
     bos_token_id = utf8_decoder.eos_token_id()
     print(f"\n  Extracting ground truth distribution from {len(validation_tokens)} validation samples...")
     val_texts = [utf8_decoder.decode(tokens[1:] if tokens and tokens[0] == bos_token_id else tokens)
-                 for tokens in validation_tokens[:num_samples]]
+                 for tokens in validation_tokens]
 
     # Optionally normalize to canonical JSON for consistent comparison
     if normalize_json_output:
@@ -1871,12 +1871,12 @@ def run_generation_quality_utf8_raw(
     # Build decoder
     utf8_decoder = UTF8BPEDecoder(merge_table)
 
-    # Decode pre-filtered validation samples for ground truth distribution
+    # Decode ALL validation samples for ground truth distribution (best estimate of true distribution)
     # Strip BOS token before decoding (get_validation_sequences prepends it)
     bos_token_id = utf8_decoder.eos_token_id()
     print(f"\n  Extracting ground truth distribution from {len(validation_tokens)} validation samples...")
     val_texts = [utf8_decoder.decode(tokens[1:] if tokens and tokens[0] == bos_token_id else tokens)
-                 for tokens in validation_tokens[:num_samples]]
+                 for tokens in validation_tokens]
 
     if normalize_json_output:
         val_texts = [normalize_json(t) for t in val_texts]
@@ -2278,12 +2278,7 @@ def main():
         results["tct_data_dir"] = str(tct_data_dir)
 
     results["num_valid_samples"] = len(utf8_validation_tokens)
-
-    # Cap num_gen_samples to available samples
-    actual_gen_samples = min(args.num_gen_samples, len(utf8_validation_tokens))
-    if actual_gen_samples < args.num_gen_samples:
-        print(f"  NOTE: Capping generation samples from {args.num_gen_samples} to {actual_gen_samples} (available)")
-    results["num_gen_samples"] = actual_gen_samples
+    results["num_gen_samples"] = args.num_gen_samples
 
     # Evaluate UTF8-BPE model (with constrained BPB)
     if args.utf8_checkpoint or args.random_model:
@@ -2329,7 +2324,7 @@ def main():
                     schema=args.schema,
                     merge_table=merge_table,
                     validation_tokens=utf8_validation_tokens,
-                    num_samples=actual_gen_samples,
+                    num_samples=args.num_gen_samples,
                     device=args.device,
                     temperature=temp,
                     top_k=args.top_k,
@@ -2345,7 +2340,7 @@ def main():
                     schema=args.schema,
                     merge_table=merge_table,
                     validation_tokens=utf8_validation_tokens,
-                    num_samples=actual_gen_samples,
+                    num_samples=args.num_gen_samples,
                     device=args.device,
                     temperature=temp,
                     top_k=args.top_k,
@@ -2457,11 +2452,11 @@ def main():
                     "total_loss_nats": tct_bpb_result.total_loss,
                 }
 
-            # Decode TCT tokens to get validation JSON strings (for generation quality)
+            # Decode ALL TCT validation tokens for ground truth (best estimate of true distribution)
             # Strip BOS token before decoding (get_validation_sequences prepends it)
             pad_token_id = tct_module.vocab_size() - 1
             val_json_strings = []
-            for tokens in tct_validation_tokens[:actual_gen_samples]:
+            for tokens in tct_validation_tokens:
                 try:
                     # Strip BOS if present
                     decode_tokens = tokens[1:] if tokens and tokens[0] == pad_token_id else tokens
@@ -2471,11 +2466,11 @@ def main():
                     continue
         else:
             print(f"  WARNING: No TCT validation tokens available. Using UTF8 validation data for generation comparison.")
-            # Fallback: use UTF8 validation data decoded for comparison
+            # Fallback: use ALL UTF8 validation data decoded for comparison
             # Strip BOS token before decoding (get_validation_sequences prepends it)
             bos_token_id = utf8_decoder.eos_token_id()
             val_json_strings = [utf8_decoder.decode(tokens[1:] if tokens and tokens[0] == bos_token_id else tokens)
-                                for tokens in utf8_validation_tokens[:actual_gen_samples]]
+                                for tokens in utf8_validation_tokens]
 
         # Run generation quality for TCT (unless --bpb_only)
         if not args.bpb_only:
@@ -2490,7 +2485,7 @@ def main():
                     schema=args.schema,
                     tct_module=tct_module,
                     validation_json_strings=val_json_strings,
-                    num_samples=actual_gen_samples,
+                    num_samples=args.num_gen_samples,
                     temperature=temp,
                     top_k=args.top_k,
                     top_p=args.top_p,
