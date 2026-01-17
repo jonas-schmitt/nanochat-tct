@@ -1038,7 +1038,17 @@ def generate_samples_xgrammar(
                     batch_failed += 1
 
             if show_progress:
-                print(f"  [Batch {batch_idx}] Results: {batch_completed} valid, {batch_failed} failed")
+                # Debug: show token counts and termination stats
+                token_counts = [len(t) for t in batch_tokens]
+                avg_tokens = sum(token_counts) / len(token_counts) if token_counts else 0
+                terminated_count = sum(terminated)
+                truncated_batch = batch_completed - sum(1 for i, t in enumerate(terminated) if t and len(batch_tokens[i]) > 0)
+                print(f"  [Batch {batch_idx}] Results: {batch_completed} valid, {batch_failed} failed | "
+                      f"avg_tokens={avg_tokens:.1f}, terminated={terminated_count}, truncated={truncated_batch}")
+                # Show first sample for debugging
+                if batch_idx == 0 and batch_tokens and batch_tokens[0]:
+                    first_text = all_texts[-actual_batch_size] if len(all_texts) >= actual_batch_size else ""
+                    print(f"    First sample ({len(batch_tokens[0])} tokens): {first_text[:200]}...")
 
             # Success - update progress
             samples_processed = end_idx
