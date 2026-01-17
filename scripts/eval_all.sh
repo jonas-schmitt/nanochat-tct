@@ -7,6 +7,7 @@
 #   bash scripts/eval_all.sh --force            # Re-run even if results exist
 #   bash scripts/eval_all.sh --samples=1000     # Custom sample count
 #   bash scripts/eval_all.sh --dry-run          # Show what would be evaluated
+#   bash scripts/eval_all.sh --skip_raw         # Skip UTF8 raw generation (no XGrammar)
 
 set -e
 
@@ -19,6 +20,7 @@ NUM_GEN_SAMPLES=""
 DRY_RUN=false
 FORCE=false
 SCHEMA_FILTER=""
+SKIP_RAW=false
 EXTRA_ARGS=""
 
 for arg in "$@"; do
@@ -28,6 +30,7 @@ for arg in "$@"; do
         --schema=*) SCHEMA_FILTER="${arg#--schema=}" ;;
         --samples=*) NUM_SAMPLES="$arg" ;;
         --gen_samples=*) NUM_GEN_SAMPLES="$arg" ;;
+        --skip_raw|--skip_raw_generation) SKIP_RAW=true ;;
         *) EXTRA_ARGS="$EXTRA_ARGS $arg" ;;
     esac
 done
@@ -117,13 +120,16 @@ for schema in $SCHEMAS; do
                     echo "[EVAL] $schema $size ${baseline_arg:-default}"
 
                     if [ "$DRY_RUN" = true ]; then
-                        echo "       Would run: bash scripts/eval.sh $schema $size $baseline_arg $NUM_SAMPLES $NUM_GEN_SAMPLES $EXTRA_ARGS"
+                        skip_raw_arg=""
+                        [ "$SKIP_RAW" = true ] && skip_raw_arg="--skip_raw_generation"
+                        echo "       Would run: bash scripts/eval.sh $schema $size $baseline_arg $NUM_SAMPLES $NUM_GEN_SAMPLES $skip_raw_arg $EXTRA_ARGS"
                     else
                         # Build command
                         cmd="bash $CODE_DIR/scripts/eval.sh $schema $size"
                         [ -n "$baseline_arg" ] && cmd="$cmd $baseline_arg"
                         [ -n "$NUM_SAMPLES" ] && cmd="$cmd $NUM_SAMPLES"
                         [ -n "$NUM_GEN_SAMPLES" ] && cmd="$cmd $NUM_GEN_SAMPLES"
+                        [ "$SKIP_RAW" = true ] && cmd="$cmd --skip_raw_generation"
                         [ -n "$EXTRA_ARGS" ] && cmd="$cmd $EXTRA_ARGS"
 
                         echo "       Running: $cmd"

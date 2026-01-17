@@ -29,7 +29,7 @@ for arg in "$@"; do
         --gen_samples=*) NUM_GEN_SAMPLES="${arg#--gen_samples=}" ;;
         o200k|o200k-matched) BASELINE="o200k-matched" ;;
         --baseline=*) BASELINE="${arg#--baseline=}" ;;
-        --bpb_only|--generation_only) EXTRA_ARGS="$EXTRA_ARGS $arg" ;;
+        --bpb_only|--generation_only|--skip_raw_generation) EXTRA_ARGS="$EXTRA_ARGS $arg" ;;
     esac
 done
 
