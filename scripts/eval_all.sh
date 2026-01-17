@@ -106,16 +106,6 @@ for schema in $SCHEMAS; do
                 fi
 
                 if [ "$tct_has_checkpoint" = true ] && [ "$utf8_has_checkpoint" = true ]; then
-                    # Check if training completed (config.json exists and has epoch info)
-                    tct_epoch=$(python3 -c "import json; print(json.load(open('$tct_dir/config.json')).get('epoch', 0))" 2>/dev/null || echo 0)
-                    utf8_epoch=$(python3 -c "import json; print(json.load(open('$utf8_dir/config.json')).get('epoch', 0))" 2>/dev/null || echo 0)
-
-                    # Require at least some epochs completed (allow 105+ for overfitting cases)
-                    if [ "$tct_epoch" -lt 100 ] || [ "$utf8_epoch" -lt 100 ]; then
-                        echo "[WAIT] $schema $size ${baseline_arg:-default} - incomplete (TCT: $tct_epoch, UTF8: $utf8_epoch)"
-                        continue
-                    fi
-
                     found_any=true
 
                     # Check if already evaluated (skip unless --force)
